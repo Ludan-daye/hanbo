@@ -1,5 +1,5 @@
 import Taro, { useDidShow } from "@tarojs/taro";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button, Label, Screen, Subtitle, Title } from "../../components/ui/index";
 import { devLogin } from "../../services/auth";
@@ -18,13 +18,17 @@ export default function Login(): JSX.Element {
   const { phase, onLoggedIn } = useSession();
   const [busy, setBusy] = useState(false);
 
-  useDidShow(() => {
+  const redirectForPhase = (): void => {
     if (phase === "ready" || phase === "norole") {
       void Taro.redirectTo({ url: "/pages/home/index" });
     } else if (phase === "unbound") {
       void Taro.redirectTo({ url: "/pages/bind/index" });
     }
-  });
+  };
+
+  // Re-show (navigate back) and phase changes (e.g. cold-launch /auth/me resolving) both redirect.
+  useDidShow(redirectForPhase);
+  useEffect(redirectForPhase, [phase]);
 
   const pick = async (code: string): Promise<void> => {
     if (busy) {

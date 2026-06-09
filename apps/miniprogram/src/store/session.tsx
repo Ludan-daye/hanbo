@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useReducer, type PropsWithChildren } from "react";
 import Taro from "@tarojs/taro";
 
-import { fetchMe } from "../services/auth";
+import { fetchMe, logout } from "../services/auth";
 import { initialSessionState, sessionPhase, sessionReducer, type SessionPhase, type SessionState } from "./sessionReducer";
 
 type SessionContextValue = {
@@ -37,8 +37,9 @@ export const SessionProvider = ({ children }: PropsWithChildren): JSX.Element =>
 
   const value: SessionContextValue = {
     clear: () => {
-      Taro.removeStorageSync("accessToken");
-      Taro.removeStorageSync("refreshToken");
+      // Best-effort server-side session revoke (logout() POSTs with the current token,
+      // then removes both tokens in its finally), then clear local state immediately.
+      void logout();
       dispatch({ type: "CLEAR" });
     },
     onLoggedIn: async () => {

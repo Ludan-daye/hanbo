@@ -1,4 +1,5 @@
 import Taro, { useDidShow } from "@tarojs/taro";
+import { useEffect } from "react";
 
 import { Button, Screen, StateView } from "../../components/ui/index";
 import { RolePanel } from "../../components/role-panels/index";
@@ -8,13 +9,16 @@ import { useSession } from "../../store/session";
 export default function Home(): JSX.Element {
   const { phase, state, clear } = useSession();
 
-  useDidShow(() => {
+  const guardPhase = (): void => {
     if (phase === "anonymous") {
       void Taro.redirectTo({ url: "/pages/login/index" });
     } else if (phase === "unbound") {
       void Taro.redirectTo({ url: "/pages/bind/index" });
     }
-  });
+  };
+
+  useDidShow(guardPhase);
+  useEffect(guardPhase, [phase]);
 
   if (phase === "loading" || phase === "anonymous" || phase === "unbound") {
     return (
