@@ -5,6 +5,7 @@ import {
   canApproveMakeupRequest,
   canApproveScopedMakeupRequest,
   getEffectivePermissionCodes,
+  getHighestRoleCode,
   getInheritedRoleCodes,
   hasRoleAtLeast,
   roleIncludes,
@@ -153,5 +154,23 @@ describe("role hierarchy", (): void => {
         }
       })
     ).toEqual({ isAuthorized: false, reason: "SCOPE_MISMATCH" });
+  });
+});
+
+describe("getHighestRoleCode", () => {
+  test("returns the higher-ranked role among assignments", () => {
+    expect(
+      getHighestRoleCode([{ roleCode: "WORKER" }, { roleCode: "TEAM_LEADER" }])
+    ).toBe("TEAM_LEADER");
+  });
+
+  test("ranks SYSTEM_ADMIN above all others", () => {
+    expect(
+      getHighestRoleCode([{ roleCode: "PROJECT_ADMIN" }, { roleCode: "SYSTEM_ADMIN" }])
+    ).toBe("SYSTEM_ADMIN");
+  });
+
+  test("returns null when there are no assignments", () => {
+    expect(getHighestRoleCode([])).toBeNull();
   });
 });

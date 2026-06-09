@@ -237,3 +237,15 @@ export const canApproveScopedMakeupRequest = (input: MakeupApprovalInput): Autho
     targetScope: input.targetScope
   });
 };
+
+export const getHighestRoleCode = (assignments: readonly RoleAssignment[]): RoleCode | null => {
+  let highest: RoleCode | null = null;
+
+  for (const assignment of assignments) {
+    if (highest === null || ROLE_LEVEL[assignment.roleCode] < ROLE_LEVEL[highest]) {
+      highest = assignment.roleCode;
+    }
+  }
+
+  return highest;
+};
