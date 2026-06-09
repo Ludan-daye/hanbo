@@ -1,9 +1,9 @@
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 
+import { AuthorizationModule } from "../authorization/authorization.module.js";
 import { API_ENV, EnvModule } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
-import { AuthorizationModule } from "../authorization/authorization.module.js";
 import { PrismaModule } from "../infrastructure/database/prisma.module.js";
 import {
   type FetchLike,

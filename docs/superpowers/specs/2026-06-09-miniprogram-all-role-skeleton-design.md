@@ -159,9 +159,10 @@ that creates:
   hash of a known plaintext code (e.g. `DEV-BIND-CODE`), so the bind flow can be demonstrated
   end to end. After binding this user is `isBound: true` with no role assignment, which exercises
   the `NoRolePanel` state (the demonstrable role panels come from the five pre-seeded role users).
-- Project memberships (`project_worker_members` / `project_manager_members`) for the demo users
-  so later slices have a realistic participant list. Not required by the skeleton's routing, but
-  cheap to include and avoids reseeding later.
+- Project memberships (`project_worker_members` / `project_manager_members`) are NOT seeded in this
+  phase. The skeleton routes by `user_roles` only and never reads membership, so seeding it now would
+  be untested, speculative data. The worker-attendance slice will add memberships (alongside wiring
+  binding/membership to role assignment).
 
 The seed is idempotent (upsert by stable keys) so it can be re-run safely.
 

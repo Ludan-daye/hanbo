@@ -144,7 +144,6 @@ const main = async (): Promise<void> => {
     where: { codeHash: hash(DEV_BIND_CODE) }
   });
 
-  // eslint-disable-next-line no-console
   console.log(JSON.stringify({ devBindCode: DEV_BIND_CODE, message: "dev seed complete" }));
 };
 
