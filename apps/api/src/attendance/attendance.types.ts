@@ -49,8 +49,6 @@ export type DefaultScheduleResponse = {
 
 export type SubmitAttendanceRecordRequest = {
   readonly attendanceDate: string;
-  readonly facePassed: boolean;
-  readonly faceScore: string | null;
   readonly latitude: string;
   readonly locationAccuracyM: string | null;
   readonly longitude: string;

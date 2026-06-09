@@ -14,6 +14,13 @@ import type {
 } from "@prisma/client";
 import { summarizeDailyAttendance, type AttendanceRecordInput, type ShiftRule } from "@construction/domain/attendance.js";
 
+import { API_ENV } from "../config/env.module.js";
+import type { ApiEnv } from "../config/env.js";
+import {
+  deriveFacePassed,
+  FACE_VERIFICATION_CONNECTOR,
+  type FaceVerificationConnector
+} from "../infrastructure/face/face-verification.types.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 
 import type {
@@ -352,7 +359,11 @@ const getAbnormalReason = (facePassed: boolean, geofenceDecision: GeofenceDecisi
 
 @Injectable()
 export class AttendanceService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(FACE_VERIFICATION_CONNECTOR) private readonly faceConnector: FaceVerificationConnector,
+    @Inject(API_ENV) private readonly env: ApiEnv,
+  ) {}
 
   async configureDefaultShift(projectId: string, request: ConfigureDefaultShiftRequest): Promise<DefaultShiftResponse> {
     await this.getProjectOrThrow(projectId);
@@ -435,14 +446,19 @@ export class AttendanceService {
     const shift = await this.getShiftForAttendanceSubmissionOrThrow(projectId, attendanceDate);
 
     const geofenceDecision = this.createGeofenceDecision(project, request.latitude, request.longitude);
-    const abnormalReason = getAbnormalReason(request.facePassed, geofenceDecision);
+    const faceResult = await this.faceConnector.verifyFace({
+      baselineRef: null,
+      selfieObjectKey: request.selfieObjectKey
+    });
+    const facePassed = deriveFacePassed(faceResult, this.env.FACE_SCORE_THRESHOLD);
+    const abnormalReason = getAbnormalReason(facePassed, geofenceDecision);
     const status: AttendanceRecordStatusValue = abnormalReason === null ? "VALID" : "INVALID";
     const record = await this.prisma.attendanceRecord.create({
       data: {
         abnormalReason,
         attendanceDate,
-        facePassed: request.facePassed,
-        faceScore: request.faceScore,
+        facePassed,
+        faceScore: String(faceResult.score),
         geofenceDistanceM: formatMeters(geofenceDecision.distanceM),
         latitude: request.latitude,
         locationAccuracyM: request.locationAccuracyM,

@@ -9,6 +9,7 @@ import { AuthModule } from "../src/auth/auth.module.js";
 import { AttendanceModule } from "../src/attendance/attendance.module.js";
 import { AuthorizationModule } from "../src/authorization/authorization.module.js";
 import { PrismaService } from "../src/infrastructure/database/prisma.service.js";
+import { FACE_VERIFICATION_CONNECTOR } from "../src/infrastructure/face/face-verification.types.js";
 
 type UserStatusValue = "ACTIVE" | "DISABLED";
 type ScopeTypeValue = "GLOBAL" | "COMPANY" | "PROJECT" | "TEAM";
@@ -648,12 +649,14 @@ const seedDirectRolePermissions = (prisma: AttendancePrismaTestDouble): void => 
   prisma.seedRole("WORKER", ["attendance.submit", "makeup.request"]);
 };
 
-const createApp = async (prisma: AttendancePrismaTestDouble): Promise<INestApplication> => {
+const createApp = async (prisma: AttendancePrismaTestDouble, faceScore = 95): Promise<INestApplication> => {
   const moduleRef = await Test.createTestingModule({
     imports: [AuthModule, AuthorizationModule, AttendanceModule]
   })
     .overrideProvider(PrismaService)
     .useValue(prisma)
+    .overrideProvider(FACE_VERIFICATION_CONNECTOR)
+    .useValue({ verifyFace: async () => ({ detected: true, score: faceScore }) })
     .compile();
 
   const app = moduleRef.createNestApplication();
@@ -693,8 +696,6 @@ const attendanceBody = (
   longitude: string
 ): Record<string, unknown> => ({
   attendanceDate,
-  facePassed: true,
-  faceScore: "0.9200",
   latitude,
   locationAccuracyM: "5.00",
   longitude,
@@ -854,6 +855,7 @@ describe("AttendanceModule", (): void => {
       abnormalReason: null,
       attendanceDate: "2026-06-03",
       facePassed: true,
+      faceScore: "95",
       geofenceDistanceM: "0.00",
       id: "attendance-record-4",
       participantId: "worker-1",
@@ -1132,7 +1134,7 @@ describe("AttendanceModule", (): void => {
   });
 
   test("stores failed face attempts as invalid records excluded from the daily result", async (): Promise<void> => {
-    app = await createApp(prisma);
+    app = await createApp(prisma, 50);
     const projectAdminAccessToken = await createAccessToken(app, "project-admin-user", "session-project-admin");
     const workerAccessToken = await createAccessToken(app, "worker-user", "session-worker");
 
@@ -1160,22 +1162,17 @@ describe("AttendanceModule", (): void => {
       })
       .expect(200);
 
-    const body = {
-      ...attendanceBody("2026-06-06", "SEGMENT_1_START", "2026-06-06T08:00:00.000+08:00", "31.2304000", "121.4737000"),
-      facePassed: false,
-      faceScore: "0.2000"
-    };
     const response = await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
       .set("Authorization", `Bearer ${workerAccessToken}`)
-      .send(body)
+      .send(attendanceBody("2026-06-06", "SEGMENT_1_START", "2026-06-06T08:00:00.000+08:00", "31.2304000", "121.4737000"))
       .expect(201);
 
     expect(response.body.record).toMatchObject({
       abnormalReason: "FACE_NOT_PASSED",
       attendanceDate: "2026-06-06",
       facePassed: false,
-      faceScore: "0.2000",
+      faceScore: "50",
       participantId: "worker-1",
       participantType: "WORKER",
       pointCode: "SEGMENT_1_START",

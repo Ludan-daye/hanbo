@@ -130,8 +130,6 @@ const configureDefaultScheduleRequestSchema = z
 
 const submitAttendanceRecordRequestSchema = z.object({
   attendanceDate: dateOnlySchema,
-  facePassed: z.boolean(),
-  faceScore: z.union([positiveDecimalStringSchema, z.null()]),
   latitude: z.string().refine((value: string): boolean => isCoordinate(value, -90, 90)),
   locationAccuracyM: z.union([positiveDecimalStringSchema, z.null()]),
   longitude: z.string().refine((value: string): boolean => isCoordinate(value, -180, 180)),
