@@ -1,0 +1,33 @@
+@import "../../styles/tokens.scss";
+
+.ui-screen { min-height: 100vh; padding: 48rpx 40rpx; box-sizing: border-box; }
+.ui-title { font-size: 56rpx; font-weight: 800; color: var(--ink); line-height: 1.15; }
+.ui-subtitle { font-size: 28rpx; color: var(--ink-soft); margin-top: 12rpx; }
+.ui-label { font-size: 24rpx; letter-spacing: 2rpx; text-transform: uppercase; color: var(--clay); font-weight: 700; }
+
+.ui-btn {
+  display: flex; align-items: center; justify-content: center;
+  min-height: var(--tap-min); padding: 0 40rpx; border-radius: var(--radius-pill);
+  font-size: 32rpx; font-weight: 700; margin-top: 20rpx;
+}
+.ui-btn--primary { background: var(--clay); color: #fff; }
+.ui-btn--primary:active { background: var(--clay-pressed); }
+.ui-btn--outline { background: var(--surface); color: var(--steel); border: 2rpx solid var(--line); }
+
+.ui-tile {
+  background: var(--surface); border-radius: var(--radius-card); padding: 32rpx;
+  box-shadow: var(--shadow-soft); margin-top: 24rpx;
+  animation: ui-rise 0.4s ease both;
+}
+.ui-tile__title { font-size: 34rpx; font-weight: 700; color: var(--ink); }
+.ui-tile__sub { font-size: 26rpx; color: var(--ink-soft); margin-top: 8rpx; }
+.ui-badge { display: inline-block; margin-top: 16rpx; font-size: 22rpx; color: var(--gold); background: rgba(224,178,74,0.14); padding: 4rpx 16rpx; border-radius: var(--radius-pill); }
+
+.ui-field {
+  width: 100%; box-sizing: border-box; min-height: var(--tap-min);
+  background: var(--surface); border: 2rpx solid var(--line); border-radius: var(--radius-card);
+  padding: 0 28rpx; font-size: 30rpx; color: var(--ink); margin-top: 20rpx;
+}
+.ui-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; }
+
+@keyframes ui-rise { from { opacity: 0; transform: translateY(16rpx); } to { opacity: 1; transform: none; } }
