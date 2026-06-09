@@ -3,6 +3,7 @@ import { JwtModule } from "@nestjs/jwt";
 
 import { API_ENV, EnvModule } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
+import { AuthorizationModule } from "../authorization/authorization.module.js";
 import { PrismaModule } from "../infrastructure/database/prisma.module.js";
 import {
   type FetchLike,
@@ -32,7 +33,7 @@ const createWarningLogger = (): WechatCodeSessionWarningLogger => ({
 });
 
 @Module({
-  imports: [EnvModule, JwtModule.register({}), PrismaModule],
+  imports: [AuthorizationModule, EnvModule, JwtModule.register({}), PrismaModule],
   controllers: [AuthController],
   providers: [
     AuthService,

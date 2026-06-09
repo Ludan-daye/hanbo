@@ -1,5 +1,7 @@
 import type { UserStatus } from "@prisma/client";
 
+import type { RoleCode, ScopeType } from "@construction/domain/roles.js";
+
 export type AuthenticatedUser = {
   readonly sessionId: string;
   readonly sessionVersion: number;
@@ -59,4 +61,30 @@ export type RefreshResponse = {
 export type BindByInvitationResponse = {
   readonly profileId: string;
   readonly targetType: "MANAGER" | "WORKER";
+};
+
+export type MeRoleAssignment = {
+  readonly roleCode: RoleCode;
+  readonly scope: {
+    readonly scopeId: string;
+    readonly scopeType: ScopeType;
+  };
+};
+
+export type MeProfileSummary = {
+  readonly id: string | null;
+  readonly type: "MANAGER" | "WORKER" | null;
+};
+
+export type MeResponse = {
+  readonly profile: MeProfileSummary;
+  readonly roles: {
+    readonly assignments: readonly MeRoleAssignment[];
+    readonly highestRoleCode: RoleCode | null;
+  };
+  readonly user: {
+    readonly id: string;
+    readonly isBound: boolean;
+    readonly status: UserStatus;
+  };
 };

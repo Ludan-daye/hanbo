@@ -3,7 +3,9 @@ import { createHash, randomBytes } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import type { BindingInvitation, ManagerProfile, User, WorkerProfile } from "@prisma/client";
+import { getHighestRoleCode } from "@construction/domain/roles.js";
 
+import { AuthorizationContextService } from "../authorization/authorization-context.service.js";
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
@@ -16,6 +18,8 @@ import type {
   BindByInvitationRequest,
   BindByInvitationResponse,
   LoginResponse,
+  MeProfileSummary,
+  MeResponse,
   RefreshResponse,
   RefreshTokenRequest,
   RequestMetadata,
@@ -87,13 +91,29 @@ const assertSingleGuardedWrite = (count: number, message: string, context: Recor
   }
 };
 
+const createProfileSummary = (user: {
+  readonly managerProfile: { readonly id: string } | null;
+  readonly workerProfile: { readonly id: string } | null;
+}): MeProfileSummary => {
+  if (user.workerProfile !== null) {
+    return { id: user.workerProfile.id, type: "WORKER" };
+  }
+
+  if (user.managerProfile !== null) {
+    return { id: user.managerProfile.id, type: "MANAGER" };
+  }
+
+  return { id: null, type: null };
+};
+
 @Injectable()
 export class AuthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(WechatCodeSessionConnector) private readonly wechatConnector: WechatCodeSessionConnector,
     @Inject(JwtService) private readonly jwtService: JwtService,
-    @Inject(API_ENV) private readonly env: ApiEnv
+    @Inject(API_ENV) private readonly env: ApiEnv,
+    @Inject(AuthorizationContextService) private readonly authorizationContext: AuthorizationContextService
   ) {}
 
   async loginWithWechatCode(request: WechatLoginRequest, metadata: RequestMetadata): Promise<LoginResponse> {
@@ -285,6 +305,46 @@ export class AuthService {
     }
 
     return this.bindManagerProfile(currentUser.userId, invitation, now);
+  }
+
+  async getMe(userId: string): Promise<MeResponse> {
+    const user = await this.prisma.user.findUnique({
+      include: {
+        managerProfile: true,
+        workerProfile: true
+      },
+      where: {
+        id: userId
+      }
+    });
+
+    if (user === null) {
+      throw new UnauthorizedException({
+        message: "CURRENT_USER_NOT_FOUND",
+        userId
+      });
+    }
+
+    const { assignments } = await this.authorizationContext.loadAuthorizationData(userId);
+
+    return {
+      profile: createProfileSummary(user),
+      roles: {
+        assignments: assignments.map((assignment) => ({
+          roleCode: assignment.roleCode,
+          scope: {
+            scopeId: assignment.scope.scopeId,
+            scopeType: assignment.scope.scopeType
+          }
+        })),
+        highestRoleCode: getHighestRoleCode(assignments)
+      },
+      user: {
+        id: user.id,
+        isBound: user.isBound,
+        status: user.status
+      }
+    };
   }
 
   private async bindWorkerProfile(

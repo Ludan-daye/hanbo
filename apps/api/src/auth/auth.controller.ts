@@ -1,4 +1,4 @@
-import { Body, Controller, Inject, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Post, Req, UseGuards } from "@nestjs/common";
 
 import { AccessTokenGuard } from "./access-token.guard.js";
 import { AuthService } from "./auth.service.js";
@@ -12,6 +12,7 @@ import type {
   AuthenticatedUser,
   BindByInvitationResponse,
   LoginResponse,
+  MeResponse,
   RefreshResponse,
   RequestMetadata,
   RequestWithAuthenticatedUser
@@ -47,6 +48,12 @@ export class AuthController {
   @Post("refresh")
   async refresh(@Body() body: unknown, @Req() request: RequestWithAuthenticatedUser): Promise<RefreshResponse> {
     return this.authService.refreshAccessToken(parseRefreshTokenRequest(body), getRequestMetadata(request));
+  }
+
+  @Get("me")
+  @UseGuards(AccessTokenGuard)
+  async me(@CurrentUser() currentUser: AuthenticatedUser): Promise<MeResponse> {
+    return this.authService.getMe(currentUser.userId);
   }
 
   @Post("logout")
