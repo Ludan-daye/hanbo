@@ -51,7 +51,14 @@ export class AttendanceController {
   }
 
   @Post("projects/:projectId/records")
-  @UseGuards(AccessTokenGuard)
+  @RequirePermission({
+    permissionCode: "attendance.submit",
+    target: {
+      paramName: "projectId",
+      source: "projectParam"
+    }
+  })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
   async submitAttendanceRecord(
     @CurrentUser() currentUser: AuthenticatedUser,
     @Param("projectId") projectId: string,

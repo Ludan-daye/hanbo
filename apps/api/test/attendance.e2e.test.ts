@@ -733,6 +733,18 @@ describe("AttendanceModule", (): void => {
       scopeType: "PROJECT",
       userId: "project-admin-user"
     });
+    prisma.userRoles.push({
+      role: prisma.roles.get("WORKER") as RoleRecord,
+      scopeId: "project-1",
+      scopeType: "PROJECT",
+      userId: "worker-user"
+    });
+    prisma.userRoles.push({
+      role: prisma.roles.get("WORKER") as RoleRecord,
+      scopeId: "project-1",
+      scopeType: "PROJECT",
+      userId: "manager-user"
+    });
     prisma.workerProfiles.set("worker-1", {
       id: "worker-1",
       phone: "13800000001",
@@ -1095,7 +1107,52 @@ describe("AttendanceModule", (): void => {
     });
   });
 
+  test("rejects a punch when the user lacks attendance.submit for the project", async (): Promise<void> => {
+    // Seed a NO_PERMISSION role with an empty permission set and assign it to a separate user
+    prisma.seedRole("WORKER", []);
+    prisma.seedActiveSession("no-permission-user", "session-no-permission");
+    prisma.userRoles.push({
+      role: prisma.roles.get("WORKER") as RoleRecord,
+      scopeId: "project-1",
+      scopeType: "PROJECT",
+      userId: "no-permission-user"
+    });
+    // Give that user an active worker profile and membership so the service-level check passes
+    prisma.workerProfiles.set("worker-no-perm", {
+      id: "worker-no-perm",
+      phone: "13900000099",
+      projectMemberships: [
+        {
+          id: "worker-member-no-perm",
+          projectId: "project-1",
+          requiresAttendance: true,
+          status: "ACTIVE",
+          teamId: null,
+          workerId: "worker-no-perm"
+        }
+      ],
+      userId: "no-permission-user"
+    });
+
+    app = await createApp(prisma);
+    const noPermAccessToken = await createAccessToken(app, "no-permission-user", "session-no-permission");
+
+    await request(app.getHttpServer())
+      .post("/attendance/projects/project-1/records")
+      .set("Authorization", `Bearer ${noPermAccessToken}`)
+      .send(attendanceBody("2026-06-09", "SEGMENT_1_START", "2026-06-09T08:00:00.000+08:00", "31.2304000", "121.4737000"))
+      .expect(403);
+  });
+
   test("rejects attendance submission when the user has no active project membership", async (): Promise<void> => {
+    // Give unbound-user the WORKER role so the permission guard passes; the service then rejects on missing membership
+    prisma.userRoles.push({
+      role: prisma.roles.get("WORKER") as RoleRecord,
+      scopeId: "project-1",
+      scopeType: "PROJECT",
+      userId: "unbound-user"
+    });
+
     app = await createApp(prisma);
     const projectAdminAccessToken = await createAccessToken(app, "project-admin-user", "session-project-admin");
     const unboundAccessToken = await createAccessToken(app, "unbound-user", "session-unbound");
