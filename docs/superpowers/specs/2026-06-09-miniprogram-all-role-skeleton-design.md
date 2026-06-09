@@ -87,9 +87,7 @@ Authenticated endpoint (`AccessTokenGuard`) returning the data the client needs 
   "profile": { "type": "WORKER" | "MANAGER" | null, "id": "string | null" },
   "roles": {
     "assignments": [
-      { "roleCode": "TEAM_LEADER",
-        "scope": { "scopeType": "TEAM", "scopeId": "team-1",
-                   "companyId": "c1", "projectId": "p1", "teamId": "team-1" } }
+      { "roleCode": "TEAM_LEADER", "scope": { "scopeType": "TEAM", "scopeId": "team-1" } }
     ],
     "highestRoleCode": "TEAM_LEADER" | null
   }
