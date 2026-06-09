@@ -1,0 +1,24 @@
+:root {
+  /* surfaces */
+  --bg: #F3ECE1;
+  --surface: #FFFFFF;
+  --surface-sunk: #EDE4D6;
+  /* ink */
+  --ink: #2E2A26;
+  --ink-soft: #6B5D4D;
+  --line: #D8CDBB;
+  /* brand */
+  --clay: #C5512F;
+  --clay-pressed: #A8401F;
+  --clay-tint: #F6E4DB;
+  --steel: #3A4A4F;
+  /* status */
+  --gold: #E0B24A;
+  --success: #4F7A4E;
+  --danger: #B23B2E;
+  /* shape */
+  --radius-card: 24rpx;
+  --radius-pill: 999rpx;
+  --shadow-soft: 0 8rpx 24rpx rgba(58, 40, 24, 0.08);
+  --tap-min: 88rpx;
+}

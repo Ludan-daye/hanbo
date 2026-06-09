@@ -1,0 +1,8 @@
+@import "./styles/tokens.scss";
+
+page,
+.taro_router {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
