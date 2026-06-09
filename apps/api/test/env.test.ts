@@ -34,4 +34,15 @@ describe("loadEnv", () => {
   test("rejects WECHAT_DEV_LOGIN=true when NODE_ENV is production", () => {
     expect(() => loadEnv({ ...baseEnv(), NODE_ENV: "production", WECHAT_DEV_LOGIN: "true" })).toThrow();
   });
+
+  test("defaults FACE_SCORE_THRESHOLD to 80 and FACE_DEV_STUB to false", () => {
+    const env = loadEnv(baseEnv());
+    expect(env.FACE_SCORE_THRESHOLD).toBe(80);
+    expect(env.FACE_DEV_STUB).toBe(false);
+    expect(env.FACE_DEV_STUB_SCORE).toBe(95);
+  });
+
+  test("rejects FACE_DEV_STUB=true when NODE_ENV is production", () => {
+    expect(() => loadEnv({ ...baseEnv(), NODE_ENV: "production", FACE_DEV_STUB: "true" })).toThrow();
+  });
 });

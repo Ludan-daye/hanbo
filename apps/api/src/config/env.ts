@@ -11,6 +11,9 @@ const envSchema = z
     API_PORT: z.coerce.number().int().positive(),
     CORS_ALLOWED_ORIGINS: z.string().default(""),
     DATABASE_URL: z.string().min(1),
+    FACE_DEV_STUB: booleanStringSchema,
+    FACE_DEV_STUB_SCORE: z.coerce.number().min(0).max(100).default(95),
+    FACE_SCORE_THRESHOLD: z.coerce.number().min(0).max(100).default(80),
     FACE_SERVICE_API_KEY: z.string().min(1),
     FACE_SERVICE_BASE_URL: z.string().url(),
     JWT_ACCESS_TOKEN_SECRET: z.string().min(32),
@@ -20,6 +23,9 @@ const envSchema = z
     OBJECT_STORAGE_BUCKET: z.string().min(1),
     OBJECT_STORAGE_ENDPOINT: z.string().url(),
     OBJECT_STORAGE_SECRET_KEY: z.string().min(1),
+    TENCENT_FACE_REGION: z.string().default(""),
+    TENCENT_SECRET_ID: z.string().default(""),
+    TENCENT_SECRET_KEY: z.string().default(""),
     WECHAT_APP_ID: z.string().min(1),
     WECHAT_APP_SECRET: z.string().min(1),
     WECHAT_DEV_LOGIN: booleanStringSchema
@@ -30,6 +36,13 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         message: "WECHAT_DEV_LOGIN must be false in production",
         path: ["WECHAT_DEV_LOGIN"]
+      });
+    }
+    if (env.NODE_ENV === "production" && env.FACE_DEV_STUB) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "FACE_DEV_STUB must be false in production",
+        path: ["FACE_DEV_STUB"]
       });
     }
   });
