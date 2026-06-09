@@ -1042,9 +1042,10 @@ try {
 
 - [ ] **Step 2: Add the `seed:dev` script**
 
-In `apps/api/package.json`, add to `scripts`:
+In `apps/api/package.json`, add to `scripts` (the `--env-file=.env` is required: unlike
+`prisma db seed`, a direct `tsx` run does not load `.env`, so `DATABASE_URL` would be missing):
 ```json
-    "seed:dev": "tsx prisma/seed.dev.ts",
+    "seed:dev": "tsx --env-file=.env prisma/seed.dev.ts",
 ```
 
 - [ ] **Step 3: Run the dev seed against the local database**
