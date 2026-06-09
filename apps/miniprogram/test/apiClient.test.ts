@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 
 import Taro, { __setRequestHandler } from "@tarojs/taro";
-import { createApiClient } from "../src/services/apiClient.js";
+import { createApiClient } from "../src/services/apiClient";
 
 afterEach(() => {
   Taro.removeStorageSync("accessToken");

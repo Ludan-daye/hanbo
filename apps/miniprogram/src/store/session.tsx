@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useReducer, type PropsWithChildren } from "react";
 import Taro from "@tarojs/taro";
 
-import { fetchMe } from "../services/auth.js";
-import { initialSessionState, sessionPhase, sessionReducer, type SessionPhase, type SessionState } from "./sessionReducer.js";
+import { fetchMe } from "../services/auth";
+import { initialSessionState, sessionPhase, sessionReducer, type SessionPhase, type SessionState } from "./sessionReducer";
 
 type SessionContextValue = {
   readonly state: SessionState;

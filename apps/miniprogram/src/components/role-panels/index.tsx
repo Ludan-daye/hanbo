@@ -1,7 +1,7 @@
 import { View } from "@tarojs/components";
 
-import { Label, Tile, Title } from "../ui/index.js";
-import type { PanelKey } from "../../routing/roleHome.js";
+import { Label, Tile, Title } from "../ui/index";
+import type { PanelKey } from "../../routing/roleHome";
 
 const TILES: Record<PanelKey, { title: string; tiles: ReadonlyArray<{ title: string; sub: string }> }> = {
   companyAdmin: { title: "公司管理员", tiles: [{ title: "公司与项目", sub: "管理公司下的项目" }, { title: "人员", sub: "公司人员总览" }] },

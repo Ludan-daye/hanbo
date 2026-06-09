@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { roleHomePanel } from "../src/routing/roleHome.js";
+import { roleHomePanel } from "../src/routing/roleHome";
 
 describe("roleHomePanel", () => {
   test("maps each role to its panel key", () => {

@@ -1,9 +1,9 @@
 import Taro, { useDidShow } from "@tarojs/taro";
 
-import { Button, Screen, StateView } from "../../components/ui/index.js";
-import { RolePanel } from "../../components/role-panels/index.js";
-import { roleHomePanel } from "../../routing/roleHome.js";
-import { useSession } from "../../store/session.js";
+import { Button, Screen, StateView } from "../../components/ui/index";
+import { RolePanel } from "../../components/role-panels/index";
+import { roleHomePanel } from "../../routing/roleHome";
+import { useSession } from "../../store/session";
 
 export default function Home(): JSX.Element {
   const { phase, state, clear } = useSession();

@@ -1,4 +1,4 @@
-import type { RoleCode } from "../services/auth.types.js";
+import type { RoleCode } from "../services/auth.types";
 
 export type PanelKey = "worker" | "teamLeader" | "projectAdmin" | "companyAdmin" | "systemAdmin" | "none";
 

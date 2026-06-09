@@ -1,4 +1,4 @@
-import type { MeResponse } from "../services/auth.types.js";
+import type { MeResponse } from "../services/auth.types";
 
 export type SessionState = {
   readonly accessToken: string | null;

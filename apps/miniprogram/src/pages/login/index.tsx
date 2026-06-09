@@ -1,9 +1,9 @@
 import Taro, { useDidShow } from "@tarojs/taro";
 import { useState } from "react";
 
-import { Button, Label, Screen, Subtitle, Title } from "../../components/ui/index.js";
-import { devLogin } from "../../services/auth.js";
-import { useSession } from "../../store/session.js";
+import { Button, Label, Screen, Subtitle, Title } from "../../components/ui/index";
+import { devLogin } from "../../services/auth";
+import { useSession } from "../../store/session";
 
 const DEMO_ROLES: ReadonlyArray<{ code: string; label: string }> = [
   { code: "dev-worker", label: "工人" },

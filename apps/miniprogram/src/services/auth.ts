@@ -1,8 +1,8 @@
 import Taro from "@tarojs/taro";
 
-import { API_BASE_URL } from "../config/env.js";
-import { createApiClient } from "./apiClient.js";
-import type { LoginResponse, MeResponse } from "./auth.types.js";
+import { API_BASE_URL } from "../config/env";
+import { createApiClient } from "./apiClient";
+import type { LoginResponse, MeResponse } from "./auth.types";
 
 const client = createApiClient(API_BASE_URL);
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { initialSessionState, sessionPhase, sessionReducer } from "../src/store/sessionReducer.js";
+import { initialSessionState, sessionPhase, sessionReducer } from "../src/store/sessionReducer";
 
 const me = (over: Partial<{ isBound: boolean; highest: "WORKER" | null }> = {}) => ({
   user: { id: "u1", isBound: over.isBound ?? true, status: "ACTIVE" },

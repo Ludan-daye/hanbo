@@ -1,9 +1,9 @@
 import Taro from "@tarojs/taro";
 import { useState } from "react";
 
-import { Button, Field, Screen, Subtitle, Title } from "../../components/ui/index.js";
-import { bindByInvitation } from "../../services/auth.js";
-import { useSession } from "../../store/session.js";
+import { Button, Field, Screen, Subtitle, Title } from "../../components/ui/index";
+import { bindByInvitation } from "../../services/auth";
+import { useSession } from "../../store/session";
 
 export default function Bind(): JSX.Element {
   const { refreshMe, clear } = useSession();
