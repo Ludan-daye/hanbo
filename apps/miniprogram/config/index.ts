@@ -21,6 +21,9 @@ export default defineConfig<'webpack5'>(async (merge) => {
       "@tarojs/plugin-generator"
     ],
     defineConstants: {
+      // Inject the API base URL as a build-time literal so the browser bundle never
+      // references `process` at runtime. Taro does not auto-replace this TARO_APP_* var here.
+      "process.env.TARO_APP_API_BASE_URL": JSON.stringify(process.env.TARO_APP_API_BASE_URL || "http://localhost:3000")
     },
     copy: {
       patterns: [
