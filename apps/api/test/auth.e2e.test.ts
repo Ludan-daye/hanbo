@@ -219,6 +219,70 @@ type AuditLogCreateArgs = {
   };
 };
 
+type RoleFindUniqueArgs = {
+  where: {
+    code: string;
+  };
+};
+
+type RoleRecord = {
+  id: string;
+  code: string;
+};
+
+type ProjectWorkerMemberFindManyArgs = {
+  where: {
+    workerId: string;
+    status: string;
+  };
+};
+
+type ProjectWorkerMemberRecord = {
+  projectId: string;
+  workerId: string;
+  status: string;
+};
+
+type ProjectManagerMemberFindManyArgs = {
+  where: {
+    managerId: string;
+    status: string;
+  };
+};
+
+type ProjectManagerMemberRecord = {
+  projectId: string;
+  managerId: string;
+  roleCode: string;
+  status: string;
+  teamScopeId: string | null;
+};
+
+type UserRoleUpsertArgs = {
+  create: {
+    roleId: string;
+    scopeId: string;
+    scopeType: string;
+    userId: string;
+  };
+  update: Record<string, never>;
+  where: {
+    userId_roleId_scopeType_scopeId: {
+      roleId: string;
+      scopeId: string;
+      scopeType: string;
+      userId: string;
+    };
+  };
+};
+
+type UserRoleRecord = {
+  roleId: string;
+  scopeId: string;
+  scopeType: string;
+  userId: string;
+};
+
 const tokenHash = (value: string): string => createHash("sha256").update(value).digest("hex");
 
 class AuthPrismaTestDouble {
@@ -228,10 +292,52 @@ class AuthPrismaTestDouble {
   readonly managerProfiles = new Map<string, ManagerProfileRecord>();
   readonly bindingInvitations = new Map<string, BindingInvitationRecord>();
   readonly auditLogs: AuditLogCreateArgs["data"][] = [];
+  readonly userRoles: UserRoleRecord[] = [];
+  readonly seededRoles = new Map<string, RoleRecord>();
+  readonly workerMemberships: ProjectWorkerMemberRecord[] = [];
+  readonly managerMemberships: ProjectManagerMemberRecord[] = [];
   beforeTransaction: (() => void) | undefined = undefined;
 
   private userSequence = 0;
   private sessionSequence = 0;
+
+  readonly role = {
+    findUnique: async (args: RoleFindUniqueArgs): Promise<RoleRecord | null> =>
+      this.seededRoles.get(args.where.code) ?? null
+  };
+
+  readonly projectWorkerMember = {
+    findMany: async (args: ProjectWorkerMemberFindManyArgs): Promise<ProjectWorkerMemberRecord[]> =>
+      this.workerMemberships.filter(
+        (m: ProjectWorkerMemberRecord): boolean => m.workerId === args.where.workerId && m.status === args.where.status
+      )
+  };
+
+  readonly projectManagerMember = {
+    findMany: async (args: ProjectManagerMemberFindManyArgs): Promise<ProjectManagerMemberRecord[]> =>
+      this.managerMemberships.filter(
+        (m: ProjectManagerMemberRecord): boolean => m.managerId === args.where.managerId && m.status === args.where.status
+      )
+  };
+
+  readonly userRole = {
+    upsert: async (args: UserRoleUpsertArgs): Promise<UserRoleRecord> => {
+      const { userId, roleId, scopeType, scopeId } = args.create;
+      const existing = this.userRoles.find(
+        (r: UserRoleRecord): boolean =>
+          r.userId === userId &&
+          r.roleId === roleId &&
+          r.scopeType === scopeType &&
+          r.scopeId === scopeId
+      );
+      if (existing === undefined) {
+        const newRecord: UserRoleRecord = { userId, roleId, scopeType, scopeId };
+        this.userRoles.push(newRecord);
+        return newRecord;
+      }
+      return existing;
+    }
+  };
 
   readonly user = {
     create: async (args: UserCreateArgs): Promise<UserRecord> => {
@@ -749,5 +855,109 @@ describe("AuthModule", (): void => {
     expect(prisma.workerProfiles.get("worker-1")?.userId).toBe("other-user");
     expect(prisma.users.get("user-1")?.isBound).toBe(false);
     expect(prisma.bindingInvitations.get(tokenHash("invite-code-1"))?.acceptedByUserId).toBe("other-user");
+  });
+
+  test("binding a worker grants WORKER@PROJECT for each active membership", async (): Promise<void> => {
+    app = await createApp(prisma, new WechatConnectorTestDouble());
+    // seed the WORKER role
+    prisma.seededRoles.set("WORKER", { id: "role-WORKER", code: "WORKER" });
+    // seed worker profile
+    prisma.workerProfiles.set("worker-1", {
+      id: "worker-1",
+      phone: "13800000000",
+      userId: null
+    });
+    // seed an ACTIVE worker membership at project-1
+    prisma.workerMemberships.push({ projectId: "project-1", workerId: "worker-1", status: "ACTIVE" });
+    // seed a PENDING WORKER invitation for worker-1
+    prisma.bindingInvitations.set(tokenHash("invite-worker-roles"), {
+      acceptedByUserId: null,
+      codeHash: tokenHash("invite-worker-roles"),
+      expiresAt: new Date(Date.now() + 60_000),
+      id: "invitation-worker-roles",
+      managerProfileId: null,
+      status: "PENDING",
+      targetType: "WORKER",
+      usedAt: null,
+      workerProfileId: "worker-1"
+    });
+
+    // login as an unbound user
+    const loginResponse = await request(app.getHttpServer())
+      .post("/auth/wechat/login")
+      .send({ code: "worker-roles-code" })
+      .expect(201);
+
+    // bind with the invitation
+    await request(app.getHttpServer())
+      .post("/auth/bind")
+      .set("Authorization", `Bearer ${loginResponse.body.accessToken}`)
+      .send({ invitationCode: "invite-worker-roles" })
+      .expect(201)
+      .expect({ profileId: "worker-1", targetType: "WORKER" });
+
+    // expect the WORKER@PROJECT role was granted for project-1
+    const userId = loginResponse.body.user.id as string;
+    expect(prisma.userRoles).toContainEqual({
+      userId,
+      roleId: "role-WORKER",
+      scopeType: "PROJECT",
+      scopeId: "project-1"
+    });
+  });
+
+  test("binding a manager grants their role-code at TEAM scope (teamScopeId) for active memberships", async (): Promise<void> => {
+    app = await createApp(prisma, new WechatConnectorTestDouble());
+    // seed TEAM_LEADER role
+    prisma.seededRoles.set("TEAM_LEADER", { id: "role-TEAM_LEADER", code: "TEAM_LEADER" });
+    // seed manager profile
+    prisma.managerProfiles.set("manager-1", {
+      id: "manager-1",
+      phone: "13800000001",
+      userId: null
+    });
+    // seed an ACTIVE manager membership at project-1 with teamScopeId "team-1" and roleCode TEAM_LEADER
+    prisma.managerMemberships.push({
+      projectId: "project-1",
+      managerId: "manager-1",
+      roleCode: "TEAM_LEADER",
+      status: "ACTIVE",
+      teamScopeId: "team-1"
+    });
+    // seed a PENDING MANAGER invitation for manager-1
+    prisma.bindingInvitations.set(tokenHash("invite-manager-roles"), {
+      acceptedByUserId: null,
+      codeHash: tokenHash("invite-manager-roles"),
+      expiresAt: new Date(Date.now() + 60_000),
+      id: "invitation-manager-roles",
+      managerProfileId: "manager-1",
+      status: "PENDING",
+      targetType: "MANAGER",
+      usedAt: null,
+      workerProfileId: null
+    });
+
+    // login as a fresh unbound user
+    const loginResponse = await request(app.getHttpServer())
+      .post("/auth/wechat/login")
+      .send({ code: "manager-roles-code" })
+      .expect(201);
+
+    // bind with the invitation
+    await request(app.getHttpServer())
+      .post("/auth/bind")
+      .set("Authorization", `Bearer ${loginResponse.body.accessToken}`)
+      .send({ invitationCode: "invite-manager-roles" })
+      .expect(201)
+      .expect({ profileId: "manager-1", targetType: "MANAGER" });
+
+    // expect TEAM_LEADER@TEAM role was granted at team scope team-1
+    const userId = loginResponse.body.user.id as string;
+    expect(prisma.userRoles).toContainEqual({
+      userId,
+      roleId: "role-TEAM_LEADER",
+      scopeType: "TEAM",
+      scopeId: "team-1"
+    });
   });
 });

@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import type { BindingInvitation, ManagerProfile, User, WorkerProfile } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { getHighestRoleCode } from "@construction/domain/roles.js";
 
 import { AuthorizationContextService } from "../authorization/authorization-context.service.js";
@@ -411,6 +412,8 @@ export class AuthService {
         userId
       });
 
+      await this.grantWorkerMembershipRoles(transaction, userId, workerProfileId);
+
       await transaction.auditLog.create({
         data: {
           action: "auth.bind.worker",
@@ -494,6 +497,8 @@ export class AuthService {
         userId
       });
 
+      await this.grantManagerMembershipRoles(transaction, userId, managerProfileId);
+
       await transaction.auditLog.create({
         data: {
           action: "auth.bind.manager",
@@ -511,6 +516,67 @@ export class AuthService {
         targetType: "MANAGER"
       };
     });
+  }
+
+  private async grantWorkerMembershipRoles(
+    transaction: Prisma.TransactionClient,
+    userId: string,
+    workerProfileId: string
+  ): Promise<void> {
+    const memberships = await transaction.projectWorkerMember.findMany({
+      where: { status: "ACTIVE", workerId: workerProfileId }
+    });
+    if (memberships.length === 0) {
+      return;
+    }
+    const role = await transaction.role.findUnique({ where: { code: "WORKER" } });
+    if (role === null) {
+      throw new ConflictException({ message: "WORKER_ROLE_NOT_FOUND" });
+    }
+    for (const membership of memberships) {
+      await transaction.userRole.upsert({
+        create: { roleId: role.id, scopeId: membership.projectId, scopeType: "PROJECT", userId },
+        update: {},
+        where: {
+          userId_roleId_scopeType_scopeId: {
+            roleId: role.id,
+            scopeId: membership.projectId,
+            scopeType: "PROJECT",
+            userId
+          }
+        }
+      });
+    }
+  }
+
+  private async grantManagerMembershipRoles(
+    transaction: Prisma.TransactionClient,
+    userId: string,
+    managerProfileId: string
+  ): Promise<void> {
+    const memberships = await transaction.projectManagerMember.findMany({
+      where: { managerId: managerProfileId, status: "ACTIVE" }
+    });
+    for (const membership of memberships) {
+      const role = await transaction.role.findUnique({ where: { code: membership.roleCode } });
+      if (role === null) {
+        throw new ConflictException({ message: "MANAGER_ROLE_NOT_FOUND", roleCode: membership.roleCode });
+      }
+      const scopeType = membership.teamScopeId !== null ? "TEAM" : "PROJECT";
+      const scopeId = membership.teamScopeId !== null ? membership.teamScopeId : membership.projectId;
+      await transaction.userRole.upsert({
+        create: { roleId: role.id, scopeId, scopeType, userId },
+        update: {},
+        where: {
+          userId_roleId_scopeType_scopeId: {
+            roleId: role.id,
+            scopeId,
+            scopeType,
+            userId
+          }
+        }
+      });
+    }
   }
 
   private async createAccessToken(user: User, sessionId: string): Promise<string> {
