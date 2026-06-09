@@ -1,0 +1,29 @@
+{
+  "name": "@construction/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./attendance.js": {
+      "types": "./src/attendance.ts",
+      "default": "./dist/attendance.js"
+    },
+    "./roles.js": {
+      "types": "./src/roles.ts",
+      "default": "./dist/roles.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "vitest run",
+    "lint": "tsc --noEmit --project tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.json && tsc --project tsconfig.test.json"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  }
+}

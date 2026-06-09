@@ -1,0 +1,792 @@
+import { JwtService } from "@nestjs/jwt";
+import { Test } from "@nestjs/testing";
+import type { INestApplication } from "@nestjs/common";
+import type { RoleCode } from "@construction/domain";
+import request from "supertest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+
+import { AuthModule } from "../src/auth/auth.module.js";
+import { AuthorizationModule } from "../src/authorization/authorization.module.js";
+import { PrismaService } from "../src/infrastructure/database/prisma.service.js";
+import { ReportsModule } from "../src/reports/reports.module.js";
+
+type UserStatusValue = "ACTIVE" | "DISABLED";
+type ScopeTypeValue = "GLOBAL" | "COMPANY" | "PROJECT" | "TEAM";
+type ProfileOwnerTypeValue = "WORKER" | "MANAGER";
+type MemberStatusValue = "ACTIVE" | "EXITED" | "SUSPENDED";
+
+type UserRecord = {
+  readonly id: string;
+  readonly sessionVersion: number;
+  readonly status: UserStatusValue;
+};
+
+type SessionRecord = {
+  readonly expiresAt: Date;
+  readonly id: string;
+  readonly revokedAt: Date | null;
+  readonly user: UserRecord;
+  readonly userId: string;
+};
+
+type ProjectRecord = {
+  readonly companyId: string;
+  readonly id: string;
+};
+
+type RolePermissionRecord = {
+  readonly permission: {
+    readonly code: string;
+  };
+};
+
+type RoleRecord = {
+  readonly code: RoleCode;
+  readonly id: string;
+  readonly permissions: readonly RolePermissionRecord[];
+};
+
+type UserRoleRecord = {
+  readonly role: RoleRecord;
+  readonly scopeId: string;
+  readonly scopeType: ScopeTypeValue;
+  readonly userId: string;
+};
+
+type TeamRecord = {
+  readonly id: string;
+  readonly name: string;
+  readonly projectId: string;
+};
+
+type WorkerProfileRecord = {
+  readonly id: string;
+  readonly phone: string;
+  readonly workType: string;
+};
+
+type ManagerProfileRecord = {
+  readonly id: string;
+  readonly name: string;
+  readonly phone: string;
+};
+
+type ProjectWorkerMemberRecord = {
+  readonly id: string;
+  readonly projectId: string;
+  readonly projectRoleLabel: string;
+  readonly requiresAttendance: boolean;
+  readonly status: MemberStatusValue;
+  readonly team: TeamRecord | null;
+  readonly teamId: string | null;
+  readonly worker: WorkerProfileRecord;
+  readonly workerId: string;
+};
+
+type ProjectManagerMemberRecord = {
+  readonly id: string;
+  readonly manager: ManagerProfileRecord;
+  readonly managerId: string;
+  readonly projectId: string;
+  readonly requiresAttendance: boolean;
+  readonly roleCode: RoleCode;
+  readonly status: MemberStatusValue;
+  readonly teamScope: TeamRecord | null;
+  readonly teamScopeId: string | null;
+};
+
+type AttendanceResultRecord = {
+  readonly abnormalRecordCount: number;
+  readonly approvedMakeupCount: number;
+  readonly attendanceDate: Date;
+  readonly id: string;
+  readonly isAbsent: boolean;
+  readonly isEarlyLeave: boolean;
+  readonly isLate: boolean;
+  readonly isMissingPunch: boolean;
+  readonly participantId: string;
+  readonly participantType: ProfileOwnerTypeValue;
+  readonly projectId: string;
+  readonly workedMinutes: number;
+};
+
+type ScheduleRecord = {
+  readonly endsOn: Date | null;
+  readonly id: string;
+  readonly ownerId: string;
+  readonly ownerType: string;
+  readonly shiftId: string;
+  readonly startsOn: Date;
+  readonly workdayMask: number;
+};
+
+type UserSessionFindUniqueArgs = {
+  readonly where: {
+    readonly id: string;
+  };
+};
+
+type UserRoleFindManyArgs = {
+  readonly where: {
+    readonly userId: string;
+  };
+};
+
+type ProjectFindUniqueArgs = {
+  readonly where: {
+    readonly id: string;
+  };
+};
+
+type ProjectMemberFindManyArgs = {
+  readonly include: {
+    readonly manager?: boolean;
+    readonly team?: boolean;
+    readonly teamScope?: boolean;
+    readonly worker?: boolean;
+  };
+  readonly where: {
+    readonly projectId: string;
+    readonly requiresAttendance: boolean;
+    readonly status: "ACTIVE";
+  };
+};
+
+type AttendanceResultFindManyArgs = {
+  readonly where: {
+    readonly attendanceDate: {
+      readonly gte: Date;
+      readonly lte: Date;
+    };
+    readonly projectId: string;
+  };
+};
+
+type ScheduleFindManyArgs = {
+  readonly where: {
+    readonly OR?: readonly [
+      {
+        readonly endsOn: null;
+      },
+      {
+        readonly endsOn: {
+          readonly gte: Date;
+        };
+      }
+    ];
+    readonly ownerId: string;
+    readonly ownerType: string;
+    readonly startsOn?: {
+      readonly lte: Date;
+    };
+  };
+};
+
+const applyTestEnv = (): void => {
+  process.env.AUTH_REFRESH_TOKEN_TTL_SECONDS = "2592000";
+  process.env.API_PORT = "3000";
+  process.env.DATABASE_URL = "postgresql://construction:construction@localhost:5432/construction_personnel?schema=public";
+  process.env.FACE_SERVICE_API_KEY = "face-service-key";
+  process.env.FACE_SERVICE_BASE_URL = "http://localhost:8000";
+  process.env.JWT_ACCESS_TOKEN_SECRET = "test-jwt-secret-with-at-least-32-characters";
+  process.env.JWT_ACCESS_TOKEN_TTL_SECONDS = "900";
+  process.env.NODE_ENV = "test";
+  process.env.OBJECT_STORAGE_ACCESS_KEY = "object-storage-access-key";
+  process.env.OBJECT_STORAGE_BUCKET = "construction-personnel";
+  process.env.OBJECT_STORAGE_ENDPOINT = "http://localhost:9000";
+  process.env.OBJECT_STORAGE_SECRET_KEY = "object-storage-secret-key";
+  process.env.WECHAT_APP_ID = "wechat-app-id";
+  process.env.WECHAT_APP_SECRET = "wechat-app-secret";
+};
+
+class ReportsPrismaTestDouble {
+  readonly users = new Map<string, UserRecord>();
+  readonly sessions = new Map<string, SessionRecord>();
+  readonly projects = new Map<string, ProjectRecord>();
+  readonly roles = new Map<RoleCode, RoleRecord>();
+  readonly userRoles: UserRoleRecord[] = [];
+  readonly workerMembers: ProjectWorkerMemberRecord[] = [];
+  readonly managerMembers: ProjectManagerMemberRecord[] = [];
+  readonly attendanceResults: AttendanceResultRecord[] = [];
+  readonly schedules: ScheduleRecord[] = [];
+
+  readonly userSession = {
+    findUnique: async (args: UserSessionFindUniqueArgs): Promise<SessionRecord | null> =>
+      this.sessions.get(args.where.id) ?? null
+  };
+
+  readonly role = {
+    findMany: async (): Promise<RoleRecord[]> => Array.from(this.roles.values())
+  };
+
+  readonly userRole = {
+    findMany: async (args: UserRoleFindManyArgs): Promise<UserRoleRecord[]> =>
+      this.userRoles.filter((userRole: UserRoleRecord): boolean => userRole.userId === args.where.userId)
+  };
+
+  readonly project = {
+    findUnique: async (args: ProjectFindUniqueArgs): Promise<ProjectRecord | null> => this.projects.get(args.where.id) ?? null
+  };
+
+  readonly projectWorkerMember = {
+    findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectWorkerMemberRecord[]> =>
+      this.workerMembers.filter(
+        (member: ProjectWorkerMemberRecord): boolean =>
+          member.projectId === args.where.projectId &&
+          member.status === args.where.status &&
+          member.requiresAttendance === args.where.requiresAttendance
+      )
+  };
+
+  readonly projectManagerMember = {
+    findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectManagerMemberRecord[]> =>
+      this.managerMembers.filter(
+        (member: ProjectManagerMemberRecord): boolean =>
+          member.projectId === args.where.projectId &&
+          member.status === args.where.status &&
+          member.requiresAttendance === args.where.requiresAttendance
+      )
+  };
+
+  readonly attendanceResult = {
+    findMany: async (args: AttendanceResultFindManyArgs): Promise<AttendanceResultRecord[]> =>
+      this.attendanceResults.filter(
+        (result: AttendanceResultRecord): boolean =>
+          result.projectId === args.where.projectId &&
+          result.attendanceDate.getTime() >= args.where.attendanceDate.gte.getTime() &&
+          result.attendanceDate.getTime() <= args.where.attendanceDate.lte.getTime()
+      )
+  };
+
+  readonly schedule = {
+    findMany: async (args: ScheduleFindManyArgs): Promise<ScheduleRecord[]> =>
+      this.schedules.filter((schedule: ScheduleRecord): boolean => {
+        const isOwnerMatched = schedule.ownerId === args.where.ownerId && schedule.ownerType === args.where.ownerType;
+        const isStarted = args.where.startsOn === undefined || schedule.startsOn.getTime() <= args.where.startsOn.lte.getTime();
+        const rangeStartDate = args.where.OR?.[1].endsOn.gte;
+        const isNotEnded = rangeStartDate === undefined || schedule.endsOn === null || schedule.endsOn.getTime() >= rangeStartDate.getTime();
+
+        return isOwnerMatched && isStarted && isNotEnded;
+      })
+  };
+
+  seedRole(roleCode: RoleCode, permissionCodes: readonly string[]): void {
+    this.roles.set(roleCode, {
+      code: roleCode,
+      id: `role-${roleCode}`,
+      permissions: permissionCodes.map(
+        (permissionCode: string): RolePermissionRecord => ({
+          permission: {
+            code: permissionCode
+          }
+        })
+      )
+    });
+  }
+
+  seedActiveSession(userId: string, sessionId: string): void {
+    const user: UserRecord = {
+      id: userId,
+      sessionVersion: 1,
+      status: "ACTIVE"
+    };
+    this.users.set(userId, user);
+    this.sessions.set(sessionId, {
+      expiresAt: new Date(Date.now() + 60_000),
+      id: sessionId,
+      revokedAt: null,
+      user,
+      userId
+    });
+  }
+}
+
+const seedDirectRolePermissions = (prisma: ReportsPrismaTestDouble): void => {
+  prisma.seedRole("SYSTEM_ADMIN", ["system.manage"]);
+  prisma.seedRole("COMPANY_ADMIN", ["company.manage", "project.create"]);
+  prisma.seedRole("PROJECT_ADMIN", [
+    "attendance.view",
+    "binding.invitation.create",
+    "project.manage",
+    "team.manage",
+    "worker.manage"
+  ]);
+  prisma.seedRole("TEAM_LEADER", ["attendance.view", "makeup.approve"]);
+  prisma.seedRole("WORKER", ["attendance.submit", "makeup.request"]);
+};
+
+const createApp = async (prisma: ReportsPrismaTestDouble): Promise<INestApplication> => {
+  const moduleRef = await Test.createTestingModule({
+    imports: [AuthModule, AuthorizationModule, ReportsModule]
+  })
+    .overrideProvider(PrismaService)
+    .useValue(prisma)
+    .compile();
+
+  const app = moduleRef.createNestApplication();
+  await app.init();
+  return app;
+};
+
+const createAccessToken = async (app: INestApplication, userId: string, sessionId: string): Promise<string> => {
+  const jwtService = app.get(JwtService);
+  const secret = process.env.JWT_ACCESS_TOKEN_SECRET;
+
+  if (secret === undefined) {
+    throw new Error(
+      JSON.stringify({
+        message: "Missing JWT test secret"
+      })
+    );
+  }
+
+  return jwtService.signAsync(
+    {
+      sid: sessionId,
+      sub: userId,
+      sv: 1
+    },
+    {
+      secret
+    }
+  );
+};
+
+describe("ReportsModule", (): void => {
+  let app: INestApplication | undefined;
+  let prisma: ReportsPrismaTestDouble;
+
+  beforeEach((): void => {
+    applyTestEnv();
+    prisma = new ReportsPrismaTestDouble();
+    seedDirectRolePermissions(prisma);
+    prisma.seedActiveSession("viewer-user", "session-viewer");
+    prisma.seedActiveSession("worker-user", "session-worker");
+    prisma.projects.set("project-1", {
+      companyId: "company-1",
+      id: "project-1"
+    });
+    prisma.userRoles.push({
+      role: prisma.roles.get("PROJECT_ADMIN") as RoleRecord,
+      scopeId: "project-1",
+      scopeType: "PROJECT",
+      userId: "viewer-user"
+    });
+    const team: TeamRecord = {
+      id: "team-1",
+      name: "Steel Team",
+      projectId: "project-1"
+    };
+    prisma.workerMembers.push({
+      id: "worker-member-1",
+      projectId: "project-1",
+      projectRoleLabel: "Welder",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team,
+      teamId: "team-1",
+      worker: {
+        id: "worker-1",
+        phone: "13800000001",
+        workType: "Steel"
+      },
+      workerId: "worker-1"
+    });
+    prisma.workerMembers.push({
+      id: "worker-member-2",
+      projectId: "project-1",
+      projectRoleLabel: "Carpenter",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team,
+      teamId: "team-1",
+      worker: {
+        id: "worker-2",
+        phone: "13800000003",
+        workType: "Woodwork"
+      },
+      workerId: "worker-2"
+    });
+    prisma.managerMembers.push({
+      id: "manager-member-1",
+      manager: {
+        id: "manager-1",
+        name: "Team Lead Zhang",
+        phone: "13800000002"
+      },
+      managerId: "manager-1",
+      projectId: "project-1",
+      requiresAttendance: true,
+      roleCode: "TEAM_LEADER",
+      status: "ACTIVE",
+      teamScope: team,
+      teamScopeId: "team-1"
+    });
+    prisma.attendanceResults.push(
+      {
+        abnormalRecordCount: 1,
+        approvedMakeupCount: 1,
+        attendanceDate: new Date("2026-06-03T00:00:00.000Z"),
+        id: "result-worker-day",
+        isAbsent: false,
+        isEarlyLeave: false,
+        isLate: true,
+        isMissingPunch: false,
+        participantId: "worker-1",
+        participantType: "WORKER",
+        projectId: "project-1",
+        workedMinutes: 480
+      },
+      {
+        abnormalRecordCount: 0,
+        approvedMakeupCount: 0,
+        attendanceDate: new Date("2026-06-04T00:00:00.000Z"),
+        id: "result-worker-second-day",
+        isAbsent: false,
+        isEarlyLeave: true,
+        isLate: false,
+        isMissingPunch: true,
+        participantId: "worker-1",
+        participantType: "WORKER",
+        projectId: "project-1",
+        workedMinutes: 300
+      },
+      {
+        abnormalRecordCount: 0,
+        approvedMakeupCount: 0,
+        attendanceDate: new Date("2026-06-03T00:00:00.000Z"),
+        id: "result-manager-day",
+        isAbsent: false,
+        isEarlyLeave: false,
+        isLate: false,
+        isMissingPunch: false,
+        participantId: "manager-1",
+        participantType: "MANAGER",
+        projectId: "project-1",
+        workedMinutes: 515
+      }
+    );
+  });
+
+  afterEach(async (): Promise<void> => {
+    if (app !== undefined) {
+      await app.close();
+      app = undefined;
+    }
+  });
+
+  test("daily report requires attendance view and includes absent participants without results", async (): Promise<void> => {
+    app = await createApp(prisma);
+    const workerAccessToken = await createAccessToken(app, "worker-user", "session-worker");
+    const viewerAccessToken = await createAccessToken(app, "viewer-user", "session-viewer");
+
+    await request(app.getHttpServer())
+      .get("/reports/projects/project-1/daily?date=2026-06-03")
+      .set("Authorization", `Bearer ${workerAccessToken}`)
+      .expect(403);
+
+    const response = await request(app.getHttpServer())
+      .get("/reports/projects/project-1/daily?date=2026-06-03")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      endDate: "2026-06-03",
+      participants: [
+        {
+          abnormalRecordCount: 1,
+          approvedMakeupCount: 1,
+          displayName: null,
+          isAbsent: false,
+          isEarlyLeave: false,
+          isLate: true,
+          isMissingPunch: false,
+          memberId: "worker-member-1",
+          memberStatus: "ACTIVE",
+          participantId: "worker-1",
+          participantType: "WORKER",
+          phone: "13800000001",
+          projectRoleLabel: "Welder",
+          requiresAttendance: true,
+          teamId: "team-1",
+          teamName: "Steel Team",
+          workType: "Steel",
+          workedMinutes: 480
+        },
+        {
+          abnormalRecordCount: 0,
+          approvedMakeupCount: 0,
+          displayName: null,
+          isAbsent: true,
+          isEarlyLeave: false,
+          isLate: false,
+          isMissingPunch: true,
+          memberId: "worker-member-2",
+          memberStatus: "ACTIVE",
+          participantId: "worker-2",
+          participantType: "WORKER",
+          phone: "13800000003",
+          projectRoleLabel: "Carpenter",
+          requiresAttendance: true,
+          teamId: "team-1",
+          teamName: "Steel Team",
+          workType: "Woodwork",
+          workedMinutes: 0
+        },
+        {
+          abnormalRecordCount: 0,
+          approvedMakeupCount: 0,
+          displayName: "Team Lead Zhang",
+          isAbsent: false,
+          isEarlyLeave: false,
+          isLate: false,
+          isMissingPunch: false,
+          memberId: "manager-member-1",
+          memberStatus: "ACTIVE",
+          participantId: "manager-1",
+          participantType: "MANAGER",
+          phone: "13800000002",
+          projectRoleLabel: "TEAM_LEADER",
+          requiresAttendance: true,
+          teamId: "team-1",
+          teamName: "Steel Team",
+          workType: null,
+          workedMinutes: 515
+        }
+      ],
+      periodType: "DAILY",
+      projectId: "project-1",
+      startDate: "2026-06-03",
+      totals: {
+        abnormalRecordCount: 1,
+        absenceCount: 1,
+        actualAttendedDays: 2,
+        approvedMakeupCount: 1,
+        earlyLeaveCount: 0,
+        lateCount: 1,
+        missingPunchCount: 1,
+        participantCount: 3,
+        scheduledDays: 3,
+        workedMinutes: 995
+      }
+    });
+  });
+
+  test("weekly and monthly reports aggregate natural day ranges", async (): Promise<void> => {
+    app = await createApp(prisma);
+    const viewerAccessToken = await createAccessToken(app, "viewer-user", "session-viewer");
+
+    const weeklyResponse = await request(app.getHttpServer())
+      .get("/reports/projects/project-1/weekly?weekStartDate=2026-06-01")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    expect(weeklyResponse.body).toMatchObject({
+      endDate: "2026-06-07",
+      periodType: "WEEKLY",
+      projectId: "project-1",
+      startDate: "2026-06-01",
+      totals: {
+        abnormalRecordCount: 1,
+        absenceCount: 18,
+        actualAttendedDays: 3,
+        approvedMakeupCount: 1,
+        earlyLeaveCount: 1,
+        lateCount: 1,
+        missingPunchCount: 19,
+        participantCount: 3,
+        scheduledDays: 21,
+        workedMinutes: 1295
+      }
+    });
+    expect(weeklyResponse.body.participants).toEqual([
+      expect.objectContaining({
+        absenceCount: 5,
+        actualAttendedDays: 2,
+        participantId: "worker-1",
+        workedMinutes: 780
+      }),
+      expect.objectContaining({
+        absenceCount: 7,
+        actualAttendedDays: 0,
+        participantId: "worker-2",
+        workedMinutes: 0
+      }),
+      expect.objectContaining({
+        absenceCount: 6,
+        actualAttendedDays: 1,
+        participantId: "manager-1",
+        workedMinutes: 515
+      })
+    ]);
+
+    const monthlyResponse = await request(app.getHttpServer())
+      .get("/reports/projects/project-1/monthly?month=2026-06")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    expect(monthlyResponse.body).toMatchObject({
+      endDate: "2026-06-30",
+      periodType: "MONTHLY",
+      projectId: "project-1",
+      startDate: "2026-06-01",
+      totals: {
+        absenceCount: 87,
+        actualAttendedDays: 3,
+        participantCount: 3,
+        scheduledDays: 90,
+        workedMinutes: 1295
+      }
+    });
+  });
+
+  test("weekly and monthly reports count only scheduled workdays when a project schedule exists", async (): Promise<void> => {
+    app = await createApp(prisma);
+    const viewerAccessToken = await createAccessToken(app, "viewer-user", "session-viewer");
+    prisma.schedules.push({
+      endsOn: new Date("2026-06-30T00:00:00.000Z"),
+      id: "schedule-1",
+      ownerId: "project-1",
+      ownerType: "PROJECT",
+      shiftId: "shift-1",
+      startsOn: new Date("2026-06-01T00:00:00.000Z"),
+      workdayMask: 63
+    });
+    prisma.attendanceResults.push({
+      abnormalRecordCount: 0,
+      approvedMakeupCount: 0,
+      attendanceDate: new Date("2026-06-07T00:00:00.000Z"),
+      id: "result-worker-rest-day",
+      isAbsent: false,
+      isEarlyLeave: false,
+      isLate: false,
+      isMissingPunch: false,
+      participantId: "worker-1",
+      participantType: "WORKER",
+      projectId: "project-1",
+      workedMinutes: 480
+    });
+
+    const dailyRestResponse = await request(app.getHttpServer())
+      .get("/reports/projects/project-1/daily?date=2026-06-07")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    expect(dailyRestResponse.body).toMatchObject({
+      endDate: "2026-06-07",
+      periodType: "DAILY",
+      projectId: "project-1",
+      startDate: "2026-06-07",
+      totals: {
+        absenceCount: 0,
+        actualAttendedDays: 1,
+        missingPunchCount: 0,
+        participantCount: 3,
+        scheduledDays: 0,
+        workedMinutes: 480
+      }
+    });
+    expect(dailyRestResponse.body.participants).toEqual([
+      expect.objectContaining({
+        isAbsent: false,
+        isMissingPunch: false,
+        participantId: "worker-1",
+        workedMinutes: 480
+      }),
+      expect.objectContaining({
+        isAbsent: false,
+        isMissingPunch: false,
+        participantId: "worker-2",
+        workedMinutes: 0
+      }),
+      expect.objectContaining({
+        isAbsent: false,
+        isMissingPunch: false,
+        participantId: "manager-1",
+        workedMinutes: 0
+      })
+    ]);
+
+    const weeklyResponse = await request(app.getHttpServer())
+      .get("/reports/projects/project-1/weekly?weekStartDate=2026-06-01")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    expect(weeklyResponse.body).toMatchObject({
+      endDate: "2026-06-07",
+      periodType: "WEEKLY",
+      projectId: "project-1",
+      startDate: "2026-06-01",
+      totals: {
+        absenceCount: 15,
+        actualAttendedDays: 4,
+        missingPunchCount: 16,
+        participantCount: 3,
+        scheduledDays: 18,
+        workedMinutes: 1775
+      }
+    });
+    expect(weeklyResponse.body.participants).toEqual([
+      expect.objectContaining({
+        absenceCount: 4,
+        actualAttendedDays: 3,
+        participantId: "worker-1",
+        scheduledDays: 6,
+        workedMinutes: 1260
+      }),
+      expect.objectContaining({
+        absenceCount: 6,
+        actualAttendedDays: 0,
+        participantId: "worker-2",
+        scheduledDays: 6,
+        workedMinutes: 0
+      }),
+      expect.objectContaining({
+        absenceCount: 5,
+        actualAttendedDays: 1,
+        participantId: "manager-1",
+        scheduledDays: 6,
+        workedMinutes: 515
+      })
+    ]);
+
+    const monthlyResponse = await request(app.getHttpServer())
+      .get("/reports/projects/project-1/monthly?month=2026-06")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    expect(monthlyResponse.body).toMatchObject({
+      endDate: "2026-06-30",
+      periodType: "MONTHLY",
+      projectId: "project-1",
+      startDate: "2026-06-01",
+      totals: {
+        absenceCount: 75,
+        actualAttendedDays: 4,
+        participantCount: 3,
+        scheduledDays: 78,
+        workedMinutes: 1775
+      }
+    });
+
+    const outsideScheduleResponse = await request(app.getHttpServer())
+      .get("/reports/projects/project-1/daily?date=2026-07-01")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    expect(outsideScheduleResponse.body).toMatchObject({
+      endDate: "2026-07-01",
+      periodType: "DAILY",
+      projectId: "project-1",
+      startDate: "2026-07-01",
+      totals: {
+        absenceCount: 0,
+        actualAttendedDays: 0,
+        missingPunchCount: 0,
+        participantCount: 3,
+        scheduledDays: 0,
+        workedMinutes: 0
+      }
+    });
+  });
+});

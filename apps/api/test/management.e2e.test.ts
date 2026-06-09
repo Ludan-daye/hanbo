@@ -1,0 +1,846 @@
+import { JwtService } from "@nestjs/jwt";
+import { Test } from "@nestjs/testing";
+import type { INestApplication } from "@nestjs/common";
+import type { RoleCode } from "@construction/domain";
+import request from "supertest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+
+import { AuthModule } from "../src/auth/auth.module.js";
+import { AuthorizationModule } from "../src/authorization/authorization.module.js";
+import { PrismaService } from "../src/infrastructure/database/prisma.service.js";
+import { ManagementModule } from "../src/management/management.module.js";
+
+type UserStatusValue = "ACTIVE" | "DISABLED";
+type ScopeTypeValue = "GLOBAL" | "COMPANY" | "PROJECT" | "TEAM";
+type ProjectStatusValue = "PREPARING" | "ACTIVE" | "SUSPENDED" | "COMPLETED";
+type MemberStatusValue = "ACTIVE" | "EXITED" | "SUSPENDED";
+
+type UserRecord = {
+  readonly id: string;
+  readonly sessionVersion: number;
+  readonly status: UserStatusValue;
+};
+
+type SessionRecord = {
+  readonly expiresAt: Date;
+  readonly id: string;
+  readonly revokedAt: Date | null;
+  readonly user: UserRecord;
+  readonly userId: string;
+};
+
+type CompanyRecord = {
+  readonly createdAt: Date;
+  readonly id: string;
+  readonly name: string;
+  readonly status: string;
+  readonly updatedAt: Date;
+};
+
+type ProjectRecord = {
+  readonly address: string;
+  readonly centerLatitude: string;
+  readonly centerLongitude: string;
+  readonly companyId: string;
+  readonly createdAt: Date;
+  readonly geofenceRadiusM: number;
+  readonly id: string;
+  readonly name: string;
+  readonly plannedEndDate: Date | null;
+  readonly plannedStartDate: Date;
+  readonly status: ProjectStatusValue;
+  readonly updatedAt: Date;
+};
+
+type TeamRecord = {
+  readonly createdAt: Date;
+  readonly id: string;
+  readonly name: string;
+  readonly project?: ProjectRecord;
+  readonly projectId: string;
+  readonly status: string;
+  readonly updatedAt: Date;
+};
+
+type WorkerProfileRecord = {
+  readonly encryptedIdNumber: string;
+  readonly encryptedName: string;
+  readonly employmentStatus: string;
+  readonly faceProfileStatus: string;
+  readonly id: string;
+  readonly idNumberHash: string;
+  readonly phone: string;
+  readonly realNameStatus: string;
+  readonly workType: string;
+};
+
+type ManagerProfileRecord = {
+  readonly id: string;
+  readonly name: string;
+  readonly phone: string;
+  readonly status: string;
+};
+
+type ProjectWorkerMemberRecord = {
+  readonly enteredAt: Date;
+  readonly exitedAt: Date | null;
+  readonly id: string;
+  readonly projectId: string;
+  readonly projectRoleLabel: string;
+  readonly requiresAttendance: boolean;
+  readonly status: MemberStatusValue;
+  readonly team: TeamRecord | null;
+  readonly teamId: string | null;
+  readonly worker: WorkerProfileRecord;
+  readonly workerId: string;
+};
+
+type ProjectManagerMemberRecord = {
+  readonly id: string;
+  readonly manager: ManagerProfileRecord;
+  readonly managerId: string;
+  readonly projectId: string;
+  readonly requiresAttendance: boolean;
+  readonly roleCode: RoleCode;
+  readonly status: MemberStatusValue;
+  readonly teamScope: TeamRecord | null;
+  readonly teamScopeId: string | null;
+};
+
+type RolePermissionRecord = {
+  readonly permission: {
+    readonly code: string;
+  };
+};
+
+type RoleRecord = {
+  readonly code: RoleCode;
+  readonly id: string;
+  readonly permissions: readonly RolePermissionRecord[];
+};
+
+type UserRoleRecord = {
+  readonly role: RoleRecord;
+  readonly roleId: string;
+  readonly scopeId: string;
+  readonly scopeType: ScopeTypeValue;
+  readonly userId: string;
+};
+
+type UserSessionFindUniqueArgs = {
+  readonly where: {
+    readonly id: string;
+  };
+};
+
+type RoleFindUniqueArgs = {
+  readonly where: {
+    readonly code: RoleCode;
+  };
+};
+
+type UserRoleFindManyArgs = {
+  readonly where: {
+    readonly userId: string;
+  };
+};
+
+type UserRoleCreateArgs = {
+  readonly data: {
+    readonly roleId: string;
+    readonly scopeId: string;
+    readonly scopeType: ScopeTypeValue;
+    readonly userId: string;
+  };
+};
+
+type CompanyCreateArgs = {
+  readonly data: {
+    readonly name: string;
+    readonly status: string;
+  };
+};
+
+type CompanyFindUniqueArgs = {
+  readonly where: {
+    readonly id: string;
+  };
+};
+
+type ProjectCreateArgs = {
+  readonly data: {
+    readonly address: string;
+    readonly centerLatitude: string;
+    readonly centerLongitude: string;
+    readonly companyId: string;
+    readonly geofenceRadiusM: number;
+    readonly name: string;
+    readonly plannedEndDate: Date | null;
+    readonly plannedStartDate: Date;
+    readonly status: ProjectStatusValue;
+  };
+};
+
+type ProjectFindUniqueArgs = {
+  readonly where: {
+    readonly id: string;
+  };
+};
+
+type TeamCreateArgs = {
+  readonly data: {
+    readonly name: string;
+    readonly projectId: string;
+    readonly status: string;
+  };
+};
+
+type TeamFindUniqueArgs = {
+  readonly include?: {
+    readonly project?: boolean;
+  };
+  readonly where: {
+    readonly id: string;
+  };
+};
+
+type WorkerProfileCreateArgs = {
+  readonly data: {
+    readonly encryptedIdNumber: string;
+    readonly encryptedName: string;
+    readonly employmentStatus: string;
+    readonly faceProfileStatus: string;
+    readonly idNumberHash: string;
+    readonly phone: string;
+    readonly realNameStatus: string;
+    readonly workType: string;
+  };
+};
+
+type ManagerProfileCreateArgs = {
+  readonly data: {
+    readonly name: string;
+    readonly phone: string;
+    readonly status: string;
+  };
+};
+
+type ProjectWorkerMemberCreateArgs = {
+  readonly data: {
+    readonly enteredAt: Date;
+    readonly exitedAt: Date | null;
+    readonly projectId: string;
+    readonly projectRoleLabel: string;
+    readonly requiresAttendance: boolean;
+    readonly status: MemberStatusValue;
+    readonly teamId: string | null;
+    readonly workerId: string;
+  };
+};
+
+type ProjectManagerMemberCreateArgs = {
+  readonly data: {
+    readonly managerId: string;
+    readonly projectId: string;
+    readonly requiresAttendance: boolean;
+    readonly roleCode: RoleCode;
+    readonly status: MemberStatusValue;
+    readonly teamScopeId: string | null;
+  };
+};
+
+type ProjectMemberFindManyArgs = {
+  readonly include: {
+    readonly manager?: boolean;
+    readonly team?: boolean;
+    readonly teamScope?: boolean;
+    readonly worker?: boolean;
+  };
+  readonly where: {
+    readonly projectId: string;
+  };
+};
+
+const applyTestEnv = (): void => {
+  process.env.AUTH_REFRESH_TOKEN_TTL_SECONDS = "2592000";
+  process.env.API_PORT = "3000";
+  process.env.DATABASE_URL = "postgresql://construction:construction@localhost:5432/construction_personnel?schema=public";
+  process.env.FACE_SERVICE_API_KEY = "face-service-key";
+  process.env.FACE_SERVICE_BASE_URL = "http://localhost:8000";
+  process.env.JWT_ACCESS_TOKEN_SECRET = "test-jwt-secret-with-at-least-32-characters";
+  process.env.JWT_ACCESS_TOKEN_TTL_SECONDS = "900";
+  process.env.NODE_ENV = "test";
+  process.env.OBJECT_STORAGE_ACCESS_KEY = "object-storage-access-key";
+  process.env.OBJECT_STORAGE_BUCKET = "construction-personnel";
+  process.env.OBJECT_STORAGE_ENDPOINT = "http://localhost:9000";
+  process.env.OBJECT_STORAGE_SECRET_KEY = "object-storage-secret-key";
+  process.env.WECHAT_APP_ID = "wechat-app-id";
+  process.env.WECHAT_APP_SECRET = "wechat-app-secret";
+};
+
+class ManagementPrismaTestDouble {
+  readonly users = new Map<string, UserRecord>();
+  readonly sessions = new Map<string, SessionRecord>();
+  readonly companies = new Map<string, CompanyRecord>();
+  readonly projects = new Map<string, ProjectRecord>();
+  readonly teams = new Map<string, TeamRecord>();
+  readonly workerProfiles = new Map<string, WorkerProfileRecord>();
+  readonly managerProfiles = new Map<string, ManagerProfileRecord>();
+  readonly workerMembers = new Map<string, ProjectWorkerMemberRecord>();
+  readonly managerMembers = new Map<string, ProjectManagerMemberRecord>();
+  readonly roles = new Map<RoleCode, RoleRecord>();
+  readonly userRoles: UserRoleRecord[] = [];
+
+  private companySequence = 0;
+  private projectSequence = 0;
+  private teamSequence = 0;
+  private workerSequence = 0;
+  private managerSequence = 0;
+  private workerMemberSequence = 0;
+  private managerMemberSequence = 0;
+
+  readonly userSession = {
+    findUnique: async (args: UserSessionFindUniqueArgs): Promise<SessionRecord | null> =>
+      this.sessions.get(args.where.id) ?? null
+  };
+
+  readonly role = {
+    findMany: async (): Promise<RoleRecord[]> => Array.from(this.roles.values()),
+    findUnique: async (args: RoleFindUniqueArgs): Promise<RoleRecord | null> => this.roles.get(args.where.code) ?? null
+  };
+
+  readonly userRole = {
+    create: async (args: UserRoleCreateArgs): Promise<UserRoleRecord> => {
+      const role = Array.from(this.roles.values()).find((roleRecord: RoleRecord): boolean => roleRecord.id === args.data.roleId);
+
+      if (role === undefined) {
+        throw new Error(
+          JSON.stringify({
+            message: "Role not found in test double",
+            roleId: args.data.roleId
+          })
+        );
+      }
+
+      const userRole: UserRoleRecord = {
+        role,
+        roleId: args.data.roleId,
+        scopeId: args.data.scopeId,
+        scopeType: args.data.scopeType,
+        userId: args.data.userId
+      };
+      this.userRoles.push(userRole);
+      return userRole;
+    },
+    findMany: async (args: UserRoleFindManyArgs): Promise<UserRoleRecord[]> =>
+      this.userRoles.filter((userRole: UserRoleRecord): boolean => userRole.userId === args.where.userId)
+  };
+
+  readonly company = {
+    create: async (args: CompanyCreateArgs): Promise<CompanyRecord> => {
+      this.companySequence += 1;
+      const now = new Date("2026-06-03T00:00:00.000Z");
+      const company: CompanyRecord = {
+        createdAt: now,
+        id: `company-created-${this.companySequence}`,
+        name: args.data.name,
+        status: args.data.status,
+        updatedAt: now
+      };
+      this.companies.set(company.id, company);
+      return company;
+    },
+    findUnique: async (args: CompanyFindUniqueArgs): Promise<CompanyRecord | null> =>
+      this.companies.get(args.where.id) ?? null
+  };
+
+  readonly project = {
+    create: async (args: ProjectCreateArgs): Promise<ProjectRecord> => {
+      this.projectSequence += 1;
+      const now = new Date("2026-06-03T00:00:00.000Z");
+      const project: ProjectRecord = {
+        address: args.data.address,
+        centerLatitude: args.data.centerLatitude,
+        centerLongitude: args.data.centerLongitude,
+        companyId: args.data.companyId,
+        createdAt: now,
+        geofenceRadiusM: args.data.geofenceRadiusM,
+        id: `project-${this.projectSequence}`,
+        name: args.data.name,
+        plannedEndDate: args.data.plannedEndDate,
+        plannedStartDate: args.data.plannedStartDate,
+        status: args.data.status,
+        updatedAt: now
+      };
+      this.projects.set(project.id, project);
+      return project;
+    },
+    findUnique: async (args: ProjectFindUniqueArgs): Promise<ProjectRecord | null> => this.projects.get(args.where.id) ?? null
+  };
+
+  readonly team = {
+    create: async (args: TeamCreateArgs): Promise<TeamRecord> => {
+      this.teamSequence += 1;
+      const now = new Date("2026-06-03T00:00:00.000Z");
+      const team: TeamRecord = {
+        createdAt: now,
+        id: `team-${this.teamSequence}`,
+        name: args.data.name,
+        projectId: args.data.projectId,
+        status: args.data.status,
+        updatedAt: now
+      };
+      this.teams.set(team.id, team);
+      return team;
+    },
+    findUnique: async (args: TeamFindUniqueArgs): Promise<TeamRecord | null> => {
+      const team = this.teams.get(args.where.id);
+
+      if (team === undefined) {
+        return null;
+      }
+
+      if (args.include?.project === true) {
+        const project = this.projects.get(team.projectId);
+
+        if (project === undefined) {
+          throw new Error(
+            JSON.stringify({
+              message: "Team project not found in test double",
+              projectId: team.projectId,
+              teamId: team.id
+            })
+          );
+        }
+
+        return {
+          ...team,
+          project
+        };
+      }
+
+      return team;
+    }
+  };
+
+  readonly workerProfile = {
+    create: async (args: WorkerProfileCreateArgs): Promise<WorkerProfileRecord> => {
+      this.workerSequence += 1;
+      const worker: WorkerProfileRecord = {
+        encryptedIdNumber: args.data.encryptedIdNumber,
+        encryptedName: args.data.encryptedName,
+        employmentStatus: args.data.employmentStatus,
+        faceProfileStatus: args.data.faceProfileStatus,
+        id: `worker-${this.workerSequence}`,
+        idNumberHash: args.data.idNumberHash,
+        phone: args.data.phone,
+        realNameStatus: args.data.realNameStatus,
+        workType: args.data.workType
+      };
+      this.workerProfiles.set(worker.id, worker);
+      return worker;
+    }
+  };
+
+  readonly managerProfile = {
+    create: async (args: ManagerProfileCreateArgs): Promise<ManagerProfileRecord> => {
+      this.managerSequence += 1;
+      const manager: ManagerProfileRecord = {
+        id: `manager-${this.managerSequence}`,
+        name: args.data.name,
+        phone: args.data.phone,
+        status: args.data.status
+      };
+      this.managerProfiles.set(manager.id, manager);
+      return manager;
+    }
+  };
+
+  readonly projectWorkerMember = {
+    create: async (args: ProjectWorkerMemberCreateArgs): Promise<ProjectWorkerMemberRecord> => {
+      this.workerMemberSequence += 1;
+      const worker = this.workerProfiles.get(args.data.workerId);
+
+      if (worker === undefined) {
+        throw new Error(
+          JSON.stringify({
+            message: "Worker profile not found in test double",
+            workerId: args.data.workerId
+          })
+        );
+      }
+
+      const member: ProjectWorkerMemberRecord = {
+        enteredAt: args.data.enteredAt,
+        exitedAt: args.data.exitedAt,
+        id: `worker-member-${this.workerMemberSequence}`,
+        projectId: args.data.projectId,
+        projectRoleLabel: args.data.projectRoleLabel,
+        requiresAttendance: args.data.requiresAttendance,
+        status: args.data.status,
+        team: args.data.teamId === null ? null : this.teams.get(args.data.teamId) ?? null,
+        teamId: args.data.teamId,
+        worker,
+        workerId: args.data.workerId
+      };
+      this.workerMembers.set(member.id, member);
+      return member;
+    },
+    findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectWorkerMemberRecord[]> =>
+      Array.from(this.workerMembers.values()).filter(
+        (member: ProjectWorkerMemberRecord): boolean => member.projectId === args.where.projectId
+      )
+  };
+
+  readonly projectManagerMember = {
+    create: async (args: ProjectManagerMemberCreateArgs): Promise<ProjectManagerMemberRecord> => {
+      this.managerMemberSequence += 1;
+      const manager = this.managerProfiles.get(args.data.managerId);
+
+      if (manager === undefined) {
+        throw new Error(
+          JSON.stringify({
+            message: "Manager profile not found in test double",
+            managerId: args.data.managerId
+          })
+        );
+      }
+
+      const member: ProjectManagerMemberRecord = {
+        id: `manager-member-${this.managerMemberSequence}`,
+        manager,
+        managerId: args.data.managerId,
+        projectId: args.data.projectId,
+        requiresAttendance: args.data.requiresAttendance,
+        roleCode: args.data.roleCode,
+        status: args.data.status,
+        teamScope: args.data.teamScopeId === null ? null : this.teams.get(args.data.teamScopeId) ?? null,
+        teamScopeId: args.data.teamScopeId
+      };
+      this.managerMembers.set(member.id, member);
+      return member;
+    },
+    findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectManagerMemberRecord[]> =>
+      Array.from(this.managerMembers.values()).filter(
+        (member: ProjectManagerMemberRecord): boolean => member.projectId === args.where.projectId
+      )
+  };
+
+  async $transaction<T>(callback: (transaction: ManagementPrismaTestDouble) => Promise<T>): Promise<T> {
+    return callback(this);
+  }
+
+  seedRole(roleCode: RoleCode, permissionCodes: readonly string[]): void {
+    this.roles.set(roleCode, {
+      code: roleCode,
+      id: `role-${roleCode}`,
+      permissions: permissionCodes.map(
+        (permissionCode: string): RolePermissionRecord => ({
+          permission: {
+            code: permissionCode
+          }
+        })
+      )
+    });
+  }
+
+  seedActiveSession(userId: string, sessionId: string): void {
+    const user: UserRecord = {
+      id: userId,
+      sessionVersion: 1,
+      status: "ACTIVE"
+    };
+    this.users.set(userId, user);
+    this.sessions.set(sessionId, {
+      expiresAt: new Date(Date.now() + 60_000),
+      id: sessionId,
+      revokedAt: null,
+      user,
+      userId
+    });
+  }
+}
+
+const seedDirectRolePermissions = (prisma: ManagementPrismaTestDouble): void => {
+  prisma.seedRole("SYSTEM_ADMIN", ["system.manage"]);
+  prisma.seedRole("COMPANY_ADMIN", ["company.manage", "project.create"]);
+  prisma.seedRole("PROJECT_ADMIN", [
+    "attendance.view",
+    "binding.invitation.create",
+    "project.manage",
+    "team.manage",
+    "worker.manage"
+  ]);
+  prisma.seedRole("TEAM_LEADER", ["attendance.view", "makeup.approve"]);
+  prisma.seedRole("WORKER", ["attendance.submit", "makeup.request"]);
+};
+
+const createApp = async (prisma: ManagementPrismaTestDouble): Promise<INestApplication> => {
+  const moduleRef = await Test.createTestingModule({
+    imports: [AuthModule, AuthorizationModule, ManagementModule]
+  })
+    .overrideProvider(PrismaService)
+    .useValue(prisma)
+    .compile();
+
+  const app = moduleRef.createNestApplication();
+  await app.init();
+  return app;
+};
+
+const createAccessToken = async (app: INestApplication, userId: string, sessionId: string): Promise<string> => {
+  const jwtService = app.get(JwtService);
+  const secret = process.env.JWT_ACCESS_TOKEN_SECRET;
+
+  if (secret === undefined) {
+    throw new Error(
+      JSON.stringify({
+        message: "Missing JWT test secret"
+      })
+    );
+  }
+
+  return jwtService.signAsync(
+    {
+      sid: sessionId,
+      sub: userId,
+      sv: 1
+    },
+    {
+      secret
+    }
+  );
+};
+
+describe("ManagementModule", (): void => {
+  let app: INestApplication | undefined;
+  let prisma: ManagementPrismaTestDouble;
+
+  beforeEach((): void => {
+    applyTestEnv();
+    prisma = new ManagementPrismaTestDouble();
+    seedDirectRolePermissions(prisma);
+    prisma.seedActiveSession("user-1", "session-1");
+    const now = new Date("2026-06-03T00:00:00.000Z");
+    prisma.companies.set("company-1", {
+      createdAt: now,
+      id: "company-1",
+      name: "Existing Company",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.userRoles.push({
+      role: prisma.roles.get("COMPANY_ADMIN") as RoleRecord,
+      roleId: "role-COMPANY_ADMIN",
+      scopeId: "company-1",
+      scopeType: "COMPANY",
+      userId: "user-1"
+    });
+  });
+
+  afterEach(async (): Promise<void> => {
+    if (app !== undefined) {
+      await app.close();
+      app = undefined;
+    }
+  });
+
+  test("creates a managed project, team, worker, manager, and unified participant list", async (): Promise<void> => {
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-1", "session-1");
+
+    const projectResponse = await request(app.getHttpServer())
+      .post("/management/companies/company-1/projects")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        address: "No. 1 Site Road",
+        centerLatitude: "31.2304000",
+        centerLongitude: "121.4737000",
+        geofenceRadiusM: 300,
+        name: "North Gate Site",
+        plannedEndDate: "2026-12-31",
+        plannedStartDate: "2026-06-03",
+        status: "ACTIVE"
+      })
+      .expect(201);
+
+    expect(projectResponse.body).toMatchObject({
+      address: "No. 1 Site Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      geofenceRadiusM: 300,
+      id: "project-1",
+      name: "North Gate Site",
+      plannedEndDate: "2026-12-31",
+      plannedStartDate: "2026-06-03",
+      status: "ACTIVE"
+    });
+    expect(prisma.userRoles).toContainEqual(
+      expect.objectContaining({
+        roleId: "role-PROJECT_ADMIN",
+        scopeId: "project-1",
+        scopeType: "PROJECT",
+        userId: "user-1"
+      })
+    );
+
+    const teamResponse = await request(app.getHttpServer())
+      .post("/management/projects/project-1/teams")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        name: "Steel Team",
+        status: "ACTIVE"
+      })
+      .expect(201);
+
+    expect(teamResponse.body).toMatchObject({
+      id: "team-1",
+      name: "Steel Team",
+      projectId: "project-1",
+      status: "ACTIVE"
+    });
+
+    const workerResponse = await request(app.getHttpServer())
+      .post("/management/projects/project-1/workers")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        encryptedIdNumber: "encrypted-id-number",
+        encryptedName: "encrypted-worker-name",
+        employmentStatus: "ACTIVE",
+        enteredAt: "2026-06-03T08:00:00.000Z",
+        exitedAt: null,
+        faceProfileStatus: "PENDING",
+        idNumberHash: "id-number-hash-1",
+        memberStatus: "ACTIVE",
+        phone: "13800000001",
+        projectRoleLabel: "Welder",
+        realNameStatus: "VERIFIED",
+        requiresAttendance: true,
+        teamId: "team-1",
+        workType: "Steel"
+      })
+      .expect(201);
+
+    expect(workerResponse.body).toMatchObject({
+      enteredAt: "2026-06-03T08:00:00.000Z",
+      id: "worker-member-1",
+      participantType: "WORKER",
+      phone: "13800000001",
+      profileId: "worker-1",
+      projectId: "project-1",
+      projectRoleLabel: "Welder",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      teamId: "team-1"
+    });
+
+    const managerResponse = await request(app.getHttpServer())
+      .post("/management/projects/project-1/managers")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        memberStatus: "ACTIVE",
+        name: "Team Lead Zhang",
+        phone: "13800000002",
+        profileStatus: "ACTIVE",
+        requiresAttendance: true,
+        roleCode: "TEAM_LEADER",
+        teamScopeId: "team-1"
+      })
+      .expect(201);
+
+    expect(managerResponse.body).toMatchObject({
+      id: "manager-member-1",
+      participantType: "MANAGER",
+      phone: "13800000002",
+      profileId: "manager-1",
+      projectId: "project-1",
+      projectRoleLabel: "TEAM_LEADER",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      teamId: "team-1"
+    });
+
+    const participantsResponse = await request(app.getHttpServer())
+      .get("/management/projects/project-1/participants")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(participantsResponse.body).toEqual([
+      {
+        displayName: null,
+        memberId: "worker-member-1",
+        participantType: "WORKER",
+        phone: "13800000001",
+        profileId: "worker-1",
+        projectId: "project-1",
+        projectRoleLabel: "Welder",
+        requiresAttendance: true,
+        status: "ACTIVE",
+        teamId: "team-1",
+        teamName: "Steel Team"
+      },
+      {
+        displayName: "Team Lead Zhang",
+        memberId: "manager-member-1",
+        participantType: "MANAGER",
+        phone: "13800000002",
+        profileId: "manager-1",
+        projectId: "project-1",
+        projectRoleLabel: "TEAM_LEADER",
+        requiresAttendance: true,
+        status: "ACTIVE",
+        teamId: "team-1",
+        teamName: "Steel Team"
+      }
+    ]);
+  });
+
+  test("only global system administrators create companies", async (): Promise<void> => {
+    prisma.seedActiveSession("company-admin-user", "session-company-admin");
+    prisma.seedActiveSession("system-admin-user", "session-system-admin");
+    prisma.userRoles.push(
+      {
+        role: prisma.roles.get("COMPANY_ADMIN") as RoleRecord,
+        roleId: "role-COMPANY_ADMIN",
+        scopeId: "GLOBAL",
+        scopeType: "GLOBAL",
+        userId: "company-admin-user"
+      },
+      {
+        role: prisma.roles.get("SYSTEM_ADMIN") as RoleRecord,
+        roleId: "role-SYSTEM_ADMIN",
+        scopeId: "GLOBAL",
+        scopeType: "GLOBAL",
+        userId: "system-admin-user"
+      }
+    );
+    app = await createApp(prisma);
+    const companyAdminAccessToken = await createAccessToken(app, "company-admin-user", "session-company-admin");
+    const systemAdminAccessToken = await createAccessToken(app, "system-admin-user", "session-system-admin");
+
+    await request(app.getHttpServer())
+      .post("/management/companies")
+      .set("Authorization", `Bearer ${companyAdminAccessToken}`)
+      .send({
+        name: "Unauthorized Company",
+        status: "ACTIVE"
+      })
+      .expect(403);
+
+    const response = await request(app.getHttpServer())
+      .post("/management/companies")
+      .set("Authorization", `Bearer ${systemAdminAccessToken}`)
+      .send({
+        name: "New Company",
+        status: "ACTIVE"
+      })
+      .expect(201);
+
+    expect(response.body).toEqual({
+      id: "company-created-1",
+      name: "New Company",
+      status: "ACTIVE"
+    });
+  });
+});

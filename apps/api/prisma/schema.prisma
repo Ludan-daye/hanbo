@@ -1,0 +1,482 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleCode {
+  SYSTEM_ADMIN
+  COMPANY_ADMIN
+  PROJECT_ADMIN
+  TEAM_LEADER
+  WORKER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ProfileOwnerType {
+  WORKER
+  MANAGER
+}
+
+enum ProjectStatus {
+  PREPARING
+  ACTIVE
+  SUSPENDED
+  COMPLETED
+}
+
+enum MemberStatus {
+  ACTIVE
+  EXITED
+  SUSPENDED
+}
+
+enum AttendancePointCode {
+  SEGMENT_1_START
+  SEGMENT_1_END
+  SEGMENT_2_START
+  SEGMENT_2_END
+}
+
+enum AttendanceRecordSource {
+  DEVICE
+  MAKEUP
+}
+
+enum AttendanceRecordStatus {
+  VALID
+  INVALID
+}
+
+enum MakeupStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BindingInvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum UserRoleScopeType {
+  GLOBAL
+  COMPANY
+  PROJECT
+  TEAM
+}
+
+model User {
+  id                         String              @id @default(uuid())
+  openid                     String              @unique
+  unionid                    String?             @unique
+  phone                      String?
+  status                     UserStatus          @default(ACTIVE)
+  sessionVersion             Int                 @default(1)
+  isBound                    Boolean             @default(false)
+  createdAt                  DateTime            @default(now())
+  updatedAt                  DateTime            @updatedAt
+  lastLoginAt                DateTime?
+  roles                      UserRole[]
+  sessions                   UserSession[]
+  workerProfile              WorkerProfile?
+  managerProfile             ManagerProfile?
+  requestedMakeups           MakeupRequest[]     @relation("requester")
+  approvedMakeups            MakeupRequest[]     @relation("approver")
+  createdBindingInvitations  BindingInvitation[] @relation("bindingInvitationCreator")
+  acceptedBindingInvitations BindingInvitation[] @relation("bindingInvitationAcceptor")
+  auditLogs                  AuditLog[]
+
+  @@map("users")
+}
+
+model WorkerProfile {
+  id                 String                @id @default(uuid())
+  userId             String?               @unique
+  encryptedName      String
+  encryptedIdNumber  String
+  idNumberHash       String                @unique
+  phone              String
+  workType           String
+  realNameStatus     String
+  faceProfileStatus  String
+  employmentStatus   String
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  user               User?                 @relation(fields: [userId], references: [id])
+  projectMemberships ProjectWorkerMember[]
+  bindingInvitations BindingInvitation[]   @relation("workerBindingInvitations")
+
+  @@index([phone])
+  @@index([employmentStatus])
+  @@map("worker_profiles")
+}
+
+model ManagerProfile {
+  id                 String                 @id @default(uuid())
+  userId             String?                @unique
+  name               String
+  phone              String
+  status             String
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  user               User?                  @relation(fields: [userId], references: [id])
+  projectMemberships ProjectManagerMember[]
+  bindingInvitations BindingInvitation[]    @relation("managerBindingInvitations")
+
+  @@index([phone])
+  @@index([status])
+  @@map("manager_profiles")
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  code        RoleCode         @unique
+  level       Int
+  name        String
+  createdAt   DateTime         @default(now())
+  permissions RolePermission[]
+  userRoles   UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id        String           @id @default(uuid())
+  code      String           @unique
+  name      String
+  roles     RolePermission[]
+  createdAt DateTime         @default(now())
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id        String            @id @default(uuid())
+  userId    String
+  roleId    String
+  scopeType UserRoleScopeType
+  scopeId   String
+  createdAt DateTime          @default(now())
+  user      User              @relation(fields: [userId], references: [id])
+  role      Role              @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, roleId, scopeType, scopeId])
+  @@index([userId])
+  @@index([scopeType, scopeId])
+  @@map("user_roles")
+}
+
+model UserSession {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, expiresAt, revokedAt])
+  @@map("user_sessions")
+}
+
+model BindingInvitation {
+  id               String                  @id @default(uuid())
+  codeHash         String                  @unique
+  targetType       ProfileOwnerType
+  workerProfileId  String?
+  managerProfileId String?
+  createdByUserId  String
+  acceptedByUserId String?
+  status           BindingInvitationStatus @default(PENDING)
+  expiresAt        DateTime
+  usedAt           DateTime?
+  createdAt        DateTime                @default(now())
+  workerProfile    WorkerProfile?          @relation("workerBindingInvitations", fields: [workerProfileId], references: [id], onDelete: Restrict)
+  managerProfile   ManagerProfile?         @relation("managerBindingInvitations", fields: [managerProfileId], references: [id], onDelete: Restrict)
+  createdByUser    User                    @relation("bindingInvitationCreator", fields: [createdByUserId], references: [id])
+  acceptedByUser   User?                   @relation("bindingInvitationAcceptor", fields: [acceptedByUserId], references: [id])
+
+  @@index([createdByUserId, status])
+  @@index([acceptedByUserId])
+  @@index([targetType, workerProfileId, status])
+  @@index([targetType, managerProfileId, status])
+  @@map("binding_invitations")
+}
+
+model Company {
+  id        String    @id @default(uuid())
+  name      String
+  status    String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  projects  Project[]
+
+  @@map("companies")
+}
+
+model Project {
+  id                String                 @id @default(uuid())
+  companyId         String
+  name              String
+  address           String
+  centerLatitude    Decimal                @db.Decimal(10, 7)
+  centerLongitude   Decimal                @db.Decimal(10, 7)
+  geofenceRadiusM   Int
+  status            ProjectStatus
+  plannedStartDate  DateTime               @db.Date
+  plannedEndDate    DateTime?              @db.Date
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  company           Company                @relation(fields: [companyId], references: [id])
+  teams             Team[]
+  workerMembers     ProjectWorkerMember[]
+  managerMembers    ProjectManagerMember[]
+  shifts            Shift[]
+  attendanceRecords AttendanceRecord[]
+  attendanceResults AttendanceResult[]
+  makeupRequests    MakeupRequest[]
+
+  @@index([companyId, status])
+  @@map("projects")
+}
+
+model Team {
+  id                   String                 @id @default(uuid())
+  projectId            String
+  name                 String
+  status               String
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  project              Project                @relation(fields: [projectId], references: [id])
+  workers              ProjectWorkerMember[]  @relation("TeamWorkerMembers")
+  managerScopedMembers ProjectManagerMember[] @relation("TeamManagerScopeMembers")
+
+  @@unique([id, projectId])
+  @@index([projectId, status])
+  @@map("teams")
+}
+
+model ProjectWorkerMember {
+  id                 String        @id @default(uuid())
+  projectId          String
+  workerId           String
+  teamId             String?
+  requiresAttendance Boolean       @default(true)
+  enteredAt          DateTime
+  exitedAt           DateTime?
+  projectRoleLabel   String
+  status             MemberStatus
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  project            Project       @relation(fields: [projectId], references: [id])
+  worker             WorkerProfile @relation(fields: [workerId], references: [id])
+  team               Team?         @relation("TeamWorkerMembers", fields: [teamId, projectId], references: [id, projectId])
+
+  @@unique([projectId, workerId])
+  @@index([projectId, teamId, status])
+  @@index([workerId, status])
+  @@map("project_worker_members")
+}
+
+model ProjectManagerMember {
+  id                 String         @id @default(uuid())
+  projectId          String
+  managerId          String
+  roleCode           RoleCode
+  teamScopeId        String?
+  requiresAttendance Boolean        @default(true)
+  status             MemberStatus
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  project            Project        @relation(fields: [projectId], references: [id])
+  manager            ManagerProfile @relation(fields: [managerId], references: [id])
+  teamScope          Team?          @relation("TeamManagerScopeMembers", fields: [teamScopeId, projectId], references: [id, projectId])
+
+  @@unique([projectId, managerId])
+  @@index([projectId, roleCode, status])
+  @@index([projectId, teamScopeId, status])
+  @@index([managerId, status])
+  @@map("project_manager_members")
+}
+
+model Shift {
+  id        String         @id @default(uuid())
+  projectId String
+  name      String
+  isDefault Boolean        @default(false)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  project   Project        @relation(fields: [projectId], references: [id])
+  segments  ShiftSegment[]
+  schedules Schedule[]
+
+  @@index([projectId, isDefault])
+  @@map("shifts")
+}
+
+model ShiftSegment {
+  id             String   @id @default(uuid())
+  shiftId        String
+  sequence       Int
+  startTime      String
+  endTime        String
+  lateGraceMins  Int      @default(0)
+  earlyGraceMins Int      @default(0)
+  createdAt      DateTime @default(now())
+  shift          Shift    @relation(fields: [shiftId], references: [id])
+
+  @@unique([shiftId, sequence])
+  @@map("shift_segments")
+}
+
+model Schedule {
+  id        String    @id @default(uuid())
+  shiftId   String
+  ownerType String
+  ownerId   String
+  startsOn  DateTime  @db.Date
+  endsOn    DateTime? @db.Date
+  workdayMask Int      @default(127)
+  createdAt DateTime  @default(now())
+  shift     Shift     @relation(fields: [shiftId], references: [id])
+
+  @@index([shiftId, startsOn])
+  @@index([ownerType, ownerId, startsOn])
+  @@map("schedules")
+}
+
+model FaceProfile {
+  id                String           @id @default(uuid())
+  ownerType         ProfileOwnerType
+  ownerId           String
+  baselineObjectKey String
+  baselineImageHash String
+  faceServiceId     String?
+  status            String
+  version           Int              @default(1)
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([ownerType, ownerId, status])
+  @@map("face_profiles")
+}
+
+model AttendanceRecord {
+  id                 String                 @id @default(uuid())
+  projectId          String
+  participantType    ProfileOwnerType
+  participantId      String
+  attendanceDate     DateTime               @db.Date
+  pointCode          AttendancePointCode
+  source             AttendanceRecordSource
+  status             AttendanceRecordStatus
+  occurredAt         DateTime
+  serverReceivedAt   DateTime               @default(now())
+  latitude           Decimal                @db.Decimal(10, 7)
+  longitude          Decimal                @db.Decimal(10, 7)
+  locationAccuracyM  Decimal?               @db.Decimal(8, 2)
+  geofenceDistanceM  Decimal?               @db.Decimal(8, 2)
+  selfieObjectKey    String
+  sitePhotoObjectKey String
+  selfieHash         String
+  sitePhotoHash      String
+  faceScore          Decimal?               @db.Decimal(6, 4)
+  facePassed         Boolean
+  abnormalReason     String?
+  createdAt          DateTime               @default(now())
+  project            Project                @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, attendanceDate, participantType, participantId])
+  @@index([projectId, attendanceDate, pointCode])
+  @@map("attendance_records")
+}
+
+model AttendanceResult {
+  id                  String           @id @default(uuid())
+  projectId           String
+  attendanceDate      DateTime         @db.Date
+  participantType     ProfileOwnerType
+  participantId       String
+  workedMinutes       Int
+  isLate              Boolean
+  isEarlyLeave        Boolean
+  isMissingPunch      Boolean
+  isAbsent            Boolean
+  approvedMakeupCount Int              @default(0)
+  abnormalRecordCount Int              @default(0)
+  calculatedAt        DateTime         @default(now())
+  project             Project          @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, attendanceDate, participantType, participantId])
+  @@index([projectId, attendanceDate])
+  @@map("attendance_results")
+}
+
+model MakeupRequest {
+  id                  String              @id @default(uuid())
+  projectId           String
+  requesterUserId     String
+  participantType     ProfileOwnerType
+  participantId       String
+  attendanceDate      DateTime            @db.Date
+  pointCode           AttendancePointCode
+  requestedOccurredAt DateTime
+  reason              String
+  status              MakeupStatus
+  approverUserId      String?
+  approvalReason      String?
+  approvedAt          DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  project             Project             @relation(fields: [projectId], references: [id])
+  requesterUser       User                @relation("requester", fields: [requesterUserId], references: [id])
+  approverUser        User?               @relation("approver", fields: [approverUserId], references: [id])
+
+  @@index([projectId, attendanceDate, status])
+  @@index([requesterUserId, status])
+  @@map("makeup_requests")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String
+  metadata    Json
+  createdAt   DateTime @default(now())
+  actorUser   User?    @relation(fields: [actorUserId], references: [id])
+
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}

@@ -1,0 +1,21 @@
+{
+  "name": "construction-site-personnel-management-system",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "build": "corepack pnpm -r build",
+    "test": "corepack pnpm -r test",
+    "lint": "corepack pnpm -r lint",
+    "typecheck": "corepack pnpm -r typecheck",
+    "dev:api": "corepack pnpm --filter @construction/api start:dev",
+    "db:generate": "corepack pnpm --filter @construction/api prisma:generate",
+    "db:migrate": "corepack pnpm --filter @construction/api prisma:migrate",
+    "db:studio": "corepack pnpm --filter @construction/api prisma:studio"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  }
+}
