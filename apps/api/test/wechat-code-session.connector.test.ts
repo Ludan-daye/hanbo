@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   WechatCodeSessionConnector,
+  WECHAT_CODE_SESSION_ENDPOINT,
   type FetchLike
 } from "../src/infrastructure/wechat/wechat-code-session.connector.js";
 
@@ -17,6 +18,7 @@ const createConnector = (fetchImplementation: FetchLike): WechatCodeSessionConne
   new WechatCodeSessionConnector({
     appId: "app-id",
     appSecret: "app-secret",
+    devLoginEnabled: false,
     endpoint: "https://wechat.example.test/sns/jscode2session",
     fetchImplementation,
     logger: {
@@ -82,6 +84,7 @@ describe("WechatCodeSessionConnector", (): void => {
     const connector = new WechatCodeSessionConnector({
       appId: "app-id",
       appSecret: "app-secret",
+      devLoginEnabled: false,
       endpoint: "https://wechat.example.test/sns/jscode2session",
       fetchImplementation: async (): Promise<Response> => {
         callCount += 1;
@@ -123,6 +126,7 @@ describe("WechatCodeSessionConnector", (): void => {
     const connector = new WechatCodeSessionConnector({
       appId: "app-id",
       appSecret: "app-secret",
+      devLoginEnabled: false,
       endpoint: "https://wechat.example.test/sns/jscode2session",
       fetchImplementation: async (): Promise<Response> => {
         callCount += 1;
@@ -147,6 +151,7 @@ describe("WechatCodeSessionConnector", (): void => {
     const connector = new WechatCodeSessionConnector({
       appId: "app-id",
       appSecret: "app-secret",
+      devLoginEnabled: false,
       endpoint: "https://wechat.example.test/sns/jscode2session",
       fetchImplementation: async (): Promise<Response> => {
         callCount += 1;
@@ -182,5 +187,25 @@ describe("WechatCodeSessionConnector", (): void => {
       sessionKey: "session-key-1"
     });
     expect(callCount).toBe(2);
+  });
+
+  test("returns the code as openid without network when dev login is enabled", async () => {
+    const connector = new WechatCodeSessionConnector({
+      appId: "app-id",
+      appSecret: "app-secret",
+      devLoginEnabled: true,
+      endpoint: WECHAT_CODE_SESSION_ENDPOINT,
+      fetchImplementation: async () => {
+        throw new Error("fetch must not be called in dev login");
+      },
+      logger: { warn: () => {} },
+      maxAttempts: 3,
+      retryDelayMs: 0,
+      sleep: async () => {}
+    });
+
+    const session = await connector.exchangeCode("dev-worker");
+
+    expect(session.openid).toBe("dev-worker");
   });
 });

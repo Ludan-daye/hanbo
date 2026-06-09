@@ -44,6 +44,7 @@ const createWarningLogger = (): WechatCodeSessionWarningLogger => ({
         new WechatCodeSessionConnector({
           appId: env.WECHAT_APP_ID,
           appSecret: env.WECHAT_APP_SECRET,
+          devLoginEnabled: env.WECHAT_DEV_LOGIN,
           endpoint: WECHAT_CODE_SESSION_ENDPOINT,
           fetchImplementation: createFetchImplementation(),
           logger: createWarningLogger(),

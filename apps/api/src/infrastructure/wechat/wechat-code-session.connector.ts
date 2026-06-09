@@ -12,6 +12,7 @@ export type WechatCodeSessionWarningLogger = {
 export type WechatCodeSessionConnectorConfig = {
   readonly appId: string;
   readonly appSecret: string;
+  readonly devLoginEnabled: boolean;
   readonly endpoint: string;
   readonly fetchImplementation: FetchLike;
   readonly logger: WechatCodeSessionWarningLogger;
@@ -184,6 +185,13 @@ export class WechatCodeSessionConnector {
   }
 
   async exchangeCode(jsCode: string): Promise<WechatCodeSession> {
+    if (this.config.devLoginEnabled) {
+      return {
+        openid: jsCode,
+        sessionKey: `dev-session-${jsCode}`
+      };
+    }
+
     let lastError: Error | undefined = undefined;
 
     for (let attempt = 1; attempt <= this.config.maxAttempts; attempt += 1) {
