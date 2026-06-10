@@ -22,7 +22,7 @@ self-view are explicitly NOT in this slice (see "Out of Scope").
 - A frontend `services/management.ts` with typed wrappers around the existing endpoints:
   - `GET /management/projects/:projectId/participants`
   - `GET /reports/projects/:projectId/daily?date=YYYY-MM-DD`
-  - `GET /reports/projects/:projectId/weekly?startDate=YYYY-MM-DD`
+  - `GET /reports/projects/:projectId/weekly?weekStartDate=YYYY-MM-DD`
   - `GET /reports/projects/:projectId/monthly?month=YYYY-MM`
   - `POST /bindings/projects/:projectId/invitations` with body `{ profileId, targetType: "WORKER" | "MANAGER" }`.
 - Resolving the project-admin's project from `/auth/me` (the first `PROJECT_ADMIN`-coded
@@ -127,7 +127,7 @@ types narrow:
 - `fetchParticipants(projectId): Promise<ProjectParticipant[]>` — calls
   `GET /management/projects/{projectId}/participants`.
 - `fetchDailyReport(projectId, date: "YYYY-MM-DD"): Promise<DailyAttendanceReport>`.
-- `fetchWeeklyReport(projectId, startDate: "YYYY-MM-DD"): Promise<RangeAttendanceReport>`.
+- `fetchWeeklyReport(projectId, weekStartDate: "YYYY-MM-DD"): Promise<RangeAttendanceReport>`.
 - `fetchMonthlyReport(projectId, month: "YYYY-MM"): Promise<RangeAttendanceReport>`.
 - `createInvitation(projectId, { profileId, targetType }): Promise<{ id: string; code: string; expiresAt: string }>`.
 
