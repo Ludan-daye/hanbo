@@ -6,6 +6,10 @@ import {
   fetchDailyReport,
   fetchMonthlyReport,
   fetchParticipants,
+  fetchTeamDailyReport,
+  fetchTeamMonthlyReport,
+  fetchTeamParticipants,
+  fetchTeamWeeklyReport,
   fetchWeeklyReport
 } from "../src/services/management";
 
@@ -55,5 +59,33 @@ describe("management service URLs and methods", () => {
     const calls = recordRequests();
     await fetchMonthlyReport("p-1", "2026-06");
     expect(calls[0]?.url.endsWith("/reports/projects/p-1/monthly?month=2026-06")).toBe(true);
+  });
+
+  test("fetchTeamParticipants -> GET /management/teams/:teamId/participants", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchTeamParticipants("t-1");
+    expect(calls[0]?.url.endsWith("/management/teams/t-1/participants")).toBe(true);
+  });
+
+  test("fetchTeamDailyReport -> GET /reports/teams/:teamId/daily?date=", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchTeamDailyReport("t-1", "2026-06-10");
+    expect(calls[0]?.url.endsWith("/reports/teams/t-1/daily?date=2026-06-10")).toBe(true);
+  });
+
+  test("fetchTeamWeeklyReport -> GET /reports/teams/:teamId/weekly?weekStartDate=", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchTeamWeeklyReport("t-1", "2026-06-08");
+    expect(calls[0]?.url.endsWith("/reports/teams/t-1/weekly?weekStartDate=2026-06-08")).toBe(true);
+  });
+
+  test("fetchTeamMonthlyReport -> GET /reports/teams/:teamId/monthly?month=", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchTeamMonthlyReport("t-1", "2026-06");
+    expect(calls[0]?.url.endsWith("/reports/teams/t-1/monthly?month=2026-06")).toBe(true);
   });
 });
