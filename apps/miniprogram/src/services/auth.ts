@@ -1,10 +1,7 @@
 import Taro from "@tarojs/taro";
 
-import { API_BASE_URL } from "../config/env";
-import { createApiClient } from "./apiClient";
+import { apiClient as client } from "./client";
 import type { LoginResponse, MeResponse } from "./auth.types";
-
-const client = createApiClient(API_BASE_URL);
 
 export const devLogin = async (code: string): Promise<void> => {
   const res = await client.request<LoginResponse>("/auth/wechat/login", { auth: false, data: { code }, method: "POST" });
