@@ -240,6 +240,36 @@ const main = async (): Promise<void> => {
     where: { codeHash: hash(DEV_BIND_CODE) }
   });
 
+  // One PENDING makeup so the team-leader page has something to act on.
+  const yesterday = new Date(today);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const yesterdayDateOnly = new Date(Date.UTC(yesterday.getUTCFullYear(), yesterday.getUTCMonth(), yesterday.getUTCDate()));
+  const existingPending = await prisma.makeupRequest.findFirst({
+    where: {
+      attendanceDate: yesterdayDateOnly,
+      participantId: workerProfileForMembership.id,
+      participantType: "WORKER",
+      pointCode: "SEGMENT_1_START",
+      projectId: project.id,
+      status: "PENDING"
+    }
+  });
+  if (existingPending === null) {
+    await prisma.makeupRequest.create({
+      data: {
+        attendanceDate: yesterdayDateOnly,
+        participantId: workerProfileForMembership.id,
+        participantType: "WORKER",
+        pointCode: "SEGMENT_1_START",
+        projectId: project.id,
+        reason: "忘记打卡了",
+        requestedOccurredAt: new Date(Date.UTC(yesterday.getUTCFullYear(), yesterday.getUTCMonth(), yesterday.getUTCDate(), 1, 0, 0)),
+        requesterUserId: workerUserId,
+        status: "PENDING"
+      }
+    });
+  }
+
   console.log(JSON.stringify({ devBindCode: DEV_BIND_CODE, message: "dev seed complete" }));
 };
 
