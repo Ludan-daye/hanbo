@@ -208,6 +208,21 @@ const main = async (): Promise<void> => {
     update: {},
     where: { idNumberHash: hash("dev-unbound-worker-id") }
   });
+  // Make the unbound worker a project member so the invitation page can demo
+  // generating an invitation against an existing, not-yet-bound participant.
+  await prisma.projectWorkerMember.upsert({
+    create: {
+      enteredAt: new Date("2026-05-01T00:00:00.000Z"),
+      projectId: project.id,
+      projectRoleLabel: "木工",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      teamId: team.id,
+      workerId: unboundWorker.id
+    },
+    update: { status: "ACTIVE", requiresAttendance: true, teamId: team.id },
+    where: { projectId_workerId: { projectId: project.id, workerId: unboundWorker.id } }
+  });
   await prisma.bindingInvitation.upsert({
     create: {
       codeHash: hash(DEV_BIND_CODE),
