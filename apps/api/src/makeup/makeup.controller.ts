@@ -1,8 +1,10 @@
-import { Body, Controller, Inject, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, UseGuards } from "@nestjs/common";
 
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { AuthenticatedUser } from "../auth/auth.types.js";
+import { PermissionsGuard } from "../authorization/permissions.guard.js";
+import { RequirePermission } from "../authorization/require-permission.decorator.js";
 
 import { parseCreateMakeupRequestBody, parseReviewMakeupRequestBody } from "./makeup-body.parsers.js";
 import { MakeupService } from "./makeup.service.js";
@@ -40,5 +42,15 @@ export class MakeupController {
     @Body() body: unknown
   ): Promise<ReviewMakeupResponse> {
     return this.makeupService.rejectMakeupRequest(requestId, currentUser.userId, parseReviewMakeupRequestBody(body));
+  }
+
+  @Get("teams/:teamId/pending")
+  @RequirePermission({
+    permissionCode: "makeup.approve",
+    target: { paramName: "teamId", source: "teamParam" }
+  })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async listTeamPendingMakeups(@Param("teamId") teamId: string): Promise<readonly MakeupRequestResponse[]> {
+    return this.makeupService.listTeamPendingRequests(teamId);
   }
 }

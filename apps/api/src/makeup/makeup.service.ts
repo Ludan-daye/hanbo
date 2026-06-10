@@ -310,6 +310,41 @@ export class MakeupService {
     };
   }
 
+  async listTeamPendingRequests(teamId: string): Promise<readonly MakeupRequestResponse[]> {
+    const team = await this.prisma.team.findUnique({ where: { id: teamId } });
+
+    if (team === null) {
+      throw new NotFoundException({ message: "TEAM_NOT_FOUND", teamId });
+    }
+
+    const [workerMembers, managerMembers] = await Promise.all([
+      this.prisma.projectWorkerMember.findMany({
+        select: { workerId: true },
+        where: { projectId: team.projectId, status: "ACTIVE", teamId }
+      }),
+      this.prisma.projectManagerMember.findMany({
+        select: { managerId: true },
+        where: { projectId: team.projectId, status: "ACTIVE", teamScopeId: teamId }
+      })
+    ]);
+
+    const workerIds = workerMembers.map((m) => m.workerId);
+    const managerIds = managerMembers.map((m) => m.managerId);
+    const requests = await this.prisma.makeupRequest.findMany({
+      orderBy: { createdAt: "asc" },
+      where: {
+        projectId: team.projectId,
+        status: "PENDING",
+        OR: [
+          ...(workerIds.length > 0 ? [{ participantType: "WORKER" as const, participantId: { in: workerIds } }] : []),
+          ...(managerIds.length > 0 ? [{ participantType: "MANAGER" as const, participantId: { in: managerIds } }] : [])
+        ]
+      }
+    });
+
+    return requests.map(createMakeupRequestResponse);
+  }
+
   private async getProjectOrThrow(projectId: string): Promise<Project> {
     const project = await this.prisma.project.findUnique({
       where: {

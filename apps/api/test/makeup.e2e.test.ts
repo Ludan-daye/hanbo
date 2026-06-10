@@ -261,13 +261,62 @@ type MakeupRequestUpdateManyArgs = {
   };
 };
 
-type MakeupRequestFindManyArgs = {
+type MakeupRequestFindManyByDateArgs = {
   readonly where: {
     readonly attendanceDate: Date;
     readonly participantId: string;
     readonly participantType: ProfileOwnerTypeValue;
     readonly projectId: string;
     readonly status: "APPROVED";
+  };
+};
+
+type MakeupParticipantOrClause = {
+  readonly participantId: { readonly in: readonly string[] };
+  readonly participantType: ProfileOwnerTypeValue;
+};
+
+type MakeupRequestFindManyByTeamArgs = {
+  readonly orderBy?: { readonly createdAt: "asc" | "desc" };
+  readonly where: {
+    readonly OR: readonly MakeupParticipantOrClause[];
+    readonly projectId: string;
+    readonly status: "PENDING";
+  };
+};
+
+type MakeupRequestFindManyArgs = MakeupRequestFindManyByDateArgs | MakeupRequestFindManyByTeamArgs;
+
+type TeamRecord = {
+  readonly id: string;
+  readonly name: string;
+  readonly projectId: string;
+};
+
+type TeamFindUniqueArgs = {
+  readonly include?: {
+    readonly project?: boolean;
+  };
+  readonly where: {
+    readonly id: string;
+  };
+};
+
+type ProjectWorkerMemberFindManyArgs = {
+  readonly select?: { readonly workerId?: boolean };
+  readonly where: {
+    readonly projectId: string;
+    readonly status: string;
+    readonly teamId: string;
+  };
+};
+
+type ProjectManagerMemberFindManyArgs = {
+  readonly select?: { readonly managerId?: boolean };
+  readonly where: {
+    readonly projectId: string;
+    readonly status: string;
+    readonly teamScopeId: string;
   };
 };
 
@@ -314,6 +363,7 @@ class MakeupPrismaTestDouble {
   readonly users = new Map<string, UserRecord>();
   readonly sessions = new Map<string, SessionRecord>();
   readonly projects = new Map<string, ProjectRecord>();
+  readonly teams = new Map<string, TeamRecord>();
   readonly roles = new Map<RoleCode, RoleRecord>();
   readonly userRoles: UserRoleRecord[] = [];
   readonly shifts = new Map<string, ShiftRecord>();
@@ -345,6 +395,34 @@ class MakeupPrismaTestDouble {
 
   readonly project = {
     findUnique: async (args: ProjectFindUniqueArgs): Promise<ProjectRecord | null> => this.projects.get(args.where.id) ?? null
+  };
+
+  readonly team = {
+    findUnique: async (args: TeamFindUniqueArgs): Promise<(TeamRecord & { readonly project?: ProjectRecord }) | null> => {
+      const team = this.teams.get(args.where.id);
+
+      if (team === undefined) {
+        return null;
+      }
+
+      if (args.include?.project === true) {
+        const project = this.projects.get(team.projectId);
+
+        if (project === undefined) {
+          throw new Error(
+            JSON.stringify({
+              message: "Team project not found in test double",
+              projectId: team.projectId,
+              teamId: team.id
+            })
+          );
+        }
+
+        return { ...team, project };
+      }
+
+      return team;
+    }
   };
 
   readonly shift = {
@@ -434,11 +512,29 @@ class MakeupPrismaTestDouble {
   };
 
   readonly projectWorkerMember = {
+    findMany: async (args: ProjectWorkerMemberFindManyArgs): Promise<Pick<ProjectWorkerMemberRecord, "workerId">[]> =>
+      Array.from(this.workerMembers.values())
+        .filter(
+          (m: ProjectWorkerMemberRecord): boolean =>
+            m.projectId === args.where.projectId &&
+            m.status === args.where.status &&
+            m.teamId === args.where.teamId
+        )
+        .map((m: ProjectWorkerMemberRecord) => ({ workerId: m.workerId })),
     findUnique: async (args: ProjectWorkerMemberFindUniqueArgs): Promise<ProjectWorkerMemberRecord | null> =>
       this.workerMembers.get(`${args.where.projectId_workerId.projectId}:${args.where.projectId_workerId.workerId}`) ?? null
   };
 
   readonly projectManagerMember = {
+    findMany: async (args: ProjectManagerMemberFindManyArgs): Promise<Pick<ProjectManagerMemberRecord, "managerId">[]> =>
+      Array.from(this.managerMembers.values())
+        .filter(
+          (m: ProjectManagerMemberRecord): boolean =>
+            m.projectId === args.where.projectId &&
+            m.status === args.where.status &&
+            m.teamScopeId === args.where.teamScopeId
+        )
+        .map((m: ProjectManagerMemberRecord) => ({ managerId: m.managerId })),
     findUnique: async (args: ProjectManagerMemberFindUniqueArgs): Promise<ProjectManagerMemberRecord | null> =>
       this.managerMembers.get(`${args.where.projectId_managerId.projectId}:${args.where.projectId_managerId.managerId}`) ?? null
   };
@@ -456,15 +552,35 @@ class MakeupPrismaTestDouble {
       this.makeupRequests.set(requestRecord.id, requestRecord);
       return requestRecord;
     },
-    findMany: async (args: MakeupRequestFindManyArgs): Promise<MakeupRequestRecord[]> =>
-      Array.from(this.makeupRequests.values()).filter(
-        (requestRecord: MakeupRequestRecord): boolean =>
-          requestRecord.projectId === args.where.projectId &&
-          requestRecord.participantType === args.where.participantType &&
-          requestRecord.participantId === args.where.participantId &&
-          requestRecord.status === args.where.status &&
-          requestRecord.attendanceDate.getTime() === args.where.attendanceDate.getTime()
-      ),
+    findMany: async (args: MakeupRequestFindManyArgs): Promise<MakeupRequestRecord[]> => {
+      const all = Array.from(this.makeupRequests.values());
+
+      if ("OR" in args.where) {
+        const byTeam = args as MakeupRequestFindManyByTeamArgs;
+        return all
+          .filter(
+            (r: MakeupRequestRecord): boolean =>
+              r.projectId === byTeam.where.projectId &&
+              r.status === byTeam.where.status &&
+              byTeam.where.OR.some(
+                (clause: MakeupParticipantOrClause): boolean =>
+                  r.participantType === clause.participantType &&
+                  clause.participantId.in.includes(r.participantId)
+              )
+          )
+          .sort((a: MakeupRequestRecord, b: MakeupRequestRecord): number => a.id.localeCompare(b.id));
+      }
+
+      const byDate = args as MakeupRequestFindManyByDateArgs;
+      return all.filter(
+        (r: MakeupRequestRecord): boolean =>
+          r.projectId === byDate.where.projectId &&
+          r.participantType === byDate.where.participantType &&
+          r.participantId === byDate.where.participantId &&
+          r.status === byDate.where.status &&
+          r.attendanceDate.getTime() === byDate.where.attendanceDate.getTime()
+      );
+    },
     findUnique: async (args: MakeupRequestFindUniqueArgs): Promise<MakeupRequestRecord | null> =>
       this.makeupRequests.get(args.where.id) ?? null,
     updateMany: async (args: MakeupRequestUpdateManyArgs): Promise<{ readonly count: number }> => {
@@ -835,5 +951,111 @@ describe("MakeupModule", (): void => {
       }),
       result: null
     });
+  });
+
+  test("GET /makeups/teams/:teamId/pending returns only PENDING requests for that team", async (): Promise<void> => {
+    // Seed teams
+    prisma.teams.set("team-1", { id: "team-1", name: "Team One", projectId: "project-1" });
+    prisma.teams.set("team-2", { id: "team-2", name: "Team Two", projectId: "project-1" });
+
+    // Seed worker-2 as an active member of team-2 (worker-1 is already in team-1 via beforeEach)
+    prisma.workerProfiles.set("worker-2", {
+      id: "worker-2",
+      phone: "13800000002",
+      projectMemberships: [
+        {
+          id: "worker-member-2",
+          projectId: "project-1",
+          requiresAttendance: true,
+          status: "ACTIVE",
+          teamId: "team-2",
+          workerId: "worker-2"
+        }
+      ],
+      userId: null
+    });
+    prisma.workerMembers.set("project-1:worker-2", {
+      id: "worker-member-2",
+      projectId: "project-1",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      teamId: "team-2",
+      workerId: "worker-2"
+    });
+
+    // Seed makeup requests: PENDING for worker-1 (team-1), PENDING for worker-2 (team-2), APPROVED for worker-1
+    prisma.makeupRequests.set("makeup-pending-w1", {
+      approvalReason: null,
+      approvedAt: null,
+      approverUserId: null,
+      attendanceDate: new Date("2026-06-03T00:00:00.000Z"),
+      id: "makeup-pending-w1",
+      participantId: "worker-1",
+      participantType: "WORKER",
+      pointCode: "SEGMENT_1_START",
+      projectId: "project-1",
+      reason: "Forgot to punch",
+      requestedOccurredAt: new Date("2026-06-03T00:00:00.000+08:00"),
+      requesterUserId: "worker-user",
+      status: "PENDING"
+    });
+    prisma.makeupRequests.set("makeup-pending-w2", {
+      approvalReason: null,
+      approvedAt: null,
+      approverUserId: null,
+      attendanceDate: new Date("2026-06-03T00:00:00.000Z"),
+      id: "makeup-pending-w2",
+      participantId: "worker-2",
+      participantType: "WORKER",
+      pointCode: "SEGMENT_1_START",
+      projectId: "project-1",
+      reason: "Gate queue delay",
+      requestedOccurredAt: new Date("2026-06-03T00:00:00.000+08:00"),
+      requesterUserId: "worker-user",
+      status: "PENDING"
+    });
+    prisma.makeupRequests.set("makeup-approved-w1", {
+      approvalReason: "Confirmed",
+      approvedAt: new Date("2026-06-03T10:00:00.000Z"),
+      approverUserId: "team-leader-user",
+      attendanceDate: new Date("2026-06-02T00:00:00.000Z"),
+      id: "makeup-approved-w1",
+      participantId: "worker-1",
+      participantType: "WORKER",
+      pointCode: "SEGMENT_1_END",
+      projectId: "project-1",
+      reason: "Left early",
+      requestedOccurredAt: new Date("2026-06-02T00:00:00.000+08:00"),
+      requesterUserId: "worker-user",
+      status: "APPROVED"
+    });
+
+    app = await createApp(prisma);
+    const leaderAccessToken = await createAccessToken(app, "team-leader-user", "session-team-leader");
+
+    const response = await request(app.getHttpServer())
+      .get("/makeups/teams/team-1/pending")
+      .set("Authorization", `Bearer ${leaderAccessToken}`)
+      .expect(200);
+
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]).toMatchObject({
+      participantId: "worker-1",
+      participantType: "WORKER",
+      status: "PENDING"
+    });
+  });
+
+  test("GET /makeups/teams/:teamId/pending returns 403 without makeup.approve at the team scope", async (): Promise<void> => {
+    prisma.teams.set("team-1", { id: "team-1", name: "Team One", projectId: "project-1" });
+
+    app = await createApp(prisma);
+    // other-team-leader-user has TEAM_LEADER role at team-2, NOT team-1
+    const otherLeaderAccessToken = await createAccessToken(app, "other-team-leader-user", "session-other-team-leader");
+
+    await request(app.getHttpServer())
+      .get("/makeups/teams/team-1/pending")
+      .set("Authorization", `Bearer ${otherLeaderAccessToken}`)
+      .expect(403);
   });
 });
