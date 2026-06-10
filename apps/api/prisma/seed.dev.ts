@@ -111,6 +111,87 @@ const main = async (): Promise<void> => {
   });
   await upsertUserRole(workerUserId, "WORKER", "PROJECT", project.id);
 
+  // Project memberships so PROJECT_ADMIN read views have real data.
+  const workerProfileForMembership = await prisma.workerProfile.findUniqueOrThrow({ where: { userId: workerUserId } });
+  await prisma.projectWorkerMember.upsert({
+    create: {
+      enteredAt: new Date("2026-05-01T00:00:00.000Z"),
+      projectId: project.id,
+      projectRoleLabel: "钢筋工",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      teamId: team.id,
+      workerId: workerProfileForMembership.id
+    },
+    update: { status: "ACTIVE", requiresAttendance: true, teamId: team.id },
+    where: { projectId_workerId: { projectId: project.id, workerId: workerProfileForMembership.id } }
+  });
+
+  const teamLeaderUserId = await upsertUser("dev-team", true);
+  const teamLeaderProfile = await prisma.managerProfile.findUniqueOrThrow({ where: { userId: teamLeaderUserId } });
+  await prisma.projectManagerMember.upsert({
+    create: {
+      managerId: teamLeaderProfile.id,
+      projectId: project.id,
+      requiresAttendance: true,
+      roleCode: "TEAM_LEADER",
+      status: "ACTIVE",
+      teamScopeId: team.id
+    },
+    update: { status: "ACTIVE", requiresAttendance: true, teamScopeId: team.id, roleCode: "TEAM_LEADER" },
+    where: { projectId_managerId: { managerId: teamLeaderProfile.id, projectId: project.id } }
+  });
+
+  const projectAdminUserId = await upsertUser("dev-project", true);
+  const projectAdminProfile = await prisma.managerProfile.findUniqueOrThrow({ where: { userId: projectAdminUserId } });
+  await prisma.projectManagerMember.upsert({
+    create: {
+      managerId: projectAdminProfile.id,
+      projectId: project.id,
+      requiresAttendance: false,
+      roleCode: "PROJECT_ADMIN",
+      status: "ACTIVE",
+      teamScopeId: null
+    },
+    update: { status: "ACTIVE", roleCode: "PROJECT_ADMIN", teamScopeId: null, requiresAttendance: false },
+    where: { projectId_managerId: { managerId: projectAdminProfile.id, projectId: project.id } }
+  });
+
+  // Sample daily attendance results for the past 3 days so the report screens have data.
+  const today = new Date();
+  const toDateOnly = (d: Date): Date => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const minus = (n: number): Date => {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - n);
+    return toDateOnly(d);
+  };
+  const seededResults = [
+    { attendanceDate: minus(0), isAbsent: false, isEarlyLeave: false, isLate: false, isMissingPunch: false, workedMinutes: 480 },
+    { attendanceDate: minus(1), isAbsent: false, isEarlyLeave: false, isLate: true, isMissingPunch: false, workedMinutes: 450 },
+    { attendanceDate: minus(2), isAbsent: true, isEarlyLeave: false, isLate: false, isMissingPunch: false, workedMinutes: 0 }
+  ];
+  for (const r of seededResults) {
+    await prisma.attendanceResult.upsert({
+      create: {
+        ...r,
+        abnormalRecordCount: r.isAbsent || r.isLate ? 1 : 0,
+        approvedMakeupCount: 0,
+        participantId: workerProfileForMembership.id,
+        participantType: "WORKER",
+        projectId: project.id
+      },
+      update: { ...r, abnormalRecordCount: r.isAbsent || r.isLate ? 1 : 0, approvedMakeupCount: 0 },
+      where: {
+        projectId_attendanceDate_participantType_participantId: {
+          attendanceDate: r.attendanceDate,
+          participantId: workerProfileForMembership.id,
+          participantType: "WORKER",
+          projectId: project.id
+        }
+      }
+    });
+  }
+
   const creatorUserId = await upsertUser("dev-project", true);
   await upsertUser("dev-unbound", false);
   const unboundWorker = await prisma.workerProfile.upsert({
