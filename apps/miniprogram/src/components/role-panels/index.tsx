@@ -19,7 +19,13 @@ const TILES: Record<PanelKey, { title: string; tiles: ReadonlyArray<TileCfg> }> 
     ]
   },
   systemAdmin: { title: "系统管理员", tiles: [{ title: "系统配置", sub: "公司 / 角色 / 全局设置" }] },
-  teamLeader: { title: "班组长", tiles: [{ title: "补卡审批", sub: "审批本班组补卡" }, { title: "团队考勤", sub: "查看班组出勤" }] },
+  teamLeader: {
+    title: "班组长",
+    tiles: [
+      { title: "补卡审批", sub: "审批本班组补卡", nav: { url: "/pages/team-makeups/index" } },
+      { title: "团队考勤", sub: "查看班组出勤", nav: { url: "/pages/team-attendance/index" } }
+    ]
+  },
   worker: { title: "工人", tiles: [{ title: "打卡", sub: "四点考勤 · 拍照 + 定位" }, { title: "我的记录", sub: "查看出勤明细" }, { title: "补卡", sub: "提交补卡申请" }] }
 };
 

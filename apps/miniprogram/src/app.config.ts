@@ -5,7 +5,9 @@ export default defineAppConfig({
     "pages/home/index",
     "pages/participants/index",
     "pages/reports/index",
-    "pages/invitation/index"
+    "pages/invitation/index",
+    "pages/team-makeups/index",
+    "pages/team-attendance/index"
   ],
   window: {
     backgroundColor: "#F3ECE1",
