@@ -138,6 +138,12 @@ type ProjectFindUniqueArgs = {
   };
 };
 
+type TeamFindUniqueArgs = {
+  readonly where: {
+    readonly id: string;
+  };
+};
+
 type ProjectMemberFindManyArgs = {
   readonly include: {
     readonly manager?: boolean;
@@ -149,6 +155,8 @@ type ProjectMemberFindManyArgs = {
     readonly projectId: string;
     readonly requiresAttendance: boolean;
     readonly status: "ACTIVE";
+    readonly teamId?: string;
+    readonly teamScopeId?: string;
   };
 };
 
@@ -203,6 +211,7 @@ class ReportsPrismaTestDouble {
   readonly users = new Map<string, UserRecord>();
   readonly sessions = new Map<string, SessionRecord>();
   readonly projects = new Map<string, ProjectRecord>();
+  readonly teams = new Map<string, TeamRecord>();
   readonly roles = new Map<RoleCode, RoleRecord>();
   readonly userRoles: UserRoleRecord[] = [];
   readonly workerMembers: ProjectWorkerMemberRecord[] = [];
@@ -228,13 +237,28 @@ class ReportsPrismaTestDouble {
     findUnique: async (args: ProjectFindUniqueArgs): Promise<ProjectRecord | null> => this.projects.get(args.where.id) ?? null
   };
 
+  readonly team = {
+    findUnique: async (args: TeamFindUniqueArgs): Promise<(TeamRecord & { readonly project: ProjectRecord }) | null> => {
+      const teamRecord = this.teams.get(args.where.id);
+      if (teamRecord === undefined) {
+        return null;
+      }
+      const projectRecord = this.projects.get(teamRecord.projectId);
+      if (projectRecord === undefined) {
+        return null;
+      }
+      return { ...teamRecord, project: projectRecord };
+    }
+  };
+
   readonly projectWorkerMember = {
     findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectWorkerMemberRecord[]> =>
       this.workerMembers.filter(
         (member: ProjectWorkerMemberRecord): boolean =>
           member.projectId === args.where.projectId &&
           member.status === args.where.status &&
-          member.requiresAttendance === args.where.requiresAttendance
+          member.requiresAttendance === args.where.requiresAttendance &&
+          (args.where.teamId === undefined || member.teamId === args.where.teamId)
       )
   };
 
@@ -244,7 +268,8 @@ class ReportsPrismaTestDouble {
         (member: ProjectManagerMemberRecord): boolean =>
           member.projectId === args.where.projectId &&
           member.status === args.where.status &&
-          member.requiresAttendance === args.where.requiresAttendance
+          member.requiresAttendance === args.where.requiresAttendance &&
+          (args.where.teamScopeId === undefined || member.teamScopeId === args.where.teamScopeId)
       )
   };
 
@@ -638,6 +663,181 @@ describe("ReportsModule", (): void => {
         workedMinutes: 1295
       }
     });
+  });
+
+  test("GET /reports/teams/:teamId/daily includes only team participants", async (): Promise<void> => {
+    // Seed team-1 and team-2; worker-1 belongs to team-1; worker-2 belongs to team-2.
+    // Give viewer-user TEAM_LEADER at team-1 scope so they have attendance.view.
+    const team1: TeamRecord = { id: "team-1", name: "Steel Team", projectId: "project-1" };
+    const team2: TeamRecord = { id: "team-2", name: "Wood Team", projectId: "project-1" };
+    prisma.teams.set("team-1", team1);
+    prisma.teams.set("team-2", team2);
+
+    // Move worker-2 to team-2 (clear existing and re-seed)
+    prisma.workerMembers.length = 0;
+    prisma.managerMembers.length = 0;
+    prisma.workerMembers.push({
+      id: "worker-member-1",
+      projectId: "project-1",
+      projectRoleLabel: "Welder",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: team1,
+      teamId: "team-1",
+      worker: { id: "worker-1", phone: "13800000001", workType: "Steel" },
+      workerId: "worker-1"
+    });
+    prisma.workerMembers.push({
+      id: "worker-member-2",
+      projectId: "project-1",
+      projectRoleLabel: "Carpenter",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: team2,
+      teamId: "team-2",
+      worker: { id: "worker-2", phone: "13800000003", workType: "Woodwork" },
+      workerId: "worker-2"
+    });
+
+    // Grant viewer-user TEAM_LEADER at team-1 scope
+    prisma.userRoles.push({
+      role: prisma.roles.get("TEAM_LEADER") as RoleRecord,
+      scopeId: "team-1",
+      scopeType: "TEAM",
+      userId: "viewer-user"
+    });
+
+    app = await createApp(prisma);
+    const viewerAccessToken = await createAccessToken(app, "viewer-user", "session-viewer");
+
+    const response = await request(app.getHttpServer())
+      .get("/reports/teams/team-1/daily?date=2026-06-03")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    expect(response.body.participants).toHaveLength(1);
+    expect(response.body.participants[0].participantId).toBe("worker-1");
+    expect(response.body.totals.participantCount).toBe(1);
+    expect(response.body.projectId).toBe("project-1");
+    expect(response.body.periodType).toBe("DAILY");
+  });
+
+  test("GET /reports/teams/:teamId/weekly includes only team participants", async (): Promise<void> => {
+    const team1: TeamRecord = { id: "team-1", name: "Steel Team", projectId: "project-1" };
+    const team2: TeamRecord = { id: "team-2", name: "Wood Team", projectId: "project-1" };
+    prisma.teams.set("team-1", team1);
+    prisma.teams.set("team-2", team2);
+
+    prisma.workerMembers.length = 0;
+    prisma.managerMembers.length = 0;
+    prisma.workerMembers.push({
+      id: "worker-member-1",
+      projectId: "project-1",
+      projectRoleLabel: "Welder",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: team1,
+      teamId: "team-1",
+      worker: { id: "worker-1", phone: "13800000001", workType: "Steel" },
+      workerId: "worker-1"
+    });
+    prisma.workerMembers.push({
+      id: "worker-member-2",
+      projectId: "project-1",
+      projectRoleLabel: "Carpenter",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: team2,
+      teamId: "team-2",
+      worker: { id: "worker-2", phone: "13800000003", workType: "Woodwork" },
+      workerId: "worker-2"
+    });
+
+    prisma.userRoles.push({
+      role: prisma.roles.get("TEAM_LEADER") as RoleRecord,
+      scopeId: "team-1",
+      scopeType: "TEAM",
+      userId: "viewer-user"
+    });
+
+    app = await createApp(prisma);
+    const viewerAccessToken = await createAccessToken(app, "viewer-user", "session-viewer");
+
+    const response = await request(app.getHttpServer())
+      .get("/reports/teams/team-1/weekly?weekStartDate=2026-06-02")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    expect(response.body.participants).toHaveLength(1);
+    expect(response.body.participants[0].participantId).toBe("worker-1");
+    expect(response.body.totals.participantCount).toBe(1);
+    expect(response.body.periodType).toBe("WEEKLY");
+  });
+
+  test("GET /reports/teams/:teamId/monthly includes only team participants", async (): Promise<void> => {
+    const team1: TeamRecord = { id: "team-1", name: "Steel Team", projectId: "project-1" };
+    const team2: TeamRecord = { id: "team-2", name: "Wood Team", projectId: "project-1" };
+    prisma.teams.set("team-1", team1);
+    prisma.teams.set("team-2", team2);
+
+    prisma.workerMembers.length = 0;
+    prisma.managerMembers.length = 0;
+    prisma.workerMembers.push({
+      id: "worker-member-1",
+      projectId: "project-1",
+      projectRoleLabel: "Welder",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: team1,
+      teamId: "team-1",
+      worker: { id: "worker-1", phone: "13800000001", workType: "Steel" },
+      workerId: "worker-1"
+    });
+    prisma.workerMembers.push({
+      id: "worker-member-2",
+      projectId: "project-1",
+      projectRoleLabel: "Carpenter",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: team2,
+      teamId: "team-2",
+      worker: { id: "worker-2", phone: "13800000003", workType: "Woodwork" },
+      workerId: "worker-2"
+    });
+
+    prisma.userRoles.push({
+      role: prisma.roles.get("TEAM_LEADER") as RoleRecord,
+      scopeId: "team-1",
+      scopeType: "TEAM",
+      userId: "viewer-user"
+    });
+
+    app = await createApp(prisma);
+    const viewerAccessToken = await createAccessToken(app, "viewer-user", "session-viewer");
+
+    const response = await request(app.getHttpServer())
+      .get("/reports/teams/team-1/monthly?month=2026-06")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    expect(response.body.participants).toHaveLength(1);
+    expect(response.body.participants[0].participantId).toBe("worker-1");
+    expect(response.body.totals.participantCount).toBe(1);
+    expect(response.body.periodType).toBe("MONTHLY");
+  });
+
+  test("GET /reports/teams/:teamId/daily returns 403 without attendance.view at team scope", async (): Promise<void> => {
+    const team1: TeamRecord = { id: "team-1", name: "Steel Team", projectId: "project-1" };
+    prisma.teams.set("team-1", team1);
+
+    // worker-user has no attendance.view role — should be 403
+    app = await createApp(prisma);
+    const workerAccessToken = await createAccessToken(app, "worker-user", "session-worker");
+
+    await request(app.getHttpServer())
+      .get("/reports/teams/team-1/daily?date=2026-06-03")
+      .set("Authorization", `Bearer ${workerAccessToken}`)
+      .expect(403);
   });
 
   test("weekly and monthly reports count only scheduled workdays when a project schedule exists", async (): Promise<void> => {

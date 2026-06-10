@@ -251,8 +251,55 @@ export class ReportsService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async getDailyReport(projectId: string, date: string): Promise<DailyAttendanceReportResponse> {
-    const reportDate = dateOnlyToDate(date);
     const participants = await this.loadParticipants(projectId);
+
+    return this.computeDailyReport(projectId, participants, date);
+  }
+
+  async getWeeklyReport(projectId: string, weekStartDate: string): Promise<RangeAttendanceReportResponse> {
+    const participants = await this.loadParticipants(projectId);
+    const startDate = dateOnlyToDate(weekStartDate);
+    const endDate = addDays(startDate, 6);
+
+    return this.computeRangeReport(projectId, participants, "WEEKLY", startDate, endDate);
+  }
+
+  async getMonthlyReport(projectId: string, month: string): Promise<RangeAttendanceReportResponse> {
+    const participants = await this.loadParticipants(projectId);
+    const startDate = getMonthStartDate(month);
+    const endDate = getMonthEndDate(month);
+
+    return this.computeRangeReport(projectId, participants, "MONTHLY", startDate, endDate);
+  }
+
+  async getTeamDailyReport(teamId: string, date: string): Promise<DailyAttendanceReportResponse> {
+    const { participants, projectId } = await this.loadTeamParticipantBases(teamId);
+
+    return this.computeDailyReport(projectId, participants, date);
+  }
+
+  async getTeamWeeklyReport(teamId: string, weekStartDate: string): Promise<RangeAttendanceReportResponse> {
+    const { participants, projectId } = await this.loadTeamParticipantBases(teamId);
+    const startDate = dateOnlyToDate(weekStartDate);
+    const endDate = addDays(startDate, 6);
+
+    return this.computeRangeReport(projectId, participants, "WEEKLY", startDate, endDate);
+  }
+
+  async getTeamMonthlyReport(teamId: string, month: string): Promise<RangeAttendanceReportResponse> {
+    const { participants, projectId } = await this.loadTeamParticipantBases(teamId);
+    const startDate = getMonthStartDate(month);
+    const endDate = getMonthEndDate(month);
+
+    return this.computeRangeReport(projectId, participants, "MONTHLY", startDate, endDate);
+  }
+
+  private async computeDailyReport(
+    projectId: string,
+    participants: readonly AttendanceReportParticipantBase[],
+    date: string
+  ): Promise<DailyAttendanceReportResponse> {
+    const reportDate = dateOnlyToDate(date);
     const [resultsByKey, schedules] = await Promise.all([
       this.loadResultsByKey(projectId, reportDate, reportDate),
       this.loadProjectSchedules(projectId)
@@ -286,28 +333,14 @@ export class ReportsService {
     };
   }
 
-  async getWeeklyReport(projectId: string, weekStartDate: string): Promise<RangeAttendanceReportResponse> {
-    const startDate = dateOnlyToDate(weekStartDate);
-    const endDate = addDays(startDate, 6);
-
-    return this.getRangeReport(projectId, "WEEKLY", startDate, endDate);
-  }
-
-  async getMonthlyReport(projectId: string, month: string): Promise<RangeAttendanceReportResponse> {
-    const startDate = getMonthStartDate(month);
-    const endDate = getMonthEndDate(month);
-
-    return this.getRangeReport(projectId, "MONTHLY", startDate, endDate);
-  }
-
-  private async getRangeReport(
+  private async computeRangeReport(
     projectId: string,
+    participants: readonly AttendanceReportParticipantBase[],
     periodType: "MONTHLY" | "WEEKLY",
     startDate: Date,
     endDate: Date
   ): Promise<RangeAttendanceReportResponse> {
     const dates = listDatesInclusive(startDate, endDate);
-    const participants = await this.loadParticipants(projectId);
     const [resultsByKey, schedules] = await Promise.all([
       this.loadResultsByKey(projectId, startDate, endDate),
       this.loadProjectSchedules(projectId)
@@ -403,6 +436,63 @@ export class ReportsService {
       ...workerMembers.map(createWorkerParticipantBase),
       ...managerMembers.map(createManagerParticipantBase)
     ];
+  }
+
+  private async loadTeamParticipantBases(
+    teamId: string
+  ): Promise<{ readonly participants: readonly AttendanceReportParticipantBase[]; readonly projectId: string }> {
+    const team = await this.prisma.team.findUnique({
+      where: {
+        id: teamId
+      }
+    });
+
+    if (team === null) {
+      throw new NotFoundException({ message: "REPORT_TEAM_NOT_FOUND", teamId });
+    }
+
+    const { projectId } = team;
+
+    const [workerMembers, managerMembers] = await Promise.all([
+      this.prisma.projectWorkerMember.findMany({
+        include: {
+          team: true,
+          worker: true
+        },
+        orderBy: {
+          createdAt: "asc"
+        },
+        where: {
+          projectId,
+          requiresAttendance: true,
+          status: "ACTIVE",
+          teamId
+        }
+      }),
+      this.prisma.projectManagerMember.findMany({
+        include: {
+          manager: true,
+          teamScope: true
+        },
+        orderBy: {
+          createdAt: "asc"
+        },
+        where: {
+          projectId,
+          requiresAttendance: true,
+          status: "ACTIVE",
+          teamScopeId: teamId
+        }
+      })
+    ]);
+
+    return {
+      participants: [
+        ...workerMembers.map(createWorkerParticipantBase),
+        ...managerMembers.map(createManagerParticipantBase)
+      ],
+      projectId
+    };
   }
 
   private async loadResultsByKey(projectId: string, startDate: Date, endDate: Date): Promise<ReadonlyMap<string, AttendanceResult>> {
