@@ -31,3 +31,23 @@
 .ui-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; }
 
 @keyframes ui-rise { from { opacity: 0; transform: translateY(16rpx); } to { opacity: 1; transform: none; } }
+
+.ui-header { display:flex; align-items:center; min-height: 88rpx; }
+.ui-header__back { width: 64rpx; height: 64rpx; display:flex; align-items:center; justify-content:center; color: var(--ink); font-size: 36rpx; }
+.ui-header__title { font-size: 36rpx; font-weight: 800; color: var(--ink); margin-left: 12rpx; }
+
+.ui-segmented { display:flex; background: var(--surface-sunk); border-radius: var(--radius-pill); padding: 6rpx; margin-top: 20rpx; }
+.ui-segmented__item { flex:1; text-align:center; padding: 16rpx 0; border-radius: var(--radius-pill); font-size: 28rpx; color: var(--ink-soft); }
+.ui-segmented__item--active { background: var(--clay); color: #fff; font-weight: 700; }
+
+.ui-listitem { background: var(--surface); border-radius: var(--radius-card); padding: 24rpx 28rpx; margin-top: 16rpx; box-shadow: var(--shadow-soft); display:flex; align-items:center; justify-content: space-between; }
+.ui-listitem__body { display:flex; flex-direction:column; }
+.ui-listitem__primary { font-size: 30rpx; font-weight: 700; color: var(--ink); }
+.ui-listitem__secondary { font-size: 24rpx; color: var(--ink-soft); margin-top: 4rpx; }
+.ui-listitem__chip { font-size: 22rpx; color: var(--steel); background: var(--clay-tint); padding: 4rpx 16rpx; border-radius: var(--radius-pill); }
+
+.ui-statcard { display:flex; flex-direction:column; background: var(--surface); border-radius: var(--radius-card); padding: 20rpx 24rpx; box-shadow: var(--shadow-soft); margin-top: 16rpx; }
+.ui-statcard__label { font-size: 22rpx; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 2rpx; }
+.ui-statcard__value { font-size: 44rpx; font-weight: 800; color: var(--ink); margin-top: 4rpx; }
+.ui-statcards { display:flex; gap: 16rpx; flex-wrap: wrap; }
+.ui-statcards > .ui-statcard { flex: 1 1 30%; margin-top: 16rpx; }
