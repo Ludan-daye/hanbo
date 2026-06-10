@@ -1,5 +1,12 @@
 export default defineAppConfig({
-  pages: ["pages/login/index", "pages/bind/index", "pages/home/index"],
+  pages: [
+    "pages/login/index",
+    "pages/bind/index",
+    "pages/home/index",
+    "pages/participants/index",
+    "pages/reports/index",
+    "pages/invitation/index"
+  ],
   window: {
     backgroundColor: "#F3ECE1",
     backgroundTextStyle: "dark",

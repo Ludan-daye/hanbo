@@ -19,8 +19,8 @@ export const Button = ({
   </TaroButton>
 );
 
-export const Tile = ({ title, sub, stub }: { title: string; sub: string; stub?: boolean }): JSX.Element => (
-  <View className="ui-tile">
+export const Tile = ({ title, sub, stub, onClick }: { title: string; sub: string; stub?: boolean; onClick?: () => void }): JSX.Element => (
+  <View className="ui-tile" onClick={onClick}>
     <View className="ui-tile__title">{title}</View>
     <View className="ui-tile__sub">{sub}</View>
     {stub ? <Text className="ui-badge">敬请期待</Text> : null}
