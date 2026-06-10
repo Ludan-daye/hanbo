@@ -121,4 +121,19 @@ export class ManagementController {
   async listProjectParticipants(@Param("projectId") projectId: string): Promise<readonly ProjectParticipantResponse[]> {
     return this.managementService.listProjectParticipants(projectId);
   }
+
+  @Get("teams/:teamId/participants")
+  @RequirePermission({
+    permissionCode: "attendance.view",
+    target: {
+      paramName: "teamId",
+      source: "teamParam"
+    }
+  })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async listTeamParticipants(
+    @Param("teamId") teamId: string
+  ): Promise<readonly ProjectParticipantResponse[]> {
+    return this.managementService.listTeamParticipants(teamId);
+  }
 }

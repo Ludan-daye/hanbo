@@ -323,6 +323,32 @@ export class ManagementService {
     }
   }
 
+  async listTeamParticipants(teamId: string): Promise<readonly ProjectParticipantResponse[]> {
+    const team = await this.prisma.team.findUnique({ where: { id: teamId } });
+
+    if (team === null) {
+      throw new NotFoundException({ message: "TEAM_NOT_FOUND", teamId });
+    }
+
+    const [workerMembers, managerMembers] = await Promise.all([
+      this.prisma.projectWorkerMember.findMany({
+        include: { team: true, worker: true },
+        orderBy: { createdAt: "asc" },
+        where: { projectId: team.projectId, teamId }
+      }),
+      this.prisma.projectManagerMember.findMany({
+        include: { manager: true, teamScope: true },
+        orderBy: { createdAt: "asc" },
+        where: { projectId: team.projectId, teamScopeId: teamId }
+      })
+    ]);
+
+    return [
+      ...workerMembers.map(createWorkerParticipantResponse),
+      ...managerMembers.map(createManagerParticipantResponse)
+    ];
+  }
+
   async listProjectParticipants(projectId: string): Promise<readonly ProjectParticipantResponse[]> {
     await this.getProjectOrThrow(projectId);
     const [workerMembers, managerMembers] = await Promise.all([

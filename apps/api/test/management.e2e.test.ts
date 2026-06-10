@@ -256,8 +256,13 @@ type ProjectMemberFindManyArgs = {
     readonly teamScope?: boolean;
     readonly worker?: boolean;
   };
+  readonly orderBy?: {
+    readonly createdAt?: "asc" | "desc";
+  };
   readonly where: {
     readonly projectId: string;
+    readonly teamId?: string;
+    readonly teamScopeId?: string;
   };
 };
 
@@ -488,7 +493,9 @@ class ManagementPrismaTestDouble {
     },
     findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectWorkerMemberRecord[]> =>
       Array.from(this.workerMembers.values()).filter(
-        (member: ProjectWorkerMemberRecord): boolean => member.projectId === args.where.projectId
+        (member: ProjectWorkerMemberRecord): boolean =>
+          member.projectId === args.where.projectId &&
+          (args.where.teamId === undefined || member.teamId === args.where.teamId)
       )
   };
 
@@ -522,7 +529,9 @@ class ManagementPrismaTestDouble {
     },
     findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectManagerMemberRecord[]> =>
       Array.from(this.managerMembers.values()).filter(
-        (member: ProjectManagerMemberRecord): boolean => member.projectId === args.where.projectId
+        (member: ProjectManagerMemberRecord): boolean =>
+          member.projectId === args.where.projectId &&
+          (args.where.teamScopeId === undefined || member.teamScopeId === args.where.teamScopeId)
       )
   };
 
@@ -794,6 +803,212 @@ describe("ManagementModule", (): void => {
         teamName: "Steel Team"
       }
     ]);
+  });
+
+  test("GET /management/teams/:teamId/participants returns only team participants", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+
+    // Seed project-1
+    prisma.projects.set("project-1", {
+      address: "No. 1 Site Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-1",
+      name: "North Gate Site",
+      plannedEndDate: null,
+      plannedStartDate: new Date("2026-06-03T00:00:00.000Z"),
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // Seed team-1 and team-2
+    prisma.teams.set("team-1", {
+      createdAt: now,
+      id: "team-1",
+      name: "Team One",
+      projectId: "project-1",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.teams.set("team-2", {
+      createdAt: now,
+      id: "team-2",
+      name: "Team Two",
+      projectId: "project-1",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // Seed worker-1 (team-1) and worker-2 (team-2)
+    prisma.workerProfiles.set("worker-1", {
+      employmentStatus: "ACTIVE",
+      encryptedIdNumber: "enc-id-1",
+      encryptedName: "enc-name-1",
+      faceProfileStatus: "PENDING",
+      id: "worker-1",
+      idNumberHash: "hash-1",
+      phone: "13800000001",
+      realNameStatus: "VERIFIED",
+      workType: "Steel"
+    });
+    prisma.workerProfiles.set("worker-2", {
+      employmentStatus: "ACTIVE",
+      encryptedIdNumber: "enc-id-2",
+      encryptedName: "enc-name-2",
+      faceProfileStatus: "PENDING",
+      id: "worker-2",
+      idNumberHash: "hash-2",
+      phone: "13800000002",
+      realNameStatus: "VERIFIED",
+      workType: "Concrete"
+    });
+
+    prisma.workerMembers.set("worker-member-1", {
+      enteredAt: now,
+      exitedAt: null,
+      id: "worker-member-1",
+      projectId: "project-1",
+      projectRoleLabel: "Welder",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: prisma.teams.get("team-1") ?? null,
+      teamId: "team-1",
+      worker: prisma.workerProfiles.get("worker-1") as WorkerProfileRecord,
+      workerId: "worker-1"
+    });
+    prisma.workerMembers.set("worker-member-2", {
+      enteredAt: now,
+      exitedAt: null,
+      id: "worker-member-2",
+      projectId: "project-1",
+      projectRoleLabel: "Mason",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: prisma.teams.get("team-2") ?? null,
+      teamId: "team-2",
+      worker: prisma.workerProfiles.get("worker-2") as WorkerProfileRecord,
+      workerId: "worker-2"
+    });
+
+    // Seed manager-1 with teamScopeId=team-1
+    prisma.managerProfiles.set("manager-1", {
+      id: "manager-1",
+      name: "Team Lead Zhang",
+      phone: "13800000003",
+      status: "ACTIVE"
+    });
+    prisma.managerMembers.set("manager-member-1", {
+      id: "manager-member-1",
+      manager: prisma.managerProfiles.get("manager-1") as ManagerProfileRecord,
+      managerId: "manager-1",
+      projectId: "project-1",
+      requiresAttendance: true,
+      roleCode: "TEAM_LEADER",
+      status: "ACTIVE",
+      teamScope: prisma.teams.get("team-1") ?? null,
+      teamScopeId: "team-1"
+    });
+
+    // User has TEAM_LEADER role scoped to TEAM:team-1 (attendance.view)
+    prisma.userRoles.push({
+      role: prisma.roles.get("TEAM_LEADER") as RoleRecord,
+      roleId: "role-TEAM_LEADER",
+      scopeId: "team-1",
+      scopeType: "TEAM",
+      userId: "user-1"
+    });
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-1", "session-1");
+
+    const response = await request(app.getHttpServer())
+      .get("/management/teams/team-1/participants")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(response.body).toHaveLength(2);
+
+    const workerRow = (response.body as readonly Record<string, unknown>[]).find(
+      (row): boolean => row["participantType"] === "WORKER"
+    );
+    const managerRow = (response.body as readonly Record<string, unknown>[]).find(
+      (row): boolean => row["participantType"] === "MANAGER"
+    );
+
+    expect(workerRow).toMatchObject({
+      participantType: "WORKER",
+      teamId: "team-1",
+      teamName: "Team One"
+    });
+    expect(managerRow).toMatchObject({
+      participantType: "MANAGER",
+      teamId: "team-1",
+      teamName: "Team One"
+    });
+
+    // worker-2 (team-2) must not appear
+    const team2Rows = (response.body as readonly Record<string, unknown>[]).filter(
+      (row): boolean => row["teamId"] === "team-2"
+    );
+    expect(team2Rows).toHaveLength(0);
+  });
+
+  test("GET /management/teams/:teamId/participants returns 403 without attendance.view at team scope", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+
+    prisma.projects.set("project-1", {
+      address: "No. 1 Site Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-1",
+      name: "North Gate Site",
+      plannedEndDate: null,
+      plannedStartDate: new Date("2026-06-03T00:00:00.000Z"),
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.teams.set("team-1", {
+      createdAt: now,
+      id: "team-1",
+      name: "Team One",
+      projectId: "project-1",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.teams.set("team-2", {
+      createdAt: now,
+      id: "team-2",
+      name: "Team Two",
+      projectId: "project-1",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // Seed a separate user (user-2) who has TEAM_LEADER only at team-2 — no company-level role.
+    // user-1 (from beforeEach) has COMPANY_ADMIN@COMPANY(company-1) which would grant attendance.view
+    // company-wide, so we use user-2 to exercise the scope-mismatch 403 path.
+    prisma.seedActiveSession("user-2", "session-2");
+    prisma.userRoles.push({
+      role: prisma.roles.get("TEAM_LEADER") as RoleRecord,
+      roleId: "role-TEAM_LEADER",
+      scopeId: "team-2",
+      scopeType: "TEAM",
+      userId: "user-2"
+    });
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-2", "session-2");
+
+    await request(app.getHttpServer())
+      .get("/management/teams/team-1/participants")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(403);
   });
 
   test("only global system administrators create companies", async (): Promise<void> => {
