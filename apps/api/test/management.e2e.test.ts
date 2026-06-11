@@ -107,6 +107,22 @@ type ProjectManagerMemberRecord = {
   readonly teamScopeId: string | null;
 };
 
+type BindingInvitationStatusValue = "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
+type BindingTargetTypeValue = "MANAGER" | "WORKER";
+
+type BindingInvitationRecord = {
+  readonly id: string;
+  readonly targetType: BindingTargetTypeValue;
+  readonly workerProfileId: string | null;
+  readonly managerProfileId: string | null;
+  readonly codeHash: string;
+  readonly createdByUserId: string;
+  readonly acceptedByUserId: string | null;
+  status: BindingInvitationStatusValue;
+  readonly expiresAt: Date;
+  readonly createdAt: Date;
+};
+
 type RolePermissionRecord = {
   readonly permission: {
     readonly code: string;
@@ -263,7 +279,7 @@ type ProjectManagerMemberCreateArgs = {
 };
 
 type ProjectMemberFindManyArgs = {
-  readonly include: {
+  readonly include?: {
     readonly manager?: boolean;
     readonly team?: boolean;
     readonly teamScope?: boolean;
@@ -272,10 +288,50 @@ type ProjectMemberFindManyArgs = {
   readonly orderBy?: {
     readonly createdAt?: "asc" | "desc";
   };
+  readonly select?: {
+    readonly workerId?: boolean;
+    readonly managerId?: boolean;
+  };
   readonly where: {
     readonly projectId?: string | { readonly in: readonly string[] };
     readonly teamId?: string;
     readonly teamScopeId?: string;
+  };
+};
+
+type TeamFindManyArgs = {
+  readonly orderBy?: {
+    readonly createdAt?: "asc" | "desc";
+  };
+  readonly where: {
+    readonly projectId: string;
+  };
+};
+
+type BindingInvitationFindManyArgs = {
+  readonly orderBy?: {
+    readonly createdAt?: "asc" | "desc";
+  };
+  readonly where: {
+    readonly OR?: ReadonlyArray<{
+      readonly workerProfileId?: { readonly in: readonly string[] };
+      readonly managerProfileId?: { readonly in: readonly string[] };
+    }>;
+  };
+};
+
+type BindingInvitationFindUniqueArgs = {
+  readonly where: {
+    readonly id: string;
+  };
+};
+
+type BindingInvitationUpdateArgs = {
+  readonly data: {
+    readonly status: BindingInvitationStatusValue;
+  };
+  readonly where: {
+    readonly id: string;
   };
 };
 
@@ -308,6 +364,7 @@ class ManagementPrismaTestDouble {
   readonly managerMembers = new Map<string, ProjectManagerMemberRecord>();
   readonly roles = new Map<RoleCode, RoleRecord>();
   readonly userRoles: UserRoleRecord[] = [];
+  readonly bindingInvitations = new Map<string, BindingInvitationRecord>();
 
   private companySequence = 0;
   private projectSequence = 0;
@@ -415,6 +472,17 @@ class ManagementPrismaTestDouble {
       this.teams.set(team.id, team);
       return team;
     },
+    findMany: async (args: TeamFindManyArgs): Promise<TeamRecord[]> => {
+      const results = Array.from(this.teams.values()).filter(
+        (team: TeamRecord): boolean => team.projectId === args.where.projectId
+      );
+      if (args.orderBy?.createdAt === "asc") {
+        results.sort((a: TeamRecord, b: TeamRecord): number => a.createdAt.getTime() - b.createdAt.getTime());
+      } else if (args.orderBy?.createdAt === "desc") {
+        results.sort((a: TeamRecord, b: TeamRecord): number => b.createdAt.getTime() - a.createdAt.getTime());
+      }
+      return results;
+    },
     findUnique: async (args: TeamFindUniqueArgs): Promise<TeamRecord | null> => {
       const team = this.teams.get(args.where.id);
 
@@ -508,8 +576,8 @@ class ManagementPrismaTestDouble {
       this.workerMembers.set(member.id, member);
       return member;
     },
-    findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectWorkerMemberRecord[]> =>
-      Array.from(this.workerMembers.values()).filter(
+    findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectWorkerMemberRecord[] | Array<{ workerId: string }>> => {
+      const filtered = Array.from(this.workerMembers.values()).filter(
         (member: ProjectWorkerMemberRecord): boolean => {
           const projectIdFilter = args.where.projectId;
           const projectMatch =
@@ -520,7 +588,12 @@ class ManagementPrismaTestDouble {
                 : projectIdFilter.in.includes(member.projectId);
           return projectMatch && (args.where.teamId === undefined || member.teamId === args.where.teamId);
         }
-      ).sort((a: ProjectWorkerMemberRecord, b: ProjectWorkerMemberRecord): number => a.enteredAt.getTime() - b.enteredAt.getTime())
+      ).sort((a: ProjectWorkerMemberRecord, b: ProjectWorkerMemberRecord): number => a.enteredAt.getTime() - b.enteredAt.getTime());
+      if (args.select?.workerId === true) {
+        return filtered.map((m): { workerId: string } => ({ workerId: m.workerId }));
+      }
+      return filtered;
+    }
   };
 
   readonly projectManagerMember = {
@@ -551,8 +624,8 @@ class ManagementPrismaTestDouble {
       this.managerMembers.set(member.id, member);
       return member;
     },
-    findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectManagerMemberRecord[]> =>
-      Array.from(this.managerMembers.values()).filter(
+    findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectManagerMemberRecord[] | Array<{ managerId: string }>> => {
+      const filtered = Array.from(this.managerMembers.values()).filter(
         (member: ProjectManagerMemberRecord): boolean => {
           const projectIdFilter = args.where.projectId;
           const projectMatch =
@@ -566,7 +639,53 @@ class ManagementPrismaTestDouble {
       ).sort((a: ProjectManagerMemberRecord, b: ProjectManagerMemberRecord): number => {
         // manager members don't have enteredAt — use stable insertion-order fallback via id
         return a.id.localeCompare(b.id);
-      })
+      });
+      if (args.select?.managerId === true) {
+        return filtered.map((m): { managerId: string } => ({ managerId: m.managerId }));
+      }
+      return filtered;
+    }
+  };
+
+  readonly bindingInvitation = {
+    findMany: async (args: BindingInvitationFindManyArgs): Promise<BindingInvitationRecord[]> => {
+      const orFilters = args.where.OR ?? [];
+      const filtered = Array.from(this.bindingInvitations.values()).filter(
+        (inv: BindingInvitationRecord): boolean => {
+          if (orFilters.length === 0) {
+            return true;
+          }
+          return orFilters.some((orClause): boolean => {
+            const workerMatch =
+              orClause.workerProfileId !== undefined && inv.workerProfileId !== null
+                ? orClause.workerProfileId.in.includes(inv.workerProfileId)
+                : false;
+            const managerMatch =
+              orClause.managerProfileId !== undefined && inv.managerProfileId !== null
+                ? orClause.managerProfileId.in.includes(inv.managerProfileId)
+                : false;
+            return workerMatch || managerMatch;
+          });
+        }
+      );
+      if (args.orderBy?.createdAt === "desc") {
+        filtered.sort((a: BindingInvitationRecord, b: BindingInvitationRecord): number => b.createdAt.getTime() - a.createdAt.getTime());
+      } else if (args.orderBy?.createdAt === "asc") {
+        filtered.sort((a: BindingInvitationRecord, b: BindingInvitationRecord): number => a.createdAt.getTime() - b.createdAt.getTime());
+      }
+      return filtered;
+    },
+    findUnique: async (args: BindingInvitationFindUniqueArgs): Promise<BindingInvitationRecord | null> =>
+      this.bindingInvitations.get(args.where.id) ?? null,
+    update: async (args: BindingInvitationUpdateArgs): Promise<BindingInvitationRecord> => {
+      const inv = this.bindingInvitations.get(args.where.id);
+      if (inv === undefined) {
+        throw new Error(JSON.stringify({ message: "BindingInvitation not found in test double", id: args.where.id }));
+      }
+      const updated: BindingInvitationRecord = { ...inv, status: args.data.status };
+      this.bindingInvitations.set(updated.id, updated);
+      return updated;
+    }
   };
 
   async $transaction<T>(callback: (transaction: ManagementPrismaTestDouble) => Promise<T>): Promise<T> {
@@ -1437,6 +1556,503 @@ describe("ManagementModule", (): void => {
 
     await request(app.getHttpServer())
       .get("/management/companies/company-1/participants")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(403);
+  });
+
+  test("GET /management/projects/:projectId/teams returns the project's teams oldest-first", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+    const later = new Date("2026-06-04T00:00:00.000Z");
+
+    prisma.projects.set("project-1", {
+      address: "Site Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-1",
+      name: "Project One",
+      plannedEndDate: null,
+      plannedStartDate: now,
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.projects.set("project-2", {
+      address: "Site Road 2",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-2",
+      name: "Project Two",
+      plannedEndDate: null,
+      plannedStartDate: now,
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // team-1 is older (now), team-2 is newer (later) — both in project-1
+    prisma.teams.set("team-1", {
+      createdAt: now,
+      id: "team-1",
+      name: "Team One",
+      projectId: "project-1",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.teams.set("team-2", {
+      createdAt: later,
+      id: "team-2",
+      name: "Team Two",
+      projectId: "project-1",
+      status: "ACTIVE",
+      updatedAt: later
+    });
+    // team-3 belongs to project-2 — must not appear
+    prisma.teams.set("team-3", {
+      createdAt: now,
+      id: "team-3",
+      name: "Team Three",
+      projectId: "project-2",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // Grant PROJECT_ADMIN@PROJECT(project-1) to user-1
+    prisma.userRoles.push({
+      role: prisma.roles.get("PROJECT_ADMIN") as RoleRecord,
+      roleId: "role-PROJECT_ADMIN",
+      scopeId: "project-1",
+      scopeType: "PROJECT",
+      userId: "user-1"
+    });
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-1", "session-1");
+
+    const response = await request(app.getHttpServer())
+      .get("/management/projects/project-1/teams")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(200);
+
+    const body = response.body as readonly Record<string, unknown>[];
+    expect(body).toHaveLength(2);
+    expect(body[0]?.["id"]).toBe("team-1");
+    expect(body[1]?.["id"]).toBe("team-2");
+
+    const ids = body.map((row): unknown => row["id"]);
+    expect(ids).not.toContain("team-3");
+
+    for (const row of body) {
+      expect(row).toMatchObject({
+        id: expect.any(String),
+        name: expect.any(String),
+        projectId: "project-1",
+        status: expect.any(String)
+      });
+    }
+  });
+
+  test("GET /management/projects/:projectId/teams returns 403 without team.manage at the project scope", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+
+    prisma.projects.set("project-1", {
+      address: "Site Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-1",
+      name: "Project One",
+      plannedEndDate: null,
+      plannedStartDate: now,
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // user-2 has no role at project-1
+    prisma.seedActiveSession("user-2", "session-2");
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-2", "session-2");
+
+    await request(app.getHttpServer())
+      .get("/management/projects/project-1/teams")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(403);
+  });
+
+  test("GET /management/projects/:projectId/invitations returns the project's invitations WITHOUT plaintext code", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+    const expires = new Date("2026-06-10T00:00:00.000Z");
+
+    prisma.projects.set("project-1", {
+      address: "Site Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-1",
+      name: "Project One",
+      plannedEndDate: null,
+      plannedStartDate: now,
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.projects.set("project-2", {
+      address: "Site Road 2",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-2",
+      name: "Project Two",
+      plannedEndDate: null,
+      plannedStartDate: now,
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // Seed a worker profile and member in project-1 (invite-1 and invite-2 target worker-1)
+    prisma.workerProfiles.set("worker-1", {
+      employmentStatus: "ACTIVE",
+      encryptedIdNumber: "enc-id-1",
+      encryptedName: "enc-name-1",
+      faceProfileStatus: "PENDING",
+      id: "worker-1",
+      idNumberHash: "hash-1",
+      phone: "13800000001",
+      realNameStatus: "VERIFIED",
+      workType: "Steel"
+    });
+    prisma.workerMembers.set("worker-member-1", {
+      enteredAt: now,
+      exitedAt: null,
+      id: "worker-member-1",
+      projectId: "project-1",
+      projectRoleLabel: "Welder",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: prisma.workerProfiles.get("worker-1") as WorkerProfileRecord,
+      workerId: "worker-1"
+    });
+
+    // Seed a worker profile and member in project-2 (invite-3 targets worker-2)
+    prisma.workerProfiles.set("worker-2", {
+      employmentStatus: "ACTIVE",
+      encryptedIdNumber: "enc-id-2",
+      encryptedName: "enc-name-2",
+      faceProfileStatus: "PENDING",
+      id: "worker-2",
+      idNumberHash: "hash-2",
+      phone: "13800000002",
+      realNameStatus: "VERIFIED",
+      workType: "Concrete"
+    });
+    prisma.workerMembers.set("worker-member-2", {
+      enteredAt: now,
+      exitedAt: null,
+      id: "worker-member-2",
+      projectId: "project-2",
+      projectRoleLabel: "Mason",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: prisma.workerProfiles.get("worker-2") as WorkerProfileRecord,
+      workerId: "worker-2"
+    });
+
+    // invite-1: PENDING for worker-1 (project-1)
+    prisma.bindingInvitations.set("invite-1", {
+      id: "invite-1",
+      targetType: "WORKER",
+      workerProfileId: "worker-1",
+      managerProfileId: null,
+      codeHash: "hash-of-code-1",
+      createdByUserId: "user-1",
+      acceptedByUserId: null,
+      status: "PENDING",
+      expiresAt: expires,
+      createdAt: now
+    });
+    // invite-2: ACCEPTED for worker-1 (project-1)
+    prisma.bindingInvitations.set("invite-2", {
+      id: "invite-2",
+      targetType: "WORKER",
+      workerProfileId: "worker-1",
+      managerProfileId: null,
+      codeHash: "hash-of-code-2",
+      createdByUserId: "user-1",
+      acceptedByUserId: "user-binding",
+      status: "ACCEPTED",
+      expiresAt: expires,
+      createdAt: now
+    });
+    // invite-3: PENDING for worker-2 (project-2) — must NOT appear
+    prisma.bindingInvitations.set("invite-3", {
+      id: "invite-3",
+      targetType: "WORKER",
+      workerProfileId: "worker-2",
+      managerProfileId: null,
+      codeHash: "hash-of-code-3",
+      createdByUserId: "user-1",
+      acceptedByUserId: null,
+      status: "PENDING",
+      expiresAt: expires,
+      createdAt: now
+    });
+
+    // Grant PROJECT_ADMIN@PROJECT(project-1) to user-1
+    prisma.userRoles.push({
+      role: prisma.roles.get("PROJECT_ADMIN") as RoleRecord,
+      roleId: "role-PROJECT_ADMIN",
+      scopeId: "project-1",
+      scopeType: "PROJECT",
+      userId: "user-1"
+    });
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-1", "session-1");
+
+    const response = await request(app.getHttpServer())
+      .get("/management/projects/project-1/invitations")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(200);
+
+    const body = response.body as readonly Record<string, unknown>[];
+    expect(body).toHaveLength(2);
+
+    const ids = body.map((row): unknown => row["id"]);
+    expect(ids).toContain("invite-1");
+    expect(ids).toContain("invite-2");
+    expect(ids).not.toContain("invite-3");
+
+    // Verify shape — NO `code` field
+    for (const row of body) {
+      expect(row).not.toHaveProperty("code");
+      expect(row).toMatchObject({
+        id: expect.any(String),
+        targetType: expect.any(String),
+        profileId: expect.any(String),
+        projectId: "project-1",
+        status: expect.any(String),
+        expiresAt: expect.any(String),
+        createdAt: expect.any(String)
+      });
+      expect("acceptedByUserId" in row).toBe(true);
+    }
+  });
+
+  test("GET /management/projects/:projectId/invitations returns 403 without binding.invitation.create", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+
+    prisma.projects.set("project-1", {
+      address: "Site Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-1",
+      name: "Project One",
+      plannedEndDate: null,
+      plannedStartDate: now,
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // user-2 has no role
+    prisma.seedActiveSession("user-2", "session-2");
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-2", "session-2");
+
+    await request(app.getHttpServer())
+      .get("/management/projects/project-1/invitations")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(403);
+  });
+
+  test("POST /management/projects/:projectId/invitations/:invitationId/revoke updates a PENDING invitation to REVOKED", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+    const expires = new Date("2026-06-10T00:00:00.000Z");
+
+    prisma.projects.set("project-1", {
+      address: "Site Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-1",
+      name: "Project One",
+      plannedEndDate: null,
+      plannedStartDate: now,
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    prisma.workerProfiles.set("worker-1", {
+      employmentStatus: "ACTIVE",
+      encryptedIdNumber: "enc-id-1",
+      encryptedName: "enc-name-1",
+      faceProfileStatus: "PENDING",
+      id: "worker-1",
+      idNumberHash: "hash-1",
+      phone: "13800000001",
+      realNameStatus: "VERIFIED",
+      workType: "Steel"
+    });
+    prisma.workerMembers.set("worker-member-1", {
+      enteredAt: now,
+      exitedAt: null,
+      id: "worker-member-1",
+      projectId: "project-1",
+      projectRoleLabel: "Welder",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: prisma.workerProfiles.get("worker-1") as WorkerProfileRecord,
+      workerId: "worker-1"
+    });
+
+    prisma.bindingInvitations.set("invite-1", {
+      id: "invite-1",
+      targetType: "WORKER",
+      workerProfileId: "worker-1",
+      managerProfileId: null,
+      codeHash: "hash-of-code-1",
+      createdByUserId: "user-1",
+      acceptedByUserId: null,
+      status: "PENDING",
+      expiresAt: expires,
+      createdAt: now
+    });
+
+    // Grant PROJECT_ADMIN@PROJECT(project-1) to user-1
+    prisma.userRoles.push({
+      role: prisma.roles.get("PROJECT_ADMIN") as RoleRecord,
+      roleId: "role-PROJECT_ADMIN",
+      scopeId: "project-1",
+      scopeType: "PROJECT",
+      userId: "user-1"
+    });
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-1", "session-1");
+
+    const response = await request(app.getHttpServer())
+      .post("/management/projects/project-1/invitations/invite-1/revoke")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(201);
+
+    const body = response.body as Record<string, unknown>;
+    expect(body["status"]).toBe("REVOKED");
+    expect(body["id"]).toBe("invite-1");
+    expect(body).not.toHaveProperty("code");
+    expect(body).toMatchObject({
+      id: "invite-1",
+      targetType: "WORKER",
+      profileId: "worker-1",
+      projectId: "project-1",
+      status: "REVOKED",
+      expiresAt: expect.any(String),
+      createdAt: expect.any(String)
+    });
+    expect("acceptedByUserId" in body).toBe(true);
+
+    // Verify the in-memory record was mutated
+    expect(prisma.bindingInvitations.get("invite-1")?.status).toBe("REVOKED");
+  });
+
+  test("POST /management/projects/:projectId/invitations/:invitationId/revoke returns 409 for non-PENDING invitations", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+    const expires = new Date("2026-06-10T00:00:00.000Z");
+
+    prisma.projects.set("project-1", {
+      address: "Site Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-1",
+      name: "Project One",
+      plannedEndDate: null,
+      plannedStartDate: now,
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    prisma.bindingInvitations.set("invite-1", {
+      id: "invite-1",
+      targetType: "WORKER",
+      workerProfileId: "worker-1",
+      managerProfileId: null,
+      codeHash: "hash-of-code-1",
+      createdByUserId: "user-1",
+      acceptedByUserId: "user-binding",
+      status: "ACCEPTED",
+      expiresAt: expires,
+      createdAt: now
+    });
+
+    // Grant PROJECT_ADMIN@PROJECT(project-1) to user-1
+    prisma.userRoles.push({
+      role: prisma.roles.get("PROJECT_ADMIN") as RoleRecord,
+      roleId: "role-PROJECT_ADMIN",
+      scopeId: "project-1",
+      scopeType: "PROJECT",
+      userId: "user-1"
+    });
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-1", "session-1");
+
+    const response = await request(app.getHttpServer())
+      .post("/management/projects/project-1/invitations/invite-1/revoke")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(409);
+
+    const body = response.body as Record<string, unknown>;
+    expect(body["message"]).toBe("INVITATION_NOT_PENDING");
+  });
+
+  test("POST /management/projects/:projectId/invitations/:invitationId/revoke returns 403 without binding.invitation.create", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+
+    prisma.projects.set("project-1", {
+      address: "Site Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-1",
+      name: "Project One",
+      plannedEndDate: null,
+      plannedStartDate: now,
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // user-2 has no role
+    prisma.seedActiveSession("user-2", "session-2");
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-2", "session-2");
+
+    await request(app.getHttpServer())
+      .post("/management/projects/project-1/invitations/invite-1/revoke")
       .set("Authorization", `Bearer ${accessToken}`)
       .expect(403);
   });

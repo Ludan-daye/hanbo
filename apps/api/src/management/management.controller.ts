@@ -15,6 +15,7 @@ import {
   parseCreateTeamRequest
 } from "./management-body.parsers.js";
 import { ManagementService } from "./management.service.js";
+import type { BindingInvitationListItem } from "./management-invitation.types.js";
 import type {
   CompanyParticipantResponse,
   CompanyResponse,
@@ -160,5 +161,29 @@ export class ManagementController {
     @Param("teamId") teamId: string
   ): Promise<readonly ProjectParticipantResponse[]> {
     return this.managementService.listTeamParticipants(teamId);
+  }
+
+  @Get("projects/:projectId/teams")
+  @RequirePermission({ permissionCode: "team.manage", target: { paramName: "projectId", source: "projectParam" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async listProjectTeams(@Param("projectId") projectId: string): Promise<readonly TeamResponse[]> {
+    return this.managementService.listProjectTeams(projectId);
+  }
+
+  @Get("projects/:projectId/invitations")
+  @RequirePermission({ permissionCode: "binding.invitation.create", target: { paramName: "projectId", source: "projectParam" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async listProjectInvitations(@Param("projectId") projectId: string): Promise<readonly BindingInvitationListItem[]> {
+    return this.managementService.listProjectInvitations(projectId);
+  }
+
+  @Post("projects/:projectId/invitations/:invitationId/revoke")
+  @RequirePermission({ permissionCode: "binding.invitation.create", target: { paramName: "projectId", source: "projectParam" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async revokeProjectInvitation(
+    @Param("projectId") projectId: string,
+    @Param("invitationId") invitationId: string
+  ): Promise<BindingInvitationListItem> {
+    return this.managementService.revokeProjectInvitation(projectId, invitationId);
   }
 }

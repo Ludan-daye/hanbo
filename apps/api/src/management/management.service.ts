@@ -11,6 +11,8 @@ import type {
 } from "@prisma/client";
 
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
+import type { BindingTargetTypeValue } from "../bindings/bindings.types.js";
+import type { BindingInvitationListItem } from "./management-invitation.types.js";
 
 import type {
   CompanyParticipantResponse,
@@ -76,6 +78,29 @@ const createTeamResponse = (team: Team): TeamResponse => ({
   name: team.name,
   projectId: team.projectId,
   status: team.status
+});
+
+const createInvitationListItem = (
+  inv: {
+    id: string;
+    targetType: BindingTargetTypeValue;
+    workerProfileId: string | null;
+    managerProfileId: string | null;
+    status: string;
+    expiresAt: Date;
+    createdAt: Date;
+    acceptedByUserId: string | null;
+  },
+  projectId: string
+): BindingInvitationListItem => ({
+  acceptedByUserId: inv.acceptedByUserId,
+  createdAt: inv.createdAt.toISOString(),
+  expiresAt: inv.expiresAt.toISOString(),
+  id: inv.id,
+  profileId: (inv.workerProfileId ?? inv.managerProfileId) ?? "",
+  projectId,
+  status: inv.status as "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED",
+  targetType: inv.targetType
 });
 
 const createWorkerMemberResponse = (
@@ -433,6 +458,56 @@ export class ManagementService {
       ...workerMembers.map(createWorkerParticipantResponse),
       ...managerMembers.map(createManagerParticipantResponse)
     ];
+  }
+
+  async listProjectTeams(projectId: string): Promise<readonly TeamResponse[]> {
+    await this.getProjectOrThrow(projectId);
+    const teams = await this.prisma.team.findMany({
+      orderBy: { createdAt: "asc" },
+      where: { projectId }
+    });
+    return teams.map(createTeamResponse);
+  }
+
+  async listProjectInvitations(projectId: string): Promise<readonly BindingInvitationListItem[]> {
+    await this.getProjectOrThrow(projectId);
+    const memberships = await Promise.all([
+      this.prisma.projectWorkerMember.findMany({ select: { workerId: true }, where: { projectId } }),
+      this.prisma.projectManagerMember.findMany({ select: { managerId: true }, where: { projectId } })
+    ]);
+    const workerIds = memberships[0].map((m) => m.workerId);
+    const managerIds = memberships[1].map((m) => m.managerId);
+    const orList: Array<{ workerProfileId?: { in: string[] }; managerProfileId?: { in: string[] } }> = [];
+    if (workerIds.length > 0) {
+      orList.push({ workerProfileId: { in: workerIds } });
+    }
+    if (managerIds.length > 0) {
+      orList.push({ managerProfileId: { in: managerIds } });
+    }
+    if (orList.length === 0) {
+      return [];
+    }
+    const invitations = await this.prisma.bindingInvitation.findMany({
+      orderBy: { createdAt: "desc" },
+      where: { OR: orList }
+    });
+    return invitations.map((inv) => createInvitationListItem(inv, projectId));
+  }
+
+  async revokeProjectInvitation(projectId: string, invitationId: string): Promise<BindingInvitationListItem> {
+    await this.getProjectOrThrow(projectId);
+    const inv = await this.prisma.bindingInvitation.findUnique({ where: { id: invitationId } });
+    if (inv === null) {
+      throw new NotFoundException({ invitationId, message: "INVITATION_NOT_FOUND" });
+    }
+    if (inv.status !== "PENDING") {
+      throw new ConflictException({ invitationId, message: "INVITATION_NOT_PENDING", status: inv.status });
+    }
+    const updated = await this.prisma.bindingInvitation.update({
+      data: { status: "REVOKED" },
+      where: { id: invitationId }
+    });
+    return createInvitationListItem(updated, projectId);
   }
 
   private async getProjectOrThrow(projectId: string): Promise<Project> {
