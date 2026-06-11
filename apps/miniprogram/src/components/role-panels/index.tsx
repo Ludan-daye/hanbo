@@ -8,7 +8,13 @@ type Nav = { url: string };
 type TileCfg = { title: string; sub: string; nav?: Nav };
 
 const TILES: Record<PanelKey, { title: string; tiles: ReadonlyArray<TileCfg> }> = {
-  companyAdmin: { title: "公司管理员", tiles: [{ title: "公司与项目", sub: "管理公司下的项目" }, { title: "人员", sub: "公司人员总览" }] },
+  companyAdmin: {
+    title: "公司管理员",
+    tiles: [
+      { title: "公司与项目", sub: "管理公司下的项目", nav: { url: "/pages/company-projects/index" } },
+      { title: "人员", sub: "公司人员总览", nav: { url: "/pages/company-people/index" } }
+    ]
+  },
   none: { title: "已绑定", tiles: [] },
   projectAdmin: {
     title: "项目管理员",
