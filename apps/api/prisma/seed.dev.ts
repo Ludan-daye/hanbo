@@ -311,6 +311,150 @@ const main = async (): Promise<void> => {
     });
   }
 
+  // ---- Demo extras: extra workers + a second team + a second project ----
+  // Idempotent. Adds enough breadth so test screens are not visibly empty
+  // and so cross-team / cross-project filtering is observable.
+
+  const upsertWorker = async (
+    openid: string,
+    name: string,
+    phone: string,
+    workType: string,
+    projectId: string,
+    teamId: string,
+    projectRoleLabel: string
+  ): Promise<void> => {
+    const userId = await upsertUser(openid, true);
+    await upsertUserRole(userId, "WORKER", "PROJECT", projectId);
+    const profile = await prisma.workerProfile.upsert({
+      create: {
+        employmentStatus: "ACTIVE",
+        encryptedIdNumber: `enc-${openid}`,
+        encryptedName: `enc-${name}`,
+        faceProfileStatus: "PENDING",
+        idNumberHash: hash(`${openid}-id`),
+        phone,
+        realNameStatus: "PENDING",
+        userId,
+        workType
+      },
+      update: { phone, userId, workType },
+      where: { idNumberHash: hash(`${openid}-id`) }
+    });
+    await prisma.projectWorkerMember.upsert({
+      create: {
+        enteredAt: new Date("2026-05-01T00:00:00.000Z"),
+        projectId,
+        projectRoleLabel,
+        requiresAttendance: true,
+        status: "ACTIVE",
+        teamId,
+        workerId: profile.id
+      },
+      update: { projectRoleLabel, requiresAttendance: true, status: "ACTIVE", teamId },
+      where: { projectId_workerId: { projectId, workerId: profile.id } }
+    });
+  };
+
+  const upsertManager = async (
+    openid: string,
+    name: string,
+    phone: string,
+    roleCode: RoleCode,
+    scopeType: UserRoleScopeType,
+    scopeId: string,
+    projectId: string,
+    teamScopeId: string | null
+  ): Promise<void> => {
+    const userId = await upsertUser(openid, true);
+    await prisma.managerProfile.upsert({
+      create: { name, phone, status: "ACTIVE", userId },
+      update: { name, phone, status: "ACTIVE", userId },
+      where: { userId }
+    });
+    await upsertUserRole(userId, roleCode, scopeType, scopeId);
+    const profile = await prisma.managerProfile.findUniqueOrThrow({ where: { userId } });
+    await prisma.projectManagerMember.upsert({
+      create: {
+        managerId: profile.id,
+        projectId,
+        requiresAttendance: teamScopeId !== null,
+        roleCode,
+        status: "ACTIVE",
+        teamScopeId
+      },
+      update: { requiresAttendance: teamScopeId !== null, roleCode, status: "ACTIVE", teamScopeId },
+      where: { projectId_managerId: { managerId: profile.id, projectId } }
+    });
+  };
+
+  // dev-project: 3 more workers in 一号班组
+  await upsertWorker("dev-worker-2", "李二", "13800000003", "钢筋工", project.id, team.id, "钢筋工");
+  await upsertWorker("dev-worker-3", "王三", "13800000004", "焊工", project.id, team.id, "焊工");
+  await upsertWorker("dev-worker-4", "赵四", "13800000005", "钢筋工", project.id, team.id, "钢筋工");
+
+  // dev-project: 二号班组 + 班组长 + 1 工人
+  const team2 = await prisma.team.upsert({
+    create: { id: "dev-team-2", name: "二号班组", projectId: project.id, status: "ACTIVE" },
+    update: { name: "二号班组", projectId: project.id, status: "ACTIVE" },
+    where: { id: "dev-team-2" }
+  });
+  await upsertManager("dev-leader-2", "二号班组长", "13800000006", "TEAM_LEADER", "TEAM", team2.id, project.id, team2.id);
+  await upsertWorker("dev-worker-5", "孙五", "13800000007", "木工", project.id, team2.id, "木工");
+
+  // 第二个项目(同公司) + 项目管理员 + 一个班组 + 班组长 + 一个工人
+  const project2 = await prisma.project.upsert({
+    create: {
+      address: "示例市示例区示例路 88 号",
+      centerLatitude: "31.2350000",
+      centerLongitude: "121.4800000",
+      companyId: company.id,
+      geofenceRadiusM: 250,
+      id: "dev-project-2",
+      name: "示例工地二号",
+      plannedStartDate: new Date("2026-02-01T00:00:00.000Z"),
+      status: "ACTIVE"
+    },
+    update: { companyId: company.id, name: "示例工地二号", status: "ACTIVE" },
+    where: { id: "dev-project-2" }
+  });
+  // Default shift + schedule for project 2 (so makeup/punch work here too).
+  const shift2 = await prisma.shift.upsert({
+    create: { id: "dev-shift-2", isDefault: true, name: "标准两段班", projectId: project2.id },
+    update: { isDefault: true, name: "标准两段班", projectId: project2.id },
+    where: { id: "dev-shift-2" }
+  });
+  for (const segment of shiftSegments) {
+    await prisma.shiftSegment.upsert({
+      create: { earlyGraceMins: 10, endTime: segment.endTime, lateGraceMins: 10, sequence: segment.sequence, shiftId: shift2.id, startTime: segment.startTime },
+      update: { earlyGraceMins: 10, endTime: segment.endTime, lateGraceMins: 10, startTime: segment.startTime },
+      where: { shiftId_sequence: { sequence: segment.sequence, shiftId: shift2.id } }
+    });
+  }
+  const existingProject2Schedule = await prisma.schedule.findFirst({
+    where: { ownerId: project2.id, ownerType: "PROJECT" }
+  });
+  if (existingProject2Schedule === null) {
+    await prisma.schedule.create({
+      data: {
+        endsOn: null,
+        ownerId: project2.id,
+        ownerType: "PROJECT",
+        shiftId: shift2.id,
+        startsOn: new Date("2026-02-01T00:00:00.000Z"),
+        workdayMask: mondayToSaturdayMask
+      }
+    });
+  }
+  const teamP2 = await prisma.team.upsert({
+    create: { id: "dev-team-p2", name: "二号工地·一号班组", projectId: project2.id, status: "ACTIVE" },
+    update: { name: "二号工地·一号班组", projectId: project2.id, status: "ACTIVE" },
+    where: { id: "dev-team-p2" }
+  });
+  await upsertManager("dev-project-2-admin", "项目二管理员", "13800000008", "PROJECT_ADMIN", "PROJECT", project2.id, project2.id, null);
+  await upsertManager("dev-leader-p2", "项目二班组长", "13800000009", "TEAM_LEADER", "TEAM", teamP2.id, project2.id, teamP2.id);
+  await upsertWorker("dev-worker-p2", "周六", "13800000010", "钢筋工", project2.id, teamP2.id, "钢筋工");
+
   console.log(JSON.stringify({ devBindCode: DEV_BIND_CODE, message: "dev seed complete" }));
 };
 
