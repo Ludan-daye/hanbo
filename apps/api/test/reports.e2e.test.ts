@@ -132,7 +132,26 @@ type UserRoleFindManyArgs = {
   };
 };
 
+type CompanyRecord = {
+  readonly id: string;
+};
+
 type ProjectFindUniqueArgs = {
+  readonly where: {
+    readonly id: string;
+  };
+};
+
+type ProjectFindManyArgs = {
+  readonly select?: {
+    readonly id?: boolean;
+  };
+  readonly where: {
+    readonly companyId?: string;
+  };
+};
+
+type CompanyFindUniqueArgs = {
   readonly where: {
     readonly id: string;
   };
@@ -152,7 +171,7 @@ type ProjectMemberFindManyArgs = {
     readonly worker?: boolean;
   };
   readonly where: {
-    readonly projectId: string;
+    readonly projectId: string | { readonly in: readonly string[] };
     readonly requiresAttendance: boolean;
     readonly status: "ACTIVE";
     readonly teamId?: string;
@@ -166,7 +185,7 @@ type AttendanceResultFindManyArgs = {
       readonly gte: Date;
       readonly lte: Date;
     };
-    readonly projectId: string;
+    readonly projectId: string | { readonly in: readonly string[] };
   };
 };
 
@@ -182,7 +201,7 @@ type ScheduleFindManyArgs = {
         };
       }
     ];
-    readonly ownerId: string;
+    readonly ownerId: string | { readonly in: readonly string[] };
     readonly ownerType: string;
     readonly startsOn?: {
       readonly lte: Date;
@@ -207,9 +226,24 @@ const applyTestEnv = (): void => {
   process.env.WECHAT_APP_SECRET = "wechat-app-secret";
 };
 
+const matchesProjectIdFilter = (projectId: string, filter: string | { readonly in: readonly string[] }): boolean => {
+  if (typeof filter === "string") {
+    return projectId === filter;
+  }
+  return filter.in.includes(projectId);
+};
+
+const matchesOwnerIdFilter = (ownerId: string, filter: string | { readonly in: readonly string[] }): boolean => {
+  if (typeof filter === "string") {
+    return ownerId === filter;
+  }
+  return filter.in.includes(ownerId);
+};
+
 class ReportsPrismaTestDouble {
   readonly users = new Map<string, UserRecord>();
   readonly sessions = new Map<string, SessionRecord>();
+  readonly companies = new Map<string, CompanyRecord>();
   readonly projects = new Map<string, ProjectRecord>();
   readonly teams = new Map<string, TeamRecord>();
   readonly roles = new Map<RoleCode, RoleRecord>();
@@ -233,8 +267,20 @@ class ReportsPrismaTestDouble {
       this.userRoles.filter((userRole: UserRoleRecord): boolean => userRole.userId === args.where.userId)
   };
 
+  readonly company = {
+    findUnique: async (args: CompanyFindUniqueArgs): Promise<CompanyRecord | null> =>
+      this.companies.get(args.where.id) ?? null
+  };
+
   readonly project = {
-    findUnique: async (args: ProjectFindUniqueArgs): Promise<ProjectRecord | null> => this.projects.get(args.where.id) ?? null
+    findUnique: async (args: ProjectFindUniqueArgs): Promise<ProjectRecord | null> => this.projects.get(args.where.id) ?? null,
+    findMany: async (args: ProjectFindManyArgs): Promise<ProjectRecord[]> => {
+      const allProjects = Array.from(this.projects.values());
+      if (args.where.companyId !== undefined) {
+        return allProjects.filter((p: ProjectRecord): boolean => p.companyId === args.where.companyId);
+      }
+      return allProjects;
+    }
   };
 
   readonly team = {
@@ -255,7 +301,7 @@ class ReportsPrismaTestDouble {
     findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectWorkerMemberRecord[]> =>
       this.workerMembers.filter(
         (member: ProjectWorkerMemberRecord): boolean =>
-          member.projectId === args.where.projectId &&
+          matchesProjectIdFilter(member.projectId, args.where.projectId) &&
           member.status === args.where.status &&
           member.requiresAttendance === args.where.requiresAttendance &&
           (args.where.teamId === undefined || member.teamId === args.where.teamId)
@@ -266,7 +312,7 @@ class ReportsPrismaTestDouble {
     findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectManagerMemberRecord[]> =>
       this.managerMembers.filter(
         (member: ProjectManagerMemberRecord): boolean =>
-          member.projectId === args.where.projectId &&
+          matchesProjectIdFilter(member.projectId, args.where.projectId) &&
           member.status === args.where.status &&
           member.requiresAttendance === args.where.requiresAttendance &&
           (args.where.teamScopeId === undefined || member.teamScopeId === args.where.teamScopeId)
@@ -277,7 +323,7 @@ class ReportsPrismaTestDouble {
     findMany: async (args: AttendanceResultFindManyArgs): Promise<AttendanceResultRecord[]> =>
       this.attendanceResults.filter(
         (result: AttendanceResultRecord): boolean =>
-          result.projectId === args.where.projectId &&
+          matchesProjectIdFilter(result.projectId, args.where.projectId) &&
           result.attendanceDate.getTime() >= args.where.attendanceDate.gte.getTime() &&
           result.attendanceDate.getTime() <= args.where.attendanceDate.lte.getTime()
       )
@@ -286,7 +332,7 @@ class ReportsPrismaTestDouble {
   readonly schedule = {
     findMany: async (args: ScheduleFindManyArgs): Promise<ScheduleRecord[]> =>
       this.schedules.filter((schedule: ScheduleRecord): boolean => {
-        const isOwnerMatched = schedule.ownerId === args.where.ownerId && schedule.ownerType === args.where.ownerType;
+        const isOwnerMatched = matchesOwnerIdFilter(schedule.ownerId, args.where.ownerId) && schedule.ownerType === args.where.ownerType;
         const isStarted = args.where.startsOn === undefined || schedule.startsOn.getTime() <= args.where.startsOn.lte.getTime();
         const rangeStartDate = args.where.OR?.[1].endsOn.gte;
         const isNotEnded = rangeStartDate === undefined || schedule.endsOn === null || schedule.endsOn.getTime() >= rangeStartDate.getTime();
@@ -836,6 +882,225 @@ describe("ReportsModule", (): void => {
 
     await request(app.getHttpServer())
       .get("/reports/teams/team-1/daily?date=2026-06-03")
+      .set("Authorization", `Bearer ${workerAccessToken}`)
+      .expect(403);
+  });
+
+  test("GET /reports/companies/:companyId/daily aggregates across all projects in the company", async (): Promise<void> => {
+    // Use company-alpha (distinct from beforeEach's company-1) so project-1 members don't appear.
+    // Seed: company-alpha with project-A and project-B; company-beta with project-C.
+    prisma.companies.set("company-alpha", { id: "company-alpha" });
+    prisma.companies.set("company-beta", { id: "company-beta" });
+    prisma.projects.set("project-A", { companyId: "company-alpha", id: "project-A" });
+    prisma.projects.set("project-B", { companyId: "company-alpha", id: "project-B" });
+    prisma.projects.set("project-C", { companyId: "company-beta", id: "project-C" });
+
+    // worker-A1 in project-A, worker-B1 in project-B, worker-C1 in project-C
+    prisma.workerMembers.push({
+      id: "member-A1",
+      projectId: "project-A",
+      projectRoleLabel: "Worker",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: { id: "worker-A1", phone: "13900000001", workType: "General" },
+      workerId: "worker-A1"
+    });
+    prisma.workerMembers.push({
+      id: "member-B1",
+      projectId: "project-B",
+      projectRoleLabel: "Worker",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: { id: "worker-B1", phone: "13900000002", workType: "General" },
+      workerId: "worker-B1"
+    });
+    prisma.workerMembers.push({
+      id: "member-C1",
+      projectId: "project-C",
+      projectRoleLabel: "Worker",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: { id: "worker-C1", phone: "13900000003", workType: "General" },
+      workerId: "worker-C1"
+    });
+
+    // Grant viewer-user COMPANY_ADMIN at company-alpha scope
+    prisma.userRoles.push({
+      role: prisma.roles.get("COMPANY_ADMIN") as RoleRecord,
+      scopeId: "company-alpha",
+      scopeType: "COMPANY",
+      userId: "viewer-user"
+    });
+
+    app = await createApp(prisma);
+    const viewerAccessToken = await createAccessToken(app, "viewer-user", "session-viewer");
+
+    const response = await request(app.getHttpServer())
+      .get("/reports/companies/company-alpha/daily?date=2026-06-03")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    const participantIds: string[] = (response.body.participants as { participantId: string }[]).map(
+      (p): string => p.participantId
+    );
+    expect(participantIds).toContain("worker-A1");
+    expect(participantIds).toContain("worker-B1");
+    expect(participantIds).not.toContain("worker-C1");
+    expect(response.body.totals.participantCount).toBe(2);
+    expect(response.body.projectId).toBe("company-alpha");
+    expect(response.body.periodType).toBe("DAILY");
+  });
+
+  test("GET /reports/companies/:companyId/weekly aggregates across all projects", async (): Promise<void> => {
+    prisma.companies.set("company-alpha", { id: "company-alpha" });
+    prisma.companies.set("company-beta", { id: "company-beta" });
+    prisma.projects.set("project-A", { companyId: "company-alpha", id: "project-A" });
+    prisma.projects.set("project-B", { companyId: "company-alpha", id: "project-B" });
+    prisma.projects.set("project-C", { companyId: "company-beta", id: "project-C" });
+
+    prisma.workerMembers.push({
+      id: "member-A1",
+      projectId: "project-A",
+      projectRoleLabel: "Worker",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: { id: "worker-A1", phone: "13900000001", workType: "General" },
+      workerId: "worker-A1"
+    });
+    prisma.workerMembers.push({
+      id: "member-B1",
+      projectId: "project-B",
+      projectRoleLabel: "Worker",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: { id: "worker-B1", phone: "13900000002", workType: "General" },
+      workerId: "worker-B1"
+    });
+    prisma.workerMembers.push({
+      id: "member-C1",
+      projectId: "project-C",
+      projectRoleLabel: "Worker",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: { id: "worker-C1", phone: "13900000003", workType: "General" },
+      workerId: "worker-C1"
+    });
+
+    prisma.userRoles.push({
+      role: prisma.roles.get("COMPANY_ADMIN") as RoleRecord,
+      scopeId: "company-alpha",
+      scopeType: "COMPANY",
+      userId: "viewer-user"
+    });
+
+    app = await createApp(prisma);
+    const viewerAccessToken = await createAccessToken(app, "viewer-user", "session-viewer");
+
+    const response = await request(app.getHttpServer())
+      .get("/reports/companies/company-alpha/weekly?weekStartDate=2026-06-02")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    const participantIds: string[] = (response.body.participants as { participantId: string }[]).map(
+      (p): string => p.participantId
+    );
+    expect(participantIds).toContain("worker-A1");
+    expect(participantIds).toContain("worker-B1");
+    expect(participantIds).not.toContain("worker-C1");
+    expect(response.body.totals.participantCount).toBe(2);
+    expect(response.body.projectId).toBe("company-alpha");
+    expect(response.body.periodType).toBe("WEEKLY");
+  });
+
+  test("GET /reports/companies/:companyId/monthly aggregates across all projects", async (): Promise<void> => {
+    prisma.companies.set("company-alpha", { id: "company-alpha" });
+    prisma.companies.set("company-beta", { id: "company-beta" });
+    prisma.projects.set("project-A", { companyId: "company-alpha", id: "project-A" });
+    prisma.projects.set("project-B", { companyId: "company-alpha", id: "project-B" });
+    prisma.projects.set("project-C", { companyId: "company-beta", id: "project-C" });
+
+    prisma.workerMembers.push({
+      id: "member-A1",
+      projectId: "project-A",
+      projectRoleLabel: "Worker",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: { id: "worker-A1", phone: "13900000001", workType: "General" },
+      workerId: "worker-A1"
+    });
+    prisma.workerMembers.push({
+      id: "member-B1",
+      projectId: "project-B",
+      projectRoleLabel: "Worker",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: { id: "worker-B1", phone: "13900000002", workType: "General" },
+      workerId: "worker-B1"
+    });
+    prisma.workerMembers.push({
+      id: "member-C1",
+      projectId: "project-C",
+      projectRoleLabel: "Worker",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: { id: "worker-C1", phone: "13900000003", workType: "General" },
+      workerId: "worker-C1"
+    });
+
+    prisma.userRoles.push({
+      role: prisma.roles.get("COMPANY_ADMIN") as RoleRecord,
+      scopeId: "company-alpha",
+      scopeType: "COMPANY",
+      userId: "viewer-user"
+    });
+
+    app = await createApp(prisma);
+    const viewerAccessToken = await createAccessToken(app, "viewer-user", "session-viewer");
+
+    const response = await request(app.getHttpServer())
+      .get("/reports/companies/company-alpha/monthly?month=2026-06")
+      .set("Authorization", `Bearer ${viewerAccessToken}`)
+      .expect(200);
+
+    const participantIds: string[] = (response.body.participants as { participantId: string }[]).map(
+      (p): string => p.participantId
+    );
+    expect(participantIds).toContain("worker-A1");
+    expect(participantIds).toContain("worker-B1");
+    expect(participantIds).not.toContain("worker-C1");
+    expect(response.body.totals.participantCount).toBe(2);
+    expect(response.body.projectId).toBe("company-alpha");
+    expect(response.body.periodType).toBe("MONTHLY");
+  });
+
+  test("GET /reports/companies/:companyId/daily returns 403 without attendance.view at the company scope", async (): Promise<void> => {
+    prisma.companies.set("company-alpha", { id: "company-alpha" });
+    prisma.projects.set("project-A", { companyId: "company-alpha", id: "project-A" });
+
+    // worker-user has no role at company-alpha
+    app = await createApp(prisma);
+    const workerAccessToken = await createAccessToken(app, "worker-user", "session-worker");
+
+    await request(app.getHttpServer())
+      .get("/reports/companies/company-alpha/daily?date=2026-06-03")
       .set("Authorization", `Bearer ${workerAccessToken}`)
       .expect(403);
   });

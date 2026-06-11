@@ -89,4 +89,34 @@ export class ReportsController {
   ): Promise<RangeAttendanceReportResponse> {
     return this.reportsService.getTeamMonthlyReport(teamId, parseMonthlyReportMonth(query));
   }
+
+  @Get("companies/:companyId/daily")
+  @RequirePermission({ permissionCode: "attendance.view", target: { paramName: "companyId", source: "companyParam" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async getCompanyDailyReport(
+    @Param("companyId") companyId: string,
+    @Query() query: unknown
+  ): Promise<DailyAttendanceReportResponse> {
+    return this.reportsService.getCompanyDailyReport(companyId, parseDailyReportDate(query));
+  }
+
+  @Get("companies/:companyId/weekly")
+  @RequirePermission({ permissionCode: "attendance.view", target: { paramName: "companyId", source: "companyParam" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async getCompanyWeeklyReport(
+    @Param("companyId") companyId: string,
+    @Query() query: unknown
+  ): Promise<RangeAttendanceReportResponse> {
+    return this.reportsService.getCompanyWeeklyReport(companyId, parseWeeklyReportStartDate(query));
+  }
+
+  @Get("companies/:companyId/monthly")
+  @RequirePermission({ permissionCode: "attendance.view", target: { paramName: "companyId", source: "companyParam" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async getCompanyMonthlyReport(
+    @Param("companyId") companyId: string,
+    @Query() query: unknown
+  ): Promise<RangeAttendanceReportResponse> {
+    return this.reportsService.getCompanyMonthlyReport(companyId, parseMonthlyReportMonth(query));
+  }
 }

@@ -253,7 +253,7 @@ export class ReportsService {
   async getDailyReport(projectId: string, date: string): Promise<DailyAttendanceReportResponse> {
     const participants = await this.loadParticipants(projectId);
 
-    return this.computeDailyReport(projectId, participants, date);
+    return this.computeDailyReport(projectId, [projectId], participants, date);
   }
 
   async getWeeklyReport(projectId: string, weekStartDate: string): Promise<RangeAttendanceReportResponse> {
@@ -261,7 +261,7 @@ export class ReportsService {
     const startDate = dateOnlyToDate(weekStartDate);
     const endDate = addDays(startDate, 6);
 
-    return this.computeRangeReport(projectId, participants, "WEEKLY", startDate, endDate);
+    return this.computeRangeReport(projectId, [projectId], participants, "WEEKLY", startDate, endDate);
   }
 
   async getMonthlyReport(projectId: string, month: string): Promise<RangeAttendanceReportResponse> {
@@ -269,13 +269,13 @@ export class ReportsService {
     const startDate = getMonthStartDate(month);
     const endDate = getMonthEndDate(month);
 
-    return this.computeRangeReport(projectId, participants, "MONTHLY", startDate, endDate);
+    return this.computeRangeReport(projectId, [projectId], participants, "MONTHLY", startDate, endDate);
   }
 
   async getTeamDailyReport(teamId: string, date: string): Promise<DailyAttendanceReportResponse> {
     const { participants, projectId } = await this.loadTeamParticipantBases(teamId);
 
-    return this.computeDailyReport(projectId, participants, date);
+    return this.computeDailyReport(projectId, [projectId], participants, date);
   }
 
   async getTeamWeeklyReport(teamId: string, weekStartDate: string): Promise<RangeAttendanceReportResponse> {
@@ -283,7 +283,7 @@ export class ReportsService {
     const startDate = dateOnlyToDate(weekStartDate);
     const endDate = addDays(startDate, 6);
 
-    return this.computeRangeReport(projectId, participants, "WEEKLY", startDate, endDate);
+    return this.computeRangeReport(projectId, [projectId], participants, "WEEKLY", startDate, endDate);
   }
 
   async getTeamMonthlyReport(teamId: string, month: string): Promise<RangeAttendanceReportResponse> {
@@ -291,18 +291,41 @@ export class ReportsService {
     const startDate = getMonthStartDate(month);
     const endDate = getMonthEndDate(month);
 
-    return this.computeRangeReport(projectId, participants, "MONTHLY", startDate, endDate);
+    return this.computeRangeReport(projectId, [projectId], participants, "MONTHLY", startDate, endDate);
+  }
+
+  async getCompanyDailyReport(companyId: string, date: string): Promise<DailyAttendanceReportResponse> {
+    const { participants, projectId, projectIds } = await this.loadCompanyParticipantBases(companyId);
+
+    return this.computeDailyReport(projectId, projectIds, participants, date);
+  }
+
+  async getCompanyWeeklyReport(companyId: string, weekStartDate: string): Promise<RangeAttendanceReportResponse> {
+    const { participants, projectId, projectIds } = await this.loadCompanyParticipantBases(companyId);
+    const startDate = dateOnlyToDate(weekStartDate);
+    const endDate = addDays(startDate, 6);
+
+    return this.computeRangeReport(projectId, projectIds, participants, "WEEKLY", startDate, endDate);
+  }
+
+  async getCompanyMonthlyReport(companyId: string, month: string): Promise<RangeAttendanceReportResponse> {
+    const { participants, projectId, projectIds } = await this.loadCompanyParticipantBases(companyId);
+    const startDate = getMonthStartDate(month);
+    const endDate = getMonthEndDate(month);
+
+    return this.computeRangeReport(projectId, projectIds, participants, "MONTHLY", startDate, endDate);
   }
 
   private async computeDailyReport(
-    projectId: string,
+    reportProjectId: string,
+    projectIds: readonly string[],
     participants: readonly AttendanceReportParticipantBase[],
     date: string
   ): Promise<DailyAttendanceReportResponse> {
     const reportDate = dateOnlyToDate(date);
     const [resultsByKey, schedules] = await Promise.all([
-      this.loadResultsByKey(projectId, reportDate, reportDate),
-      this.loadProjectSchedules(projectId)
+      this.loadResultsByKey(projectIds, reportDate, reportDate),
+      this.loadProjectSchedules(projectIds)
     ]);
     const participantsWithDayValues = participants.map(
       (participant: AttendanceReportParticipantBase): DailyParticipantWithDayValues => ({
@@ -327,14 +350,15 @@ export class ReportsService {
       endDate: date,
       participants: reportParticipants,
       periodType: "DAILY",
-      projectId,
+      projectId: reportProjectId,
       startDate: date,
       totals
     };
   }
 
   private async computeRangeReport(
-    projectId: string,
+    reportProjectId: string,
+    projectIds: readonly string[],
     participants: readonly AttendanceReportParticipantBase[],
     periodType: "MONTHLY" | "WEEKLY",
     startDate: Date,
@@ -342,8 +366,8 @@ export class ReportsService {
   ): Promise<RangeAttendanceReportResponse> {
     const dates = listDatesInclusive(startDate, endDate);
     const [resultsByKey, schedules] = await Promise.all([
-      this.loadResultsByKey(projectId, startDate, endDate),
-      this.loadProjectSchedules(projectId)
+      this.loadResultsByKey(projectIds, startDate, endDate),
+      this.loadProjectSchedules(projectIds)
     ]);
     const reportParticipants = participants.map((participant: AttendanceReportParticipantBase): RangeAttendanceReportParticipant => {
       const participantTotals = dates.reduce(
@@ -381,7 +405,7 @@ export class ReportsService {
       endDate: toDateOnly(endDate),
       participants: reportParticipants,
       periodType,
-      projectId,
+      projectId: reportProjectId,
       startDate: toDateOnly(startDate),
       totals
     };
@@ -495,14 +519,72 @@ export class ReportsService {
     };
   }
 
-  private async loadResultsByKey(projectId: string, startDate: Date, endDate: Date): Promise<ReadonlyMap<string, AttendanceResult>> {
+  private async loadCompanyParticipantBases(
+    companyId: string
+  ): Promise<{ readonly participants: readonly AttendanceReportParticipantBase[]; readonly projectId: string; readonly projectIds: readonly string[] }> {
+    const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+
+    if (company === null) {
+      throw new NotFoundException({ companyId, message: "REPORT_COMPANY_NOT_FOUND" });
+    }
+
+    const projects = await this.prisma.project.findMany({ select: { id: true }, where: { companyId } });
+
+    if (projects.length === 0) {
+      return { participants: [], projectId: companyId, projectIds: [] };
+    }
+
+    const projectIds = projects.map((p): string => p.id);
+
+    const [workerMembers, managerMembers] = await Promise.all([
+      this.prisma.projectWorkerMember.findMany({
+        include: {
+          team: true,
+          worker: true
+        },
+        orderBy: {
+          createdAt: "asc"
+        },
+        where: {
+          projectId: { in: projectIds },
+          requiresAttendance: true,
+          status: "ACTIVE"
+        }
+      }),
+      this.prisma.projectManagerMember.findMany({
+        include: {
+          manager: true,
+          teamScope: true
+        },
+        orderBy: {
+          createdAt: "asc"
+        },
+        where: {
+          projectId: { in: projectIds },
+          requiresAttendance: true,
+          status: "ACTIVE"
+        }
+      })
+    ]);
+
+    return {
+      participants: [
+        ...workerMembers.map(createWorkerParticipantBase),
+        ...managerMembers.map(createManagerParticipantBase)
+      ],
+      projectId: companyId,
+      projectIds
+    };
+  }
+
+  private async loadResultsByKey(projectIds: readonly string[], startDate: Date, endDate: Date): Promise<ReadonlyMap<string, AttendanceResult>> {
     const results = await this.prisma.attendanceResult.findMany({
       where: {
         attendanceDate: {
           gte: startDate,
           lte: endDate
         },
-        projectId
+        projectId: { in: projectIds as string[] }
       }
     });
     const resultsByKey = new Map<string, AttendanceResult>();
@@ -514,13 +596,13 @@ export class ReportsService {
     return resultsByKey;
   }
 
-  private async loadProjectSchedules(projectId: string): Promise<readonly Schedule[]> {
+  private async loadProjectSchedules(projectIds: readonly string[]): Promise<readonly Schedule[]> {
     return this.prisma.schedule.findMany({
       orderBy: {
         startsOn: "desc"
       },
       where: {
-        ownerId: projectId,
+        ownerId: { in: projectIds as string[] },
         ownerType: projectScheduleOwnerType
       }
     });
