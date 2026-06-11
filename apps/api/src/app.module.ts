@@ -9,6 +9,7 @@ import { HealthController } from "./health/health.controller.js";
 import { PrismaModule } from "./infrastructure/database/prisma.module.js";
 import { ManagementModule } from "./management/management.module.js";
 import { MakeupModule } from "./makeup/makeup.module.js";
+import { MeModule } from "./me/me.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
 
 @Module({
@@ -21,6 +22,7 @@ import { ReportsModule } from "./reports/reports.module.js";
     ManagementModule,
     AttendanceModule,
     MakeupModule,
+    MeModule,
     ReportsModule
   ],
   controllers: [HealthController]

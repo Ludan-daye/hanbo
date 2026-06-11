@@ -192,7 +192,7 @@ const createDefaultScheduleResponse = (schedule: Schedule): DefaultScheduleRespo
   workdays: expandWorkdayMask(schedule.workdayMask)
 });
 
-const createAttendanceRecordResponse = (record: AttendanceRecord): AttendanceRecordResponse => ({
+export const createAttendanceRecordResponse = (record: AttendanceRecord): AttendanceRecordResponse => ({
   abnormalReason: record.abnormalReason,
   attendanceDate: toDateOnly(record.attendanceDate),
   facePassed: record.facePassed,

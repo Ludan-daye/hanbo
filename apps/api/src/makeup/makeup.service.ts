@@ -113,7 +113,7 @@ const createTeamTargetScope = (project: Project, teamId: string): AuthorizationT
   teamId
 });
 
-const createMakeupRequestResponse = (request: MakeupRequestForResponse): MakeupRequestResponse => ({
+export const createMakeupRequestResponse = (request: MakeupRequestForResponse): MakeupRequestResponse => ({
   approvalReason: request.approvalReason,
   approvedAt: request.approvedAt === null ? null : request.approvedAt.toISOString(),
   approverUserId: request.approverUserId,
