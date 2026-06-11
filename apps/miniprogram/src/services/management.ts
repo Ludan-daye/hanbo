@@ -48,3 +48,12 @@ export const configureDefaultSchedule = async (projectId: string, body: DefaultS
 
 export const createCompanyProject = async (companyId: string, body: CreateProjectBody): Promise<CompanyProject> =>
   apiClient.request<CompanyProject>(`/management/companies/${companyId}/projects`, { data: body, method: "POST" });
+
+export const fetchCompanyDailyReport = async (companyId: string, date: string): Promise<DailyReport> =>
+  apiClient.request<DailyReport>(`/reports/companies/${companyId}/daily?date=${date}`, { method: "GET" });
+
+export const fetchCompanyWeeklyReport = async (companyId: string, weekStartDate: string): Promise<RangeReport> =>
+  apiClient.request<RangeReport>(`/reports/companies/${companyId}/weekly?weekStartDate=${weekStartDate}`, { method: "GET" });
+
+export const fetchCompanyMonthlyReport = async (companyId: string, month: string): Promise<RangeReport> =>
+  apiClient.request<RangeReport>(`/reports/companies/${companyId}/monthly?month=${month}`, { method: "GET" });

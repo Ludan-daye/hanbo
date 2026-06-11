@@ -6,8 +6,11 @@ import {
   configureDefaultSchedule,
   configureDefaultShift,
   createCompanyProject,
+  fetchCompanyDailyReport,
+  fetchCompanyMonthlyReport,
   fetchCompanyParticipants,
   fetchCompanyProjects,
+  fetchCompanyWeeklyReport,
   fetchDailyReport,
   fetchMonthlyReport,
   fetchParticipants,
@@ -178,5 +181,24 @@ describe("management service URLs and methods", () => {
     expect(calls[0]?.method).toBe("POST");
     expect(calls[0]?.url.endsWith("/management/companies/c-1/projects")).toBe(true);
     expect(calls[0]?.data).toEqual(body);
+  });
+
+  test("fetchCompanyDailyReport -> GET /reports/companies/:companyId/daily?date=", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchCompanyDailyReport("c-1", "2026-06-10");
+    expect(calls[0]?.url.endsWith("/reports/companies/c-1/daily?date=2026-06-10")).toBe(true);
+  });
+  test("fetchCompanyWeeklyReport -> GET /reports/companies/:companyId/weekly?weekStartDate=", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchCompanyWeeklyReport("c-1", "2026-06-08");
+    expect(calls[0]?.url.endsWith("/reports/companies/c-1/weekly?weekStartDate=2026-06-08")).toBe(true);
+  });
+  test("fetchCompanyMonthlyReport -> GET /reports/companies/:companyId/monthly?month=", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchCompanyMonthlyReport("c-1", "2026-06");
+    expect(calls[0]?.url.endsWith("/reports/companies/c-1/monthly?month=2026-06")).toBe(true);
   });
 });

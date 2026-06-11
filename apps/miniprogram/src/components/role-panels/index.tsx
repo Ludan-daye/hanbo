@@ -12,7 +12,9 @@ const TILES: Record<PanelKey, { title: string; tiles: ReadonlyArray<TileCfg> }> 
     title: "公司管理员",
     tiles: [
       { title: "公司与项目", sub: "管理公司下的项目", nav: { url: "/pages/company-projects/index" } },
-      { title: "人员", sub: "公司人员总览", nav: { url: "/pages/company-people/index" } }
+      { title: "人员", sub: "公司人员总览", nav: { url: "/pages/company-people/index" } },
+      { title: "新建项目", sub: "创建新项目", nav: { url: "/pages/create-project/index" } },
+      { title: "公司报表", sub: "日 / 周 / 月", nav: { url: "/pages/company-reports/index" } }
     ]
   },
   none: { title: "已绑定", tiles: [] },

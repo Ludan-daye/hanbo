@@ -14,7 +14,9 @@ export default defineAppConfig({
     "pages/my-makeups/index",
     "pages/submit-makeup/index",
     "pages/project-management/index",
-    "pages/schedules/index"
+    "pages/schedules/index",
+    "pages/create-project/index",
+    "pages/company-reports/index"
   ],
   window: {
     backgroundColor: "#F3ECE1",
