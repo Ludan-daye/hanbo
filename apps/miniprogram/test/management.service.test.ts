@@ -5,6 +5,7 @@ import Taro, { __setRequestHandler } from "@tarojs/taro";
 import {
   configureDefaultSchedule,
   configureDefaultShift,
+  createCompanyProject,
   fetchCompanyParticipants,
   fetchCompanyProjects,
   fetchDailyReport,
@@ -157,6 +158,25 @@ describe("management service URLs and methods", () => {
     await configureDefaultSchedule("p-1", body);
     expect(calls[0]?.method).toBe("PUT");
     expect(calls[0]?.url.endsWith("/attendance/projects/p-1/default-schedule")).toBe(true);
+    expect(calls[0]?.data).toEqual(body);
+  });
+
+  test("createCompanyProject -> POST /management/companies/:companyId/projects with body", async () => {
+    setToken();
+    const calls = recordRequests();
+    const body = {
+      name: "新工地",
+      address: "示例地址",
+      centerLatitude: "31.0",
+      centerLongitude: "121.0",
+      geofenceRadiusM: 200,
+      status: "PREPARING" as const,
+      plannedStartDate: "2026-07-01",
+      plannedEndDate: null
+    };
+    await createCompanyProject("c-1", body);
+    expect(calls[0]?.method).toBe("POST");
+    expect(calls[0]?.url.endsWith("/management/companies/c-1/projects")).toBe(true);
     expect(calls[0]?.data).toEqual(body);
   });
 });

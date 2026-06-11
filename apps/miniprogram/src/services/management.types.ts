@@ -130,3 +130,14 @@ export type DefaultScheduleBody = {
   readonly endsOn: string | null;
   readonly workdays: readonly IsoWeekday[];
 };
+
+export type CreateProjectBody = {
+  readonly name: string;
+  readonly address: string;
+  readonly centerLatitude: string;
+  readonly centerLongitude: string;
+  readonly geofenceRadiusM: number;
+  readonly status: ProjectStatus;
+  readonly plannedStartDate: string;
+  readonly plannedEndDate: string | null;
+};
