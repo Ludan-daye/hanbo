@@ -8,11 +8,14 @@ import {
   fetchDailyReport,
   fetchMonthlyReport,
   fetchParticipants,
+  fetchProjectInvitations,
+  fetchProjectTeams,
   fetchTeamDailyReport,
   fetchTeamMonthlyReport,
   fetchTeamParticipants,
   fetchTeamWeeklyReport,
-  fetchWeeklyReport
+  fetchWeeklyReport,
+  revokeProjectInvitation
 } from "../src/services/management";
 
 afterEach(() => {
@@ -104,5 +107,28 @@ describe("management service URLs and methods", () => {
     const calls = recordRequests();
     await fetchCompanyParticipants("c-1");
     expect(calls[0]?.url.endsWith("/management/companies/c-1/participants")).toBe(true);
+  });
+
+  test("fetchProjectTeams -> GET /management/projects/:projectId/teams", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchProjectTeams("p-1");
+    expect(calls[0]?.method).toBe("GET");
+    expect(calls[0]?.url.endsWith("/management/projects/p-1/teams")).toBe(true);
+  });
+
+  test("fetchProjectInvitations -> GET /management/projects/:projectId/invitations", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchProjectInvitations("p-1");
+    expect(calls[0]?.url.endsWith("/management/projects/p-1/invitations")).toBe(true);
+  });
+
+  test("revokeProjectInvitation -> POST /management/projects/:projectId/invitations/:invitationId/revoke", async () => {
+    setToken();
+    const calls = recordRequests();
+    await revokeProjectInvitation("p-1", "inv-1");
+    expect(calls[0]?.method).toBe("POST");
+    expect(calls[0]?.url.endsWith("/management/projects/p-1/invitations/inv-1/revoke")).toBe(true);
   });
 });

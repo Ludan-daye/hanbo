@@ -88,3 +88,24 @@ export type CompanyProject = {
 };
 
 export type CompanyParticipant = ProjectParticipant & { readonly projectName: string };
+
+export type ProjectTeam = {
+  readonly id: string;
+  readonly projectId: string;
+  readonly name: string;
+  readonly status: string;
+};
+
+export type BindingInvitationStatus = "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
+export type BindingTargetType = "WORKER" | "MANAGER";
+
+export type ProjectInvitation = {
+  readonly id: string;
+  readonly targetType: BindingTargetType;
+  readonly profileId: string;
+  readonly projectId: string;
+  readonly status: BindingInvitationStatus;
+  readonly expiresAt: string;
+  readonly createdAt: string;
+  readonly acceptedByUserId: string | null;
+};

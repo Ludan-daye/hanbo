@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { CompanyParticipant, CompanyProject, DailyReport, ProjectParticipant, RangeReport } from "./management.types";
+import type { CompanyParticipant, CompanyProject, DailyReport, ProjectInvitation, ProjectParticipant, ProjectTeam, RangeReport } from "./management.types";
 
 export const fetchParticipants = async (projectId: string): Promise<ReadonlyArray<ProjectParticipant>> =>
   apiClient.request<ReadonlyArray<ProjectParticipant>>(`/management/projects/${projectId}/participants`, { method: "GET" });
@@ -30,3 +30,12 @@ export const fetchCompanyProjects = async (companyId: string): Promise<ReadonlyA
 
 export const fetchCompanyParticipants = async (companyId: string): Promise<ReadonlyArray<CompanyParticipant>> =>
   apiClient.request<ReadonlyArray<CompanyParticipant>>(`/management/companies/${companyId}/participants`, { method: "GET" });
+
+export const fetchProjectTeams = async (projectId: string): Promise<ReadonlyArray<ProjectTeam>> =>
+  apiClient.request<ReadonlyArray<ProjectTeam>>(`/management/projects/${projectId}/teams`, { method: "GET" });
+
+export const fetchProjectInvitations = async (projectId: string): Promise<ReadonlyArray<ProjectInvitation>> =>
+  apiClient.request<ReadonlyArray<ProjectInvitation>>(`/management/projects/${projectId}/invitations`, { method: "GET" });
+
+export const revokeProjectInvitation = async (projectId: string, invitationId: string): Promise<ProjectInvitation> =>
+  apiClient.request<ProjectInvitation>(`/management/projects/${projectId}/invitations/${invitationId}/revoke`, { method: "POST" });
