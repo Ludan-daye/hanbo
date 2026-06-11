@@ -13,6 +13,7 @@ import type {
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 
 import type {
+  CompanyParticipantResponse,
   CompanyResponse,
   CreateCompanyRequest,
   CreateProjectManagerRequest,
@@ -333,6 +334,44 @@ export class ManagementService {
       where: { companyId }
     });
     return projects.map(createProjectResponse);
+  }
+
+  async listCompanyParticipants(companyId: string): Promise<readonly CompanyParticipantResponse[]> {
+    const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+    if (company === null) {
+      throw new NotFoundException({ companyId, message: "COMPANY_NOT_FOUND" });
+    }
+    const projects = await this.prisma.project.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true },
+      where: { companyId }
+    });
+    if (projects.length === 0) {
+      return [];
+    }
+    const projectIds = projects.map((p) => p.id);
+    const projectNamesById = new Map(projects.map((p) => [p.id, p.name]));
+    const [workerMembers, managerMembers] = await Promise.all([
+      this.prisma.projectWorkerMember.findMany({
+        include: { team: true, worker: true },
+        orderBy: { createdAt: "asc" },
+        where: { projectId: { in: projectIds } }
+      }),
+      this.prisma.projectManagerMember.findMany({
+        include: { manager: true, teamScope: true },
+        orderBy: { createdAt: "asc" },
+        where: { projectId: { in: projectIds } }
+      })
+    ]);
+    const workerRows: CompanyParticipantResponse[] = workerMembers.map((m) => ({
+      ...createWorkerParticipantResponse(m),
+      projectName: projectNamesById.get(m.projectId) ?? ""
+    }));
+    const managerRows: CompanyParticipantResponse[] = managerMembers.map((m) => ({
+      ...createManagerParticipantResponse(m),
+      projectName: projectNamesById.get(m.projectId) ?? ""
+    }));
+    return [...workerRows, ...managerRows];
   }
 
   async listTeamParticipants(teamId: string): Promise<readonly ProjectParticipantResponse[]> {

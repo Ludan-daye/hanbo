@@ -191,6 +191,10 @@ type ProjectFindManyArgs = {
   readonly orderBy?: {
     readonly createdAt?: "asc" | "desc";
   };
+  readonly select?: {
+    readonly id?: boolean;
+    readonly name?: boolean;
+  };
   readonly where: {
     readonly companyId: string;
   };
@@ -269,7 +273,7 @@ type ProjectMemberFindManyArgs = {
     readonly createdAt?: "asc" | "desc";
   };
   readonly where: {
-    readonly projectId: string;
+    readonly projectId?: string | { readonly in: readonly string[] };
     readonly teamId?: string;
     readonly teamScopeId?: string;
   };
@@ -506,10 +510,17 @@ class ManagementPrismaTestDouble {
     },
     findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectWorkerMemberRecord[]> =>
       Array.from(this.workerMembers.values()).filter(
-        (member: ProjectWorkerMemberRecord): boolean =>
-          member.projectId === args.where.projectId &&
-          (args.where.teamId === undefined || member.teamId === args.where.teamId)
-      )
+        (member: ProjectWorkerMemberRecord): boolean => {
+          const projectIdFilter = args.where.projectId;
+          const projectMatch =
+            projectIdFilter === undefined
+              ? true
+              : typeof projectIdFilter === "string"
+                ? member.projectId === projectIdFilter
+                : projectIdFilter.in.includes(member.projectId);
+          return projectMatch && (args.where.teamId === undefined || member.teamId === args.where.teamId);
+        }
+      ).sort((a: ProjectWorkerMemberRecord, b: ProjectWorkerMemberRecord): number => a.enteredAt.getTime() - b.enteredAt.getTime())
   };
 
   readonly projectManagerMember = {
@@ -542,10 +553,20 @@ class ManagementPrismaTestDouble {
     },
     findMany: async (args: ProjectMemberFindManyArgs): Promise<ProjectManagerMemberRecord[]> =>
       Array.from(this.managerMembers.values()).filter(
-        (member: ProjectManagerMemberRecord): boolean =>
-          member.projectId === args.where.projectId &&
-          (args.where.teamScopeId === undefined || member.teamScopeId === args.where.teamScopeId)
-      )
+        (member: ProjectManagerMemberRecord): boolean => {
+          const projectIdFilter = args.where.projectId;
+          const projectMatch =
+            projectIdFilter === undefined
+              ? true
+              : typeof projectIdFilter === "string"
+                ? member.projectId === projectIdFilter
+                : projectIdFilter.in.includes(member.projectId);
+          return projectMatch && (args.where.teamScopeId === undefined || member.teamScopeId === args.where.teamScopeId);
+        }
+      ).sort((a: ProjectManagerMemberRecord, b: ProjectManagerMemberRecord): number => {
+        // manager members don't have enteredAt — use stable insertion-order fallback via id
+        return a.id.localeCompare(b.id);
+      })
   };
 
   async $transaction<T>(callback: (transaction: ManagementPrismaTestDouble) => Promise<T>): Promise<T> {
@@ -1158,6 +1179,264 @@ describe("ManagementModule", (): void => {
 
     await request(app.getHttpServer())
       .get("/management/companies/company-1/projects")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(403);
+  });
+
+  test("GET /management/companies/:companyId/participants returns all participants across the company's projects", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+
+    // Seed company-2
+    prisma.companies.set("company-2", {
+      createdAt: now,
+      id: "company-2",
+      name: "Other Company",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // Seed project-A and project-B under company-1; project-C under company-2
+    prisma.projects.set("project-A", {
+      address: "Site A Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 200,
+      id: "project-A",
+      name: "Project Alpha",
+      plannedEndDate: null,
+      plannedStartDate: new Date("2026-06-03T00:00:00.000Z"),
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.projects.set("project-B", {
+      address: "Site B Road",
+      centerLatitude: "31.2400000",
+      centerLongitude: "121.4800000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-B",
+      name: "Project Beta",
+      plannedEndDate: null,
+      plannedStartDate: new Date("2026-06-03T00:00:00.000Z"),
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.projects.set("project-C", {
+      address: "Site C Road",
+      centerLatitude: "30.0000000",
+      centerLongitude: "120.0000000",
+      companyId: "company-2",
+      createdAt: now,
+      geofenceRadiusM: 150,
+      id: "project-C",
+      name: "Project Gamma",
+      plannedEndDate: null,
+      plannedStartDate: new Date("2026-06-03T00:00:00.000Z"),
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // Seed teams
+    prisma.teams.set("team-A1", {
+      createdAt: now,
+      id: "team-A1",
+      name: "Team A One",
+      projectId: "project-A",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.teams.set("team-B1", {
+      createdAt: now,
+      id: "team-B1",
+      name: "Team B One",
+      projectId: "project-B",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.teams.set("team-C1", {
+      createdAt: now,
+      id: "team-C1",
+      name: "Team C One",
+      projectId: "project-C",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // Seed worker profiles
+    prisma.workerProfiles.set("worker-A1-profile", {
+      employmentStatus: "ACTIVE",
+      encryptedIdNumber: "enc-id-A1",
+      encryptedName: "enc-name-A1",
+      faceProfileStatus: "PENDING",
+      id: "worker-A1-profile",
+      idNumberHash: "hash-A1",
+      phone: "13800000011",
+      realNameStatus: "VERIFIED",
+      workType: "Steel"
+    });
+    prisma.workerProfiles.set("worker-B1-profile", {
+      employmentStatus: "ACTIVE",
+      encryptedIdNumber: "enc-id-B1",
+      encryptedName: "enc-name-B1",
+      faceProfileStatus: "PENDING",
+      id: "worker-B1-profile",
+      idNumberHash: "hash-B1",
+      phone: "13800000012",
+      realNameStatus: "VERIFIED",
+      workType: "Concrete"
+    });
+    prisma.workerProfiles.set("worker-C1-profile", {
+      employmentStatus: "ACTIVE",
+      encryptedIdNumber: "enc-id-C1",
+      encryptedName: "enc-name-C1",
+      faceProfileStatus: "PENDING",
+      id: "worker-C1-profile",
+      idNumberHash: "hash-C1",
+      phone: "13800000013",
+      realNameStatus: "VERIFIED",
+      workType: "Mason"
+    });
+
+    // Seed manager profile
+    prisma.managerProfiles.set("manager-A1-profile", {
+      id: "manager-A1-profile",
+      name: "Manager A One",
+      phone: "13800000014",
+      status: "ACTIVE"
+    });
+
+    // Seed worker members
+    prisma.workerMembers.set("worker-member-A1", {
+      enteredAt: now,
+      exitedAt: null,
+      id: "worker-member-A1",
+      projectId: "project-A",
+      projectRoleLabel: "Welder",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: prisma.teams.get("team-A1") ?? null,
+      teamId: "team-A1",
+      worker: prisma.workerProfiles.get("worker-A1-profile") as WorkerProfileRecord,
+      workerId: "worker-A1-profile"
+    });
+    prisma.workerMembers.set("worker-member-B1", {
+      enteredAt: now,
+      exitedAt: null,
+      id: "worker-member-B1",
+      projectId: "project-B",
+      projectRoleLabel: "Mason",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: prisma.teams.get("team-B1") ?? null,
+      teamId: "team-B1",
+      worker: prisma.workerProfiles.get("worker-B1-profile") as WorkerProfileRecord,
+      workerId: "worker-B1-profile"
+    });
+    prisma.workerMembers.set("worker-member-C1", {
+      enteredAt: now,
+      exitedAt: null,
+      id: "worker-member-C1",
+      projectId: "project-C",
+      projectRoleLabel: "Electrician",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: prisma.teams.get("team-C1") ?? null,
+      teamId: "team-C1",
+      worker: prisma.workerProfiles.get("worker-C1-profile") as WorkerProfileRecord,
+      workerId: "worker-C1-profile"
+    });
+
+    // Seed manager member in project-A
+    prisma.managerMembers.set("manager-member-A1", {
+      id: "manager-member-A1",
+      manager: prisma.managerProfiles.get("manager-A1-profile") as ManagerProfileRecord,
+      managerId: "manager-A1-profile",
+      projectId: "project-A",
+      requiresAttendance: true,
+      roleCode: "PROJECT_ADMIN",
+      status: "ACTIVE",
+      teamScope: null,
+      teamScopeId: null
+    });
+
+    // user-1 already has COMPANY_ADMIN@COMPANY(company-1) from beforeEach.
+    // COMPANY_ADMIN needs attendance.view — add it to COMPANY_ADMIN role
+    prisma.seedRole("COMPANY_ADMIN", ["attendance.view", "company.manage", "project.create"]);
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-1", "session-1");
+
+    const response = await request(app.getHttpServer())
+      .get("/management/companies/company-1/participants")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(200);
+
+    const body = response.body as readonly Record<string, unknown>[];
+    expect(body).toHaveLength(3);
+
+    const memberIds = body.map((row): unknown => row["memberId"]);
+    expect(memberIds).toContain("worker-member-A1");
+    expect(memberIds).toContain("worker-member-B1");
+    expect(memberIds).toContain("manager-member-A1");
+    expect(memberIds).not.toContain("worker-member-C1");
+
+    for (const row of body) {
+      expect(typeof row["projectName"]).toBe("string");
+      expect((row["projectName"] as string).length).toBeGreaterThan(0);
+    }
+
+    const workerA1Row = body.find((row): boolean => row["memberId"] === "worker-member-A1");
+    const workerB1Row = body.find((row): boolean => row["memberId"] === "worker-member-B1");
+    const managerA1Row = body.find((row): boolean => row["memberId"] === "manager-member-A1");
+
+    expect(workerA1Row).toMatchObject({ projectName: "Project Alpha" });
+    expect(workerB1Row).toMatchObject({ projectName: "Project Beta" });
+    expect(managerA1Row).toMatchObject({ projectName: "Project Alpha" });
+  });
+
+  test("GET /management/companies/:companyId/participants returns 403 without permission at the company scope", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+
+    prisma.companies.set("company-2", {
+      createdAt: now,
+      id: "company-2",
+      name: "Other Company",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.projects.set("project-C", {
+      address: "Site C Road",
+      centerLatitude: "30.0000000",
+      centerLongitude: "120.0000000",
+      companyId: "company-2",
+      createdAt: now,
+      geofenceRadiusM: 150,
+      id: "project-C",
+      name: "Project Gamma",
+      plannedEndDate: null,
+      plannedStartDate: new Date("2026-06-03T00:00:00.000Z"),
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // user-2 has WORKER@PROJECT(project-C) — no role at company-1
+    prisma.seedActiveSession("user-2", "session-2");
+    prisma.userRoles.push({
+      role: prisma.roles.get("WORKER") as RoleRecord,
+      roleId: "role-WORKER",
+      scopeId: "project-C",
+      scopeType: "PROJECT",
+      userId: "user-2"
+    });
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-2", "session-2");
+
+    await request(app.getHttpServer())
+      .get("/management/companies/company-1/participants")
       .set("Authorization", `Bearer ${accessToken}`)
       .expect(403);
   });

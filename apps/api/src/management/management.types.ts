@@ -118,3 +118,7 @@ export type ProjectParticipantResponse = {
   readonly teamId: string | null;
   readonly teamName: string | null;
 };
+
+export type CompanyParticipantResponse = ProjectParticipantResponse & {
+  readonly projectName: string;
+};

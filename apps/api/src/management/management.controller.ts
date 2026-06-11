@@ -16,6 +16,7 @@ import {
 } from "./management-body.parsers.js";
 import { ManagementService } from "./management.service.js";
 import type {
+  CompanyParticipantResponse,
   CompanyResponse,
   ProjectManagerMemberResponse,
   ProjectParticipantResponse,
@@ -119,6 +120,18 @@ export class ManagementController {
     @Param("companyId") companyId: string
   ): Promise<readonly ProjectResponse[]> {
     return this.managementService.listCompanyProjects(companyId);
+  }
+
+  @Get("companies/:companyId/participants")
+  @RequirePermission({
+    permissionCode: "attendance.view",
+    target: { paramName: "companyId", source: "companyParam" }
+  })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async listCompanyParticipants(
+    @Param("companyId") companyId: string
+  ): Promise<readonly CompanyParticipantResponse[]> {
+    return this.managementService.listCompanyParticipants(companyId);
   }
 
   @Get("projects/:projectId/participants")
