@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { CompanyParticipant, CompanyProject, DailyReport, ProjectInvitation, ProjectParticipant, ProjectTeam, RangeReport } from "./management.types";
+import type { CompanyParticipant, CompanyProject, DailyReport, DefaultScheduleBody, DefaultShiftBody, ProjectInvitation, ProjectParticipant, ProjectTeam, RangeReport } from "./management.types";
 
 export const fetchParticipants = async (projectId: string): Promise<ReadonlyArray<ProjectParticipant>> =>
   apiClient.request<ReadonlyArray<ProjectParticipant>>(`/management/projects/${projectId}/participants`, { method: "GET" });
@@ -39,3 +39,9 @@ export const fetchProjectInvitations = async (projectId: string): Promise<Readon
 
 export const revokeProjectInvitation = async (projectId: string, invitationId: string): Promise<ProjectInvitation> =>
   apiClient.request<ProjectInvitation>(`/management/projects/${projectId}/invitations/${invitationId}/revoke`, { method: "POST" });
+
+export const configureDefaultShift = async (projectId: string, body: DefaultShiftBody): Promise<unknown> =>
+  apiClient.request<unknown>(`/attendance/projects/${projectId}/default-shift`, { data: body, method: "PUT" });
+
+export const configureDefaultSchedule = async (projectId: string, body: DefaultScheduleBody): Promise<unknown> =>
+  apiClient.request<unknown>(`/attendance/projects/${projectId}/default-schedule`, { data: body, method: "PUT" });

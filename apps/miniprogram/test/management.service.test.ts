@@ -3,6 +3,8 @@ import { afterEach, describe, expect, test } from "vitest";
 import Taro, { __setRequestHandler } from "@tarojs/taro";
 
 import {
+  configureDefaultSchedule,
+  configureDefaultShift,
   fetchCompanyParticipants,
   fetchCompanyProjects,
   fetchDailyReport,
@@ -28,9 +30,9 @@ const setToken = (): void => {
 };
 
 const recordRequests = () => {
-  const calls: Array<{ url: string; method?: string }> = [];
+  const calls: Array<{ url: string; method?: string; data?: unknown }> = [];
   __setRequestHandler(async (o) => {
-    calls.push({ url: o.url, method: o.method });
+    calls.push({ url: o.url, method: o.method, data: o.data });
     return { statusCode: 200, data: { ok: true } };
   });
   return calls;
@@ -130,5 +132,31 @@ describe("management service URLs and methods", () => {
     await revokeProjectInvitation("p-1", "inv-1");
     expect(calls[0]?.method).toBe("POST");
     expect(calls[0]?.url.endsWith("/management/projects/p-1/invitations/inv-1/revoke")).toBe(true);
+  });
+
+  test("configureDefaultShift -> PUT /attendance/projects/:projectId/default-shift with body", async () => {
+    setToken();
+    const calls = recordRequests();
+    const body = {
+      name: "默认班次",
+      segments: [
+        { sequence: 1 as const, startTime: "08:00", endTime: "12:00", lateGraceMins: 0, earlyGraceMins: 0 },
+        { sequence: 2 as const, startTime: "13:00", endTime: "17:00", lateGraceMins: 0, earlyGraceMins: 0 }
+      ] as const
+    };
+    await configureDefaultShift("p-1", body);
+    expect(calls[0]?.method).toBe("PUT");
+    expect(calls[0]?.url.endsWith("/attendance/projects/p-1/default-shift")).toBe(true);
+    expect(calls[0]?.data).toEqual(body);
+  });
+
+  test("configureDefaultSchedule -> PUT /attendance/projects/:projectId/default-schedule with body", async () => {
+    setToken();
+    const calls = recordRequests();
+    const body = { startsOn: "2026-06-01", endsOn: null, workdays: [1, 2, 3, 4, 5] };
+    await configureDefaultSchedule("p-1", body);
+    expect(calls[0]?.method).toBe("PUT");
+    expect(calls[0]?.url.endsWith("/attendance/projects/p-1/default-schedule")).toBe(true);
+    expect(calls[0]?.data).toEqual(body);
   });
 });

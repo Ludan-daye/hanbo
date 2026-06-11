@@ -22,7 +22,8 @@ const TILES: Record<PanelKey, { title: string; tiles: ReadonlyArray<TileCfg> }> 
       { title: "项目参与者", sub: "查看工人 / 管理员", nav: { url: "/pages/participants/index" } },
       { title: "考勤报表", sub: "日 / 周 / 月", nav: { url: "/pages/reports/index" } },
       { title: "邀请", sub: "生成绑定邀请码", nav: { url: "/pages/invitation/index" } },
-      { title: "项目管理", sub: "班组与邀请管理", nav: { url: "/pages/project-management/index" } }
+      { title: "项目管理", sub: "班组与邀请管理", nav: { url: "/pages/project-management/index" } },
+      { title: "排班", sub: "班次 / 默认排班", nav: { url: "/pages/schedules/index" } }
     ]
   },
   systemAdmin: { title: "系统管理员", tiles: [{ title: "系统配置", sub: "公司 / 角色 / 全局设置" }] },

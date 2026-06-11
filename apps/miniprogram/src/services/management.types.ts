@@ -109,3 +109,24 @@ export type ProjectInvitation = {
   readonly createdAt: string;
   readonly acceptedByUserId: string | null;
 };
+
+export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+export type ShiftSegment = {
+  readonly sequence: 1 | 2;
+  readonly startTime: string;
+  readonly endTime: string;
+  readonly lateGraceMins: number;
+  readonly earlyGraceMins: number;
+};
+
+export type DefaultShiftBody = {
+  readonly name: string;
+  readonly segments: readonly [ShiftSegment, ShiftSegment];
+};
+
+export type DefaultScheduleBody = {
+  readonly startsOn: string;
+  readonly endsOn: string | null;
+  readonly workdays: readonly IsoWeekday[];
+};
