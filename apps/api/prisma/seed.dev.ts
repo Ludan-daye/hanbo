@@ -68,6 +68,47 @@ const main = async (): Promise<void> => {
     where: { id: "dev-team" }
   });
 
+  // Default shift + default project schedule. Required by:
+  //   - attendance submission (punch-in points)
+  //   - makeup-request creation (`DEFAULT_SHIFT_NOT_CONFIGURED_FOR_MAKEUP`).
+  const shift = await prisma.shift.upsert({
+    create: { id: "dev-shift", isDefault: true, name: "标准两段班", projectId: project.id },
+    update: { isDefault: true, name: "标准两段班", projectId: project.id },
+    where: { id: "dev-shift" }
+  });
+  const shiftSegments: ReadonlyArray<{ sequence: number; startTime: string; endTime: string }> = [
+    { endTime: "12:00", sequence: 1, startTime: "08:00" },
+    { endTime: "17:30", sequence: 2, startTime: "13:30" }
+  ];
+  for (const segment of shiftSegments) {
+    await prisma.shiftSegment.upsert({
+      create: { earlyGraceMins: 10, endTime: segment.endTime, lateGraceMins: 10, sequence: segment.sequence, shiftId: shift.id, startTime: segment.startTime },
+      update: { earlyGraceMins: 10, endTime: segment.endTime, lateGraceMins: 10, startTime: segment.startTime },
+      where: { shiftId_sequence: { sequence: segment.sequence, shiftId: shift.id } }
+    });
+  }
+  const mondayToSaturdayMask = 1 + 2 + 4 + 8 + 16 + 32; // ISO weekdays 1..6
+  const existingProjectSchedule = await prisma.schedule.findFirst({
+    where: { ownerId: project.id, ownerType: "PROJECT" }
+  });
+  if (existingProjectSchedule === null) {
+    await prisma.schedule.create({
+      data: {
+        endsOn: null,
+        ownerId: project.id,
+        ownerType: "PROJECT",
+        shiftId: shift.id,
+        startsOn: new Date("2026-01-01T00:00:00.000Z"),
+        workdayMask: mondayToSaturdayMask
+      }
+    });
+  } else {
+    await prisma.schedule.update({
+      data: { endsOn: null, shiftId: shift.id, startsOn: new Date("2026-01-01T00:00:00.000Z"), workdayMask: mondayToSaturdayMask },
+      where: { id: existingProjectSchedule.id }
+    });
+  }
+
   const managers: readonly DemoManager[] = [
     { name: "系统管理员", openid: "dev-system", roleCode: "SYSTEM_ADMIN", scopeType: "GLOBAL" },
     { name: "公司管理员", openid: "dev-company", roleCode: "COMPANY_ADMIN", scopeType: "COMPANY" },
