@@ -71,3 +71,20 @@ export type RangeReport = {
   readonly startDate: string;
   readonly totals: ReportTotals;
 };
+
+export type ProjectStatus = "PREPARING" | "ACTIVE" | "SUSPENDED" | "COMPLETED";
+
+export type CompanyProject = {
+  readonly id: string;
+  readonly companyId: string;
+  readonly name: string;
+  readonly status: ProjectStatus;
+  readonly address: string;
+  readonly centerLatitude: string;
+  readonly centerLongitude: string;
+  readonly geofenceRadiusM: number;
+  readonly plannedStartDate: string;
+  readonly plannedEndDate: string | null;
+};
+
+export type CompanyParticipant = ProjectParticipant & { readonly projectName: string };

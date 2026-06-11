@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { DailyReport, ProjectParticipant, RangeReport } from "./management.types";
+import type { CompanyParticipant, CompanyProject, DailyReport, ProjectParticipant, RangeReport } from "./management.types";
 
 export const fetchParticipants = async (projectId: string): Promise<ReadonlyArray<ProjectParticipant>> =>
   apiClient.request<ReadonlyArray<ProjectParticipant>>(`/management/projects/${projectId}/participants`, { method: "GET" });
@@ -24,3 +24,9 @@ export const fetchTeamWeeklyReport = async (teamId: string, weekStartDate: strin
 
 export const fetchTeamMonthlyReport = async (teamId: string, month: string): Promise<RangeReport> =>
   apiClient.request<RangeReport>(`/reports/teams/${teamId}/monthly?month=${month}`, { method: "GET" });
+
+export const fetchCompanyProjects = async (companyId: string): Promise<ReadonlyArray<CompanyProject>> =>
+  apiClient.request<ReadonlyArray<CompanyProject>>(`/management/companies/${companyId}/projects`, { method: "GET" });
+
+export const fetchCompanyParticipants = async (companyId: string): Promise<ReadonlyArray<CompanyParticipant>> =>
+  apiClient.request<ReadonlyArray<CompanyParticipant>>(`/management/companies/${companyId}/participants`, { method: "GET" });

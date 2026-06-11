@@ -3,6 +3,8 @@ import { afterEach, describe, expect, test } from "vitest";
 import Taro, { __setRequestHandler } from "@tarojs/taro";
 
 import {
+  fetchCompanyParticipants,
+  fetchCompanyProjects,
   fetchDailyReport,
   fetchMonthlyReport,
   fetchParticipants,
@@ -87,5 +89,20 @@ describe("management service URLs and methods", () => {
     const calls = recordRequests();
     await fetchTeamMonthlyReport("t-1", "2026-06");
     expect(calls[0]?.url.endsWith("/reports/teams/t-1/monthly?month=2026-06")).toBe(true);
+  });
+
+  test("fetchCompanyProjects -> GET /management/companies/:companyId/projects", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchCompanyProjects("c-1");
+    expect(calls[0]?.method).toBe("GET");
+    expect(calls[0]?.url.endsWith("/management/companies/c-1/projects")).toBe(true);
+  });
+
+  test("fetchCompanyParticipants -> GET /management/companies/:companyId/participants", async () => {
+    setToken();
+    const calls = recordRequests();
+    await fetchCompanyParticipants("c-1");
+    expect(calls[0]?.url.endsWith("/management/companies/c-1/participants")).toBe(true);
   });
 });
