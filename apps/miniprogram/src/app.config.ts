@@ -12,7 +12,8 @@ export default defineAppConfig({
     "pages/company-people/index",
     "pages/my-records/index",
     "pages/my-makeups/index",
-    "pages/submit-makeup/index"
+    "pages/submit-makeup/index",
+    "pages/project-management/index"
   ],
   window: {
     backgroundColor: "#F3ECE1",
