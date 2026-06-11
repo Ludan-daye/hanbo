@@ -187,6 +187,15 @@ type ProjectFindUniqueArgs = {
   };
 };
 
+type ProjectFindManyArgs = {
+  readonly orderBy?: {
+    readonly createdAt?: "asc" | "desc";
+  };
+  readonly where: {
+    readonly companyId: string;
+  };
+};
+
 type TeamCreateArgs = {
   readonly data: {
     readonly name: string;
@@ -380,6 +389,10 @@ class ManagementPrismaTestDouble {
       this.projects.set(project.id, project);
       return project;
     },
+    findMany: async (args: ProjectFindManyArgs): Promise<ProjectRecord[]> =>
+      Array.from(this.projects.values())
+        .filter((project: ProjectRecord): boolean => project.companyId === args.where.companyId)
+        .sort((a: ProjectRecord, b: ProjectRecord): number => a.createdAt.getTime() - b.createdAt.getTime()),
     findUnique: async (args: ProjectFindUniqueArgs): Promise<ProjectRecord | null> => this.projects.get(args.where.id) ?? null
   };
 
@@ -1007,6 +1020,144 @@ describe("ManagementModule", (): void => {
 
     await request(app.getHttpServer())
       .get("/management/teams/team-1/participants")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(403);
+  });
+
+  test("GET /management/companies/:companyId/projects returns projects of that company only", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+
+    // Seed company-1 (already seeded in beforeEach) and company-2
+    prisma.companies.set("company-2", {
+      createdAt: now,
+      id: "company-2",
+      name: "Other Company",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // Seed project-A and project-B under company-1
+    prisma.projects.set("project-A", {
+      address: "Site A Road",
+      centerLatitude: "31.2304000",
+      centerLongitude: "121.4737000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 200,
+      id: "project-A",
+      name: "Project Alpha",
+      plannedEndDate: null,
+      plannedStartDate: new Date("2026-06-03T00:00:00.000Z"),
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.projects.set("project-B", {
+      address: "Site B Road",
+      centerLatitude: "31.2400000",
+      centerLongitude: "121.4800000",
+      companyId: "company-1",
+      createdAt: now,
+      geofenceRadiusM: 300,
+      id: "project-B",
+      name: "Project Beta",
+      plannedEndDate: new Date("2026-12-31T00:00:00.000Z"),
+      plannedStartDate: new Date("2026-06-03T00:00:00.000Z"),
+      status: "PREPARING",
+      updatedAt: now
+    });
+
+    // Seed project-C under company-2
+    prisma.projects.set("project-C", {
+      address: "Site C Road",
+      centerLatitude: "30.0000000",
+      centerLongitude: "120.0000000",
+      companyId: "company-2",
+      createdAt: now,
+      geofenceRadiusM: 150,
+      id: "project-C",
+      name: "Project Gamma",
+      plannedEndDate: null,
+      plannedStartDate: new Date("2026-06-03T00:00:00.000Z"),
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // user-1 already has COMPANY_ADMIN@COMPANY(company-1) from beforeEach.
+    // COMPANY_ADMIN inherits attendance.view via PROJECT_ADMIN in the role hierarchy.
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-1", "session-1");
+
+    const response = await request(app.getHttpServer())
+      .get("/management/companies/company-1/projects")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(200);
+
+    const body = response.body as readonly Record<string, unknown>[];
+    expect(body).toHaveLength(2);
+
+    const ids = body.map((row): unknown => row["id"]);
+    expect(ids).toContain("project-A");
+    expect(ids).toContain("project-B");
+    expect(ids).not.toContain("project-C");
+
+    for (const row of body) {
+      expect(row).toMatchObject({
+        address: expect.any(String),
+        centerLatitude: expect.any(String),
+        centerLongitude: expect.any(String),
+        companyId: "company-1",
+        geofenceRadiusM: expect.any(Number),
+        id: expect.any(String),
+        name: expect.any(String),
+        plannedStartDate: expect.any(String),
+        status: expect.any(String)
+      });
+      expect("plannedEndDate" in row).toBe(true);
+    }
+  });
+
+  test("GET /management/companies/:companyId/projects returns 403 without attendance.view at the company scope", async (): Promise<void> => {
+    const now = new Date("2026-06-03T00:00:00.000Z");
+
+    // Seed company-2 and project-C (belonging to company-2)
+    prisma.companies.set("company-2", {
+      createdAt: now,
+      id: "company-2",
+      name: "Other Company",
+      status: "ACTIVE",
+      updatedAt: now
+    });
+    prisma.projects.set("project-C", {
+      address: "Site C Road",
+      centerLatitude: "30.0000000",
+      centerLongitude: "120.0000000",
+      companyId: "company-2",
+      createdAt: now,
+      geofenceRadiusM: 150,
+      id: "project-C",
+      name: "Project Gamma",
+      plannedEndDate: null,
+      plannedStartDate: new Date("2026-06-03T00:00:00.000Z"),
+      status: "ACTIVE",
+      updatedAt: now
+    });
+
+    // Seed user-2 who has WORKER@PROJECT(project-C) — no role at company-1.
+    prisma.seedActiveSession("user-2", "session-2");
+    prisma.userRoles.push({
+      role: prisma.roles.get("WORKER") as RoleRecord,
+      roleId: "role-WORKER",
+      scopeId: "project-C",
+      scopeType: "PROJECT",
+      userId: "user-2"
+    });
+
+    app = await createApp(prisma);
+    const accessToken = await createAccessToken(app, "user-2", "session-2");
+
+    await request(app.getHttpServer())
+      .get("/management/companies/company-1/projects")
       .set("Authorization", `Bearer ${accessToken}`)
       .expect(403);
   });

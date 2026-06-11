@@ -109,6 +109,18 @@ export class ManagementController {
     return this.managementService.createProjectManager(projectId, parseCreateProjectManagerRequest(body));
   }
 
+  @Get("companies/:companyId/projects")
+  @RequirePermission({
+    permissionCode: "attendance.view",
+    target: { paramName: "companyId", source: "companyParam" }
+  })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async listCompanyProjects(
+    @Param("companyId") companyId: string
+  ): Promise<readonly ProjectResponse[]> {
+    return this.managementService.listCompanyProjects(companyId);
+  }
+
   @Get("projects/:projectId/participants")
   @RequirePermission({
     permissionCode: "attendance.view",

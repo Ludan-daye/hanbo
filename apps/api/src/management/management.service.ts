@@ -323,6 +323,18 @@ export class ManagementService {
     }
   }
 
+  async listCompanyProjects(companyId: string): Promise<readonly ProjectResponse[]> {
+    const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+    if (company === null) {
+      throw new NotFoundException({ companyId, message: "COMPANY_NOT_FOUND" });
+    }
+    const projects = await this.prisma.project.findMany({
+      orderBy: { createdAt: "asc" },
+      where: { companyId }
+    });
+    return projects.map(createProjectResponse);
+  }
+
   async listTeamParticipants(teamId: string): Promise<readonly ProjectParticipantResponse[]> {
     const team = await this.prisma.team.findUnique({ where: { id: teamId } });
 
