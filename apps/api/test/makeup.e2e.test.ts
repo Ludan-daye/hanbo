@@ -794,6 +794,12 @@ describe("MakeupModule", (): void => {
     });
     prisma.userRoles.push(
       {
+        role: prisma.roles.get("WORKER") as RoleRecord,
+        scopeId: "project-1",
+        scopeType: "PROJECT",
+        userId: "worker-user"
+      },
+      {
         role: prisma.roles.get("TEAM_LEADER") as RoleRecord,
         scopeId: "team-1",
         scopeType: "TEAM",
@@ -1056,6 +1062,29 @@ describe("MakeupModule", (): void => {
     await request(app.getHttpServer())
       .get("/makeups/teams/team-1/pending")
       .set("Authorization", `Bearer ${otherLeaderAccessToken}`)
+      .expect(403);
+  });
+
+  test("POST /makeups/projects/:projectId/requests returns 403 without makeup.request at the project scope", async (): Promise<void> => {
+    // Seed a user with TEAM_LEADER role at a different team (team-other), giving them no makeup.request
+    // permission at project-1 scope.
+    prisma.seedActiveSession("no-permission-user", "session-no-permission");
+    prisma.userRoles.push({
+      role: prisma.roles.get("TEAM_LEADER") as RoleRecord,
+      scopeId: "team-other-project",
+      scopeType: "TEAM",
+      userId: "no-permission-user"
+    });
+    // no-permission-user has no worker/manager profile bound, but the permission guard runs
+    // before the service resolves the participant — so we expect 403, not 400/404.
+
+    app = await createApp(prisma);
+    const noPermissionToken = await createAccessToken(app, "no-permission-user", "session-no-permission");
+
+    await request(app.getHttpServer())
+      .post("/makeups/projects/project-1/requests")
+      .set("Authorization", `Bearer ${noPermissionToken}`)
+      .send(createMakeupBody("2026-06-03", "SEGMENT_1_START", "2026-06-03T08:00:00.000+08:00"))
       .expect(403);
   });
 });

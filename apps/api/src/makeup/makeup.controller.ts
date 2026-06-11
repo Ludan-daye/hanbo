@@ -15,7 +15,11 @@ export class MakeupController {
   constructor(@Inject(MakeupService) private readonly makeupService: MakeupService) {}
 
   @Post("projects/:projectId/requests")
-  @UseGuards(AccessTokenGuard)
+  @RequirePermission({
+    permissionCode: "makeup.request",
+    target: { paramName: "projectId", source: "projectParam" }
+  })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
   async createMakeupRequest(
     @CurrentUser() currentUser: AuthenticatedUser,
     @Param("projectId") projectId: string,
@@ -24,6 +28,9 @@ export class MakeupController {
     return this.makeupService.createMakeupRequest(projectId, currentUser.userId, parseCreateMakeupRequestBody(body));
   }
 
+  // No controller-level @RequirePermission: the request id alone does not carry a project scope,
+  // and MakeupService delegates to `canApproveScopedMakeupRequest` which resolves the project
+  // from the persisted MakeupRequest and enforces makeup.approve at that scope (with self-approval blocked).
   @Post("requests/:requestId/approve")
   @UseGuards(AccessTokenGuard)
   async approveMakeupRequest(
@@ -34,6 +41,9 @@ export class MakeupController {
     return this.makeupService.approveMakeupRequest(requestId, currentUser.userId, parseReviewMakeupRequestBody(body));
   }
 
+  // No controller-level @RequirePermission: the request id alone does not carry a project scope,
+  // and MakeupService delegates to `canApproveScopedMakeupRequest` which resolves the project
+  // from the persisted MakeupRequest and enforces makeup.approve at that scope (with self-approval blocked).
   @Post("requests/:requestId/reject")
   @UseGuards(AccessTokenGuard)
   async rejectMakeupRequest(

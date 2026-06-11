@@ -61,8 +61,7 @@ Permission inheritance does not override data scope. Data access is restricted b
 Role behavior:
 
 - System administrators can manage all companies, projects, users, roles, and system configuration.
-- Company administrators can manage their company, its projects, its personnel, and related reports.
-- Project administrators can create projects within their authorized company scope. The creator becomes a project administrator for the new project by default.
+- Company administrators can manage their company, create projects in it, manage its personnel, and view related reports. The user who creates a project is automatically granted project administrator on that project.
 - Project administrators can manage assigned projects, teams, project personnel, schedules, and attendance exceptions.
 - Team leaders can manage and view their own teams and review allowed makeup requests.
 - Workers can log in, bind, view their own profile and records, attend, and submit makeup requests.
