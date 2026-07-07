@@ -173,11 +173,16 @@ Append to `.gitignore` (repo root):
 apps/api/var/
 ```
 
-Append to `.env.example` (repo root, near the `OBJECT_STORAGE_*` block):
+Append to `.env.example` (repo root, near the `OBJECT_STORAGE_*` block) — skip either line if already present:
 
 ```
+FACE_DEV_STUB=true
 UPLOADS_DIR=./var/uploads
 ```
+
+(`FACE_DEV_STUB` defaults to `false`, which selects the fail-closed face connector and marks
+every punch `FACE_NOT_PASSED`; dev environments must set it to `true`. The env schema already
+forbids `true` in production.)
 
 - [ ] **Step 7: Typecheck and full test run**
 
@@ -398,6 +403,12 @@ describe("POST /uploads", (): void => {
   });
 });
 ```
+
+Note on the 413 test: Nest maps multer's `LIMIT_FILE_SIZE` to `PayloadTooLargeException` (413) —
+verified in the installed `@nestjs/platform-express` source. If the server aborts the connection
+before supertest finishes streaming the 5 MB body you may see `ECONNRESET` instead of a response;
+that is a transport artifact, not an endpoint bug — do NOT change the endpoint, just assert the
+rejection accordingly.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1032,6 +1043,8 @@ describe("GET /me/projects/:projectId/attendance-today", (): void => {
 
     expect(response.body.message).toBe("ATTENDANCE_PARTICIPANT_MEMBERSHIP_NOT_FOUND");
   });
+  // ^ 400 (not 403) is intentional: the endpoint reuses resolveAttendanceParticipant, which
+  //   throws BadRequestException — identical semantics to the punch-submission path.
 
   test("rejects a missing token with 401", async (): Promise<void> => {
     app = await createApp(prisma);
@@ -1351,7 +1364,14 @@ export const uploadImage = async (localFilePath: string): Promise<UploadResult> 
   });
 
   if (res.statusCode < 200 || res.statusCode >= 300) {
-    throw new Error(`UPLOAD_FAILED_${res.statusCode}`);
+    let serverMessage: string | null = null;
+    try {
+      const parsed = JSON.parse(res.data) as { message?: unknown };
+      serverMessage = typeof parsed.message === "string" ? parsed.message : null;
+    } catch {
+      serverMessage = null;
+    }
+    throw new Error(serverMessage ?? `UPLOAD_FAILED_${res.statusCode}`);
   }
 
   const data = JSON.parse(res.data) as UploadResult;
@@ -1445,10 +1465,10 @@ export const submitAttendanceRecord = async (
   });
 ```
 
-- [ ] **Step 5: Verify typecheck**
+- [ ] **Step 5: Verify typecheck and unit tests**
 
-Run: `cd apps/miniprogram && npx tsc --noEmit -p tsconfig.json`
-Expected: same error count as the Step 1 baseline (0 new errors).
+Run: `cd apps/miniprogram && npx tsc --noEmit -p tsconfig.json && npx vitest run`
+Expected: same error count as the Step 1 baseline (0 new errors); all existing unit tests pass.
 
 - [ ] **Step 6: Commit**
 
@@ -1772,10 +1792,19 @@ to
       { title: "打卡", sub: "四点考勤 · 拍照 + 定位", nav: { url: "/pages/punch/index" } },
 ```
 
-- [ ] **Step 5: Typecheck and build**
+- [ ] **Step 5: Typecheck, unit tests, and build**
 
-Run: `cd apps/miniprogram && npx tsc --noEmit -p tsconfig.json && npx taro build --type h5`
-Expected: no new type errors (vs Task 4 Step 1 baseline); H5 build succeeds into `dist/`.
+Run (substitute your server's public IP — `taro build` inlines `TARO_APP_API_BASE_URL` at build
+time via `defineConstants`; without it the bundle points at `http://localhost:3000` and a remote
+browser cannot reach the API):
+
+```bash
+cd apps/miniprogram && npx tsc --noEmit -p tsconfig.json && npx vitest run && TARO_APP_API_BASE_URL=http://<server-ip>:3000 npx taro build --type h5
+```
+
+Expected: no new type errors (vs Task 4 Step 1 baseline); all existing unit tests pass; H5 build
+succeeds into `dist/`. The API's `CORS_ALLOWED_ORIGINS` in `apps/api/.env` must include
+`http://<server-ip>:8088` (it already lists the current server IP).
 
 - [ ] **Step 6: Commit**
 
@@ -1788,11 +1817,15 @@ git commit -m "feat(miniprogram): worker punch page (geolocation + photos + poin
 
 ### Task 6: Live end-to-end verification (no code changes)
 
-Precondition: PostgreSQL up and dev DB seeded (`cd apps/api && npm run seed:dev` if unsure). Run these from the repo root. If the API is already running under watch, skip the start step.
+Precondition: PostgreSQL up and dev DB seeded (`cd apps/api && npm run seed:dev` if unsure). Run these from the repo root. If the API is already running under watch, restart it after Step 1's env fix.
 
-- [ ] **Step 1: Build and start the API with the new code**
+- [ ] **Step 1: Ensure dev face stub is on, then build and start the API**
+
+`apps/api/.env` does not set `FACE_DEV_STUB`, and the schema default (`false`) selects the
+fail-closed connector — every punch would come back `INVALID / FACE_NOT_PASSED`. Fix first:
 
 ```bash
+grep -q '^FACE_DEV_STUB=' apps/api/.env || echo 'FACE_DEV_STUB=true' >> apps/api/.env
 cd apps/api && set -a && . ./.env && set +a && npx nest build && (node dist/main.js > /tmp/api.log 2>&1 &) && sleep 2 && curl -s http://localhost:3000/health
 ```
 
@@ -1849,6 +1882,9 @@ curl -s "http://localhost:3000/me/projects/$PROJECT/attendance-today" -H "Author
 Expected: second punch has `status = "INVALID"`, `abnormalReason = "OUTSIDE_GEOFENCE"`; the today view shows `SEGMENT_1_START.record.status = "VALID"` and `SEGMENT_1_END.record.status = "INVALID"`, the other two points `null`.
 
 - [ ] **Step 6: Serve the H5 build for manual testing**
+
+The bundle must have been built with `TARO_APP_API_BASE_URL=http://<server-ip>:3000` (Task 5
+Step 5); if in doubt, rebuild with that var before serving:
 
 ```bash
 ( cd apps/miniprogram && python3 -m http.server 8088 --bind 0.0.0.0 --directory dist > /tmp/h5.log 2>&1 ) &

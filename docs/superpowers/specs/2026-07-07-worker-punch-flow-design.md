@@ -170,8 +170,10 @@ API:
 
 ## Error Handling
 
-- Upload or submit failure → StateView with the server's structured error message; chosen photos
-  and entered coordinates are preserved so retry needs no re-entry.
+- Upload failure → StateView with the server's `message` field when the error body parses,
+  otherwise `UPLOAD_FAILED_<status>`. Submit failure → the shared `apiClient` convention
+  (`REQUEST_FAILED_<status>`), same as every existing page. Chosen photos and entered
+  coordinates are preserved so retry needs no re-entry.
 - `DEFAULT_SHIFT_NOT_CONFIGURED*` and other submit-path errors surface verbatim (same convention
   as existing pages).
 - Duplicate same-point submissions remain possible at the API level (no unique constraint —
@@ -184,8 +186,8 @@ API:
   - uploads: happy path jpeg/png (response fields + file lands under a temp `UPLOADS_DIR` +
     hash matches), missing file, disallowed content type, oversize file, unauthenticated 401.
   - attendance-today: unconfigured project, non-workday, workday with no records, workday with
-    some points punched (latest-record-wins on duplicates), non-participant 403,
-    unauthenticated 401.
+    some points punched (latest-record-wins on duplicates), non-participant 400
+    (`ATTENDANCE_PARTICIPANT_MEMBERSHIP_NOT_FOUND`, same as the punch path), unauthenticated 401.
 - **Miniprogram:** typecheck + H5 build must pass; no component-test harness exists (unchanged).
 - **End-to-end proof before handoff:** scripted curl flow as dev-worker — upload two images →
   submit SEGMENT_1_START inside fence (expect VALID) → submit SEGMENT_1_END with far
