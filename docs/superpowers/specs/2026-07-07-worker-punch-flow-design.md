@@ -63,7 +63,8 @@ API:
   infrastructure/storage (new)
     StoragePort (interface) + LocalDiskStorage (dev implementation)
   MeController (extended)
-    GET /me/projects/:projectId/attendance-today -> MeService -> shift/schedule/records lookup
+    GET /me/projects/:projectId/attendance-today -> AttendanceService.getAttendanceToday
+      (reuses schedule/shift/participant helpers; MeModule imports AttendanceModule)
 ```
 
 ## Backend Design
@@ -73,8 +74,10 @@ API:
 - Guard: `AccessTokenGuard` only — any authenticated user may upload (workers are the primary
   callers and hold no management permission).
 - Body: multipart form, single field `file`. Accepted content types: `image/jpeg`, `image/png`.
-  Max size: 5 MB (multer limit). Violations → 400 with structured message
-  (`UPLOAD_FILE_REQUIRED`, `UPLOAD_CONTENT_TYPE_NOT_ALLOWED`, `UPLOAD_FILE_TOO_LARGE`).
+  Max size: 5 MB (multer `limits.fileSize`; multer ships transitively with
+  @nestjs/platform-express and defaults to in-memory storage). Missing file or disallowed
+  content type → 400 (`UPLOAD_FILE_REQUIRED`, `UPLOAD_CONTENT_TYPE_NOT_ALLOWED`); oversize →
+  413 (Nest's standard mapping of multer's LIMIT_FILE_SIZE).
 - Behaviour: compute sha256 of the bytes server-side, build
   `objectKey = uploads/<YYYY-MM-DD>/<uuid>.<jpg|png>`, persist via `StoragePort.put(objectKey,
   buffer, contentType)`.
@@ -90,18 +93,24 @@ API:
 - DI token `STORAGE_PORT` provided in `UploadsModule`, mirroring the existing
   `FACE_VERIFICATION_CONNECTOR` pattern. A future `CosStorage` implements the same port.
 
-### `GET /me/projects/:projectId/attendance-today` (extends `MeController`/`MeService`)
+### `GET /me/projects/:projectId/attendance-today` (route on `MeController`, logic in `AttendanceService`)
 
-- Guard: `AccessTokenGuard`. `MeService` resolves the caller to an ACTIVE attendance participant
-  (worker or attendance-required manager) of `projectId`; otherwise 403
-  (`NOT_A_PROJECT_PARTICIPANT`).
-- "Today" is computed server-side (UTC date, consistent with the rest of the attendance code).
+- Guard: `AccessTokenGuard`. The route delegates to a new public
+  `AttendanceService.getAttendanceToday(projectId, userId)` so it reuses the existing private
+  helpers (`resolveAttendanceParticipant`, `loadProjectSchedulesWithShift`,
+  `getDefaultShiftOrThrow`, `getChinaDateOnly`) instead of duplicating them in `MeService`.
+  `MeModule` gains an import of `AttendanceModule` (which already exports `AttendanceService`).
+  A non-participant gets the submit path's existing 400
+  `ATTENDANCE_PARTICIPANT_MEMBERSHIP_NOT_FOUND` (same semantics as punching).
+- "Today" is computed server-side as the **Asia/Shanghai** date (via the existing
+  `getChinaDateOnly`), consistent with `assertOccurredAtMatchesAttendanceDate` on the punch
+  path.
 - Response shape:
 
 ```jsonc
 {
   "attendanceDate": "2026-07-07",
-  "configured": true,          // false when project lacks default shift or schedule -> shift/points/isWorkday omitted
+  "configured": true,          // false when project lacks both a default shift and any schedule -> shiftName null, points [], isWorkday false
   "isWorkday": true,           // workdayMask + startsOn/endsOn window
   "shiftName": "标准两段班",
   "points": [                  // always the 4 codes, ordered
