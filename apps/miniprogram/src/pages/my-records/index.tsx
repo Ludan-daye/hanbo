@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { ListItem, PageHeader, Screen, StateView } from "../../components/ui/index";
 import { fetchMyAttendanceRecords } from "../../services/me";
+import { formatChinaHm } from "../../services/time";
 import type { AttendanceRecord } from "../../services/me.types";
 
 const POINT_LABEL: Record<AttendanceRecord["pointCode"], string> = {
@@ -65,7 +66,7 @@ export default function MyRecords(): JSX.Element {
           <ListItem
             key={r.id}
             primary={`${POINT_LABEL[r.pointCode]} · ${r.attendanceDate}`}
-            secondary={r.abnormalReason !== null ? `异常:${r.abnormalReason}` : `于 ${r.occurredAt.slice(11, 16)} 打卡`}
+            secondary={r.abnormalReason !== null ? `异常:${r.abnormalReason}` : `于 ${formatChinaHm(r.occurredAt)} 打卡`}
             chip={r.status === "VALID" ? "正常" : "异常"}
           />
         ))}

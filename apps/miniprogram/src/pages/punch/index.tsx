@@ -1,9 +1,10 @@
 import { Image, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button, Field, ListItem, PageHeader, Screen, StateView, Subtitle } from "../../components/ui/index";
 import { fetchAttendanceToday, fetchMyProjects, submitAttendanceRecord } from "../../services/me";
+import { formatChinaHm } from "../../services/time";
 import { uploadImage } from "../../services/uploads";
 import type { AttendancePointCode, AttendanceToday, MyProjectMembership } from "../../services/me.types";
 
@@ -47,6 +48,7 @@ export default function Punch(): JSX.Element {
   const [sitePhotoPath, setSitePhotoPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,15 +86,18 @@ export default function Punch(): JSX.Element {
   }, []);
 
   const loadToday = useCallback(async (pid: string): Promise<void> => {
+    const seq = ++loadSeq.current;
     setToday(null);
     setSelectedPoint(null);
     setError(null);
     try {
       const data = await fetchAttendanceToday(pid);
+      if (seq !== loadSeq.current) return;
       setToday(data);
       const firstOpen = data.points.find((p) => p.record === null);
       setSelectedPoint(firstOpen === undefined ? null : firstOpen.pointCode);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setError(e instanceof Error ? e.message : "REQUEST_FAILED");
     }
   }, []);
@@ -148,10 +153,12 @@ export default function Punch(): JSX.Element {
     setBusy(true);
     setError(null);
     try {
+      const fresh = await fetchAttendanceToday(projectId);
+      setToday(fresh);
       const selfie = await uploadImage(selfiePath);
       const sitePhoto = await uploadImage(sitePhotoPath);
       const response = await submitAttendanceRecord(projectId, {
-        attendanceDate: today.attendanceDate,
+        attendanceDate: fresh.attendanceDate,
         latitude: latitude.trim(),
         locationAccuracyM: accuracy,
         longitude: longitude.trim(),
@@ -204,6 +211,7 @@ export default function Punch(): JSX.Element {
               secondary={`${p.projectRoleLabel} · ${p.teamName ?? "无班组"}`}
               chip={p.projectId === projectId ? "已选" : undefined}
               onClick={() => {
+                if (busy) return;
                 setProjectId(p.projectId);
               }}
             />
@@ -228,7 +236,7 @@ export default function Punch(): JSX.Element {
               primary={`${POINT_LABEL[point.pointCode]} · ${point.scheduledTime}`}
               secondary={
                 point.record !== null
-                  ? `已打 ${point.record.occurredAt.slice(11, 16)} · ${reasonText(point.record.abnormalReason)}`
+                  ? `已打 ${formatChinaHm(point.record.occurredAt)} · ${reasonText(point.record.abnormalReason)}`
                   : `宽限 ${point.graceMins} 分钟`
               }
               chip={pointChip(point.pointCode)}

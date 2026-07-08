@@ -529,7 +529,10 @@ export class AttendanceService {
         faceScore: String(faceResult.score),
         geofenceDistanceM: formatMeters(Math.min(geofenceDecision.distanceM, maxStoredGeofenceDistanceM)),
         latitude: request.latitude,
-        locationAccuracyM: request.locationAccuracyM,
+        locationAccuracyM:
+          request.locationAccuracyM === null
+            ? null
+            : formatMeters(Math.min(Number(request.locationAccuracyM), maxStoredGeofenceDistanceM)),
         longitude: request.longitude,
         occurredAt,
         participantId: participant.participantId,

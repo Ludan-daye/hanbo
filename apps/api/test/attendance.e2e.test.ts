@@ -1278,13 +1278,17 @@ describe("AttendanceModule", (): void => {
     const response = await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
       .set("Authorization", `Bearer ${workerAccessToken}`)
-      .send(attendanceBody("2026-06-10", "SEGMENT_1_START", "2026-06-10T08:00:00.000+08:00", "39.9000000", "116.4000000"))
+      .send({
+        ...attendanceBody("2026-06-10", "SEGMENT_1_START", "2026-06-10T08:00:00.000+08:00", "39.9000000", "116.4000000"),
+        locationAccuracyM: "9999999"
+      })
       .expect(201);
 
     expect(response.body.record).toMatchObject({
       abnormalReason: "OUTSIDE_GEOFENCE",
       attendanceDate: "2026-06-10",
       geofenceDistanceM: "999999.99",
+      locationAccuracyM: "999999.99",
       participantId: "worker-1",
       participantType: "WORKER",
       pointCode: "SEGMENT_1_START",
