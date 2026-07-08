@@ -55,3 +55,62 @@ export type SubmitMakeupBody = {
   readonly reason: string;
   readonly requestedOccurredAt: string;
 };
+
+export type AttendanceTodayPointRecord = {
+  readonly abnormalReason: string | null;
+  readonly occurredAt: string;
+  readonly status: AttendanceRecordStatus;
+};
+
+export type AttendanceTodayPoint = {
+  readonly graceMins: number;
+  readonly pointCode: AttendancePointCode;
+  readonly record: AttendanceTodayPointRecord | null;
+  readonly scheduledTime: string;
+};
+
+export type AttendanceTodayGeofence = {
+  readonly centerLatitude: string;
+  readonly centerLongitude: string;
+  readonly radiusM: number;
+};
+
+export type AttendanceResultSummary = {
+  readonly attendanceDate: string;
+  readonly isAbsent: boolean;
+  readonly isEarlyLeave: boolean;
+  readonly isLate: boolean;
+  readonly isMissingPunch: boolean;
+  readonly participantId: string;
+  readonly participantType: ParticipantType;
+  readonly projectId: string;
+  readonly workedMinutes: number;
+};
+
+export type AttendanceToday = {
+  readonly attendanceDate: string;
+  readonly configured: boolean;
+  readonly geofence: AttendanceTodayGeofence;
+  readonly isWorkday: boolean;
+  readonly points: ReadonlyArray<AttendanceTodayPoint>;
+  readonly result: AttendanceResultSummary | null;
+  readonly shiftName: string | null;
+};
+
+export type SubmitAttendanceRecordBody = {
+  readonly attendanceDate: string;
+  readonly latitude: string;
+  readonly locationAccuracyM: string | null;
+  readonly longitude: string;
+  readonly occurredAt: string;
+  readonly pointCode: AttendancePointCode;
+  readonly selfieHash: string;
+  readonly selfieObjectKey: string;
+  readonly sitePhotoHash: string;
+  readonly sitePhotoObjectKey: string;
+};
+
+export type SubmitAttendanceRecordResult = {
+  readonly record: AttendanceRecord;
+  readonly result: AttendanceResultSummary;
+};
