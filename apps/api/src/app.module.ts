@@ -11,6 +11,7 @@ import { ManagementModule } from "./management/management.module.js";
 import { MakeupModule } from "./makeup/makeup.module.js";
 import { MeModule } from "./me/me.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
+import { UploadsModule } from "./uploads/uploads.module.js";
 
 @Module({
   imports: [
@@ -23,7 +24,8 @@ import { ReportsModule } from "./reports/reports.module.js";
     AttendanceModule,
     MakeupModule,
     MeModule,
-    ReportsModule
+    ReportsModule,
+    UploadsModule
   ],
   controllers: [HealthController]
 })
