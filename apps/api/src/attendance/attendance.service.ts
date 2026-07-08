@@ -12,7 +12,12 @@ import type {
   ShiftSegment,
   WorkerProfile
 } from "@prisma/client";
-import { summarizeDailyAttendance, type AttendanceRecordInput, type ShiftRule } from "@construction/domain/attendance.js";
+import {
+  summarizeDailyAttendance,
+  type AttendancePointCode,
+  type AttendanceRecordInput,
+  type ShiftRule
+} from "@construction/domain/attendance.js";
 
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
@@ -27,6 +32,9 @@ import type {
   AttendanceRecordResponse,
   AttendanceRecordStatusValue,
   AttendanceResultResponse,
+  AttendanceTodayGeofence,
+  AttendanceTodayPoint,
+  AttendanceTodayResponse,
   ConfigureDefaultScheduleRequest,
   ConfigureDefaultShiftRequest,
   DefaultShiftResponse,
@@ -357,6 +365,65 @@ const getAbnormalReason = (facePassed: boolean, geofenceDecision: GeofenceDecisi
   return null;
 };
 
+const attendancePointCodesInOrder: readonly AttendancePointCode[] = [
+  "SEGMENT_1_START",
+  "SEGMENT_1_END",
+  "SEGMENT_2_START",
+  "SEGMENT_2_END"
+];
+
+const createAttendanceTodayPoints = (
+  shift: ShiftWithSegments,
+  records: readonly AttendanceRecord[]
+): readonly AttendanceTodayPoint[] => {
+  const sortedSegments = toSortedSegments(shift.segments);
+  const segment1 = sortedSegments[0];
+  const segment2 = sortedSegments[1];
+
+  if (segment1 === undefined || segment2 === undefined || segment1.sequence !== 1 || segment2.sequence !== 2) {
+    throw new BadRequestException({
+      message: "DEFAULT_SHIFT_REQUIRES_TWO_ORDERED_SEGMENTS",
+      shiftId: shift.id
+    });
+  }
+
+  const pointDefinitions: ReadonlyMap<AttendancePointCode, { readonly graceMins: number; readonly scheduledTime: string }> =
+    new Map([
+      ["SEGMENT_1_START", { graceMins: segment1.lateGraceMins, scheduledTime: segment1.startTime }],
+      ["SEGMENT_1_END", { graceMins: segment1.earlyGraceMins, scheduledTime: segment1.endTime }],
+      ["SEGMENT_2_START", { graceMins: segment2.lateGraceMins, scheduledTime: segment2.startTime }],
+      ["SEGMENT_2_END", { graceMins: segment2.earlyGraceMins, scheduledTime: segment2.endTime }]
+    ]);
+
+  return attendancePointCodesInOrder.map((pointCode: AttendancePointCode): AttendanceTodayPoint => {
+    const definition = pointDefinitions.get(pointCode);
+
+    if (definition === undefined) {
+      throw new BadRequestException({
+        message: "ATTENDANCE_POINT_DEFINITION_MISSING",
+        pointCode
+      });
+    }
+
+    const matchingRecords = records.filter((record: AttendanceRecord): boolean => record.pointCode === pointCode);
+    const latestRecord = matchingRecords[matchingRecords.length - 1];
+
+    return {
+      graceMins: definition.graceMins,
+      pointCode,
+      record:
+        latestRecord === undefined
+          ? null
+          : {
+              abnormalReason: latestRecord.abnormalReason,
+              occurredAt: latestRecord.occurredAt.toISOString(),
+              status: latestRecord.status as AttendanceRecordStatusValue
+            },
+      scheduledTime: definition.scheduledTime
+    };
+  });
+};
+
 @Injectable()
 export class AttendanceService {
   constructor(
@@ -481,6 +548,95 @@ export class AttendanceService {
     return {
       record: createAttendanceRecordResponse(record),
       result: createAttendanceResultResponse(result)
+    };
+  }
+
+  async getAttendanceToday(projectId: string, userId: string): Promise<AttendanceTodayResponse> {
+    const project = await this.getProjectOrThrow(projectId);
+    const participant = await this.resolveAttendanceParticipant(userId, projectId);
+    const attendanceDateText = getChinaDateOnly(new Date());
+    const attendanceDate = dateOnlyToDate(attendanceDateText);
+    const geofence: AttendanceTodayGeofence = {
+      centerLatitude: String(project.centerLatitude),
+      centerLongitude: String(project.centerLongitude),
+      radiusM: project.geofenceRadiusM
+    };
+
+    const [schedules, defaultShift] = await Promise.all([
+      this.loadProjectSchedulesWithShift(projectId),
+      this.prisma.shift.findFirst({
+        include: {
+          segments: true
+        },
+        where: {
+          isDefault: true,
+          projectId
+        }
+      })
+    ]);
+
+    if (schedules.length === 0 && defaultShift === null) {
+      return {
+        attendanceDate: attendanceDateText,
+        configured: false,
+        geofence,
+        isWorkday: false,
+        points: [],
+        result: null,
+        shiftName: null
+      };
+    }
+
+    const activeSchedule = schedules.find(
+      (schedule: ProjectScheduleWithShift): boolean =>
+        isDateInScheduleRange(schedule, attendanceDate) && isDateEnabledBySchedule(schedule, attendanceDate)
+    );
+    const shift = activeSchedule?.shift ?? (schedules.length === 0 ? defaultShift : null);
+
+    if (shift === null) {
+      return {
+        attendanceDate: attendanceDateText,
+        configured: true,
+        geofence,
+        isWorkday: false,
+        points: [],
+        result: null,
+        shiftName: null
+      };
+    }
+
+    const [records, result] = await Promise.all([
+      this.prisma.attendanceRecord.findMany({
+        orderBy: {
+          occurredAt: "asc"
+        },
+        where: {
+          attendanceDate,
+          participantId: participant.participantId,
+          participantType: participant.participantType,
+          projectId
+        }
+      }),
+      this.prisma.attendanceResult.findUnique({
+        where: {
+          projectId_attendanceDate_participantType_participantId: {
+            attendanceDate,
+            participantId: participant.participantId,
+            participantType: participant.participantType,
+            projectId
+          }
+        }
+      })
+    ]);
+
+    return {
+      attendanceDate: attendanceDateText,
+      configured: true,
+      geofence,
+      isWorkday: true,
+      points: createAttendanceTodayPoints(shift, records),
+      result: result === null ? null : createAttendanceResultResponse(result),
+      shiftName: shift.name
     };
   }
 

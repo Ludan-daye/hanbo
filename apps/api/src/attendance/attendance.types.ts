@@ -98,3 +98,32 @@ export type SubmitAttendanceRecordResponse = {
   readonly record: AttendanceRecordResponse;
   readonly result: AttendanceResultResponse;
 };
+
+export type AttendanceTodayPointRecord = {
+  readonly abnormalReason: string | null;
+  readonly occurredAt: string;
+  readonly status: AttendanceRecordStatusValue;
+};
+
+export type AttendanceTodayPoint = {
+  readonly graceMins: number;
+  readonly pointCode: AttendancePointCode;
+  readonly record: AttendanceTodayPointRecord | null;
+  readonly scheduledTime: string;
+};
+
+export type AttendanceTodayGeofence = {
+  readonly centerLatitude: string;
+  readonly centerLongitude: string;
+  readonly radiusM: number;
+};
+
+export type AttendanceTodayResponse = {
+  readonly attendanceDate: string;
+  readonly configured: boolean;
+  readonly geofence: AttendanceTodayGeofence;
+  readonly isWorkday: boolean;
+  readonly points: readonly AttendanceTodayPoint[];
+  readonly result: AttendanceResultResponse | null;
+  readonly shiftName: string | null;
+};
