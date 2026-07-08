@@ -16,7 +16,8 @@ export default defineAppConfig({
     "pages/project-management/index",
     "pages/schedules/index",
     "pages/create-project/index",
-    "pages/company-reports/index"
+    "pages/company-reports/index",
+    "pages/punch/index"
   ],
   window: {
     backgroundColor: "#F3ECE1",
