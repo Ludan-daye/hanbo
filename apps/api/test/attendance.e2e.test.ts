@@ -1245,4 +1245,50 @@ describe("AttendanceModule", (): void => {
       workedMinutes: 0
     });
   });
+
+  test("clamps a stored geofence distance to the Decimal(8,2) column capacity for an extremely distant punch", async (): Promise<void> => {
+    app = await createApp(prisma);
+    const projectAdminAccessToken = await createAccessToken(app, "project-admin-user", "session-project-admin");
+    const workerAccessToken = await createAccessToken(app, "worker-user", "session-worker");
+
+    await request(app.getHttpServer())
+      .put("/attendance/projects/project-1/default-shift")
+      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
+      .send({
+        name: "Standard Day",
+        segments: [
+          {
+            earlyGraceMins: 0,
+            endTime: "12:00",
+            lateGraceMins: 5,
+            sequence: 1,
+            startTime: "08:00"
+          },
+          {
+            earlyGraceMins: 5,
+            endTime: "18:00",
+            lateGraceMins: 0,
+            sequence: 2,
+            startTime: "13:30"
+          }
+        ]
+      })
+      .expect(200);
+
+    const response = await request(app.getHttpServer())
+      .post("/attendance/projects/project-1/records")
+      .set("Authorization", `Bearer ${workerAccessToken}`)
+      .send(attendanceBody("2026-06-10", "SEGMENT_1_START", "2026-06-10T08:00:00.000+08:00", "39.9000000", "116.4000000"))
+      .expect(201);
+
+    expect(response.body.record).toMatchObject({
+      abnormalReason: "OUTSIDE_GEOFENCE",
+      attendanceDate: "2026-06-10",
+      geofenceDistanceM: "999999.99",
+      participantId: "worker-1",
+      participantType: "WORKER",
+      pointCode: "SEGMENT_1_START",
+      status: "INVALID"
+    });
+  });
 });

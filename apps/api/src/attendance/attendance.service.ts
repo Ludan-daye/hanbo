@@ -75,6 +75,7 @@ type GeofenceDecision = {
 };
 
 const earthRadiusM = 6_371_000;
+const maxStoredGeofenceDistanceM = 999_999.99;
 const projectScheduleOwnerType: ScheduleOwnerTypeValue = "PROJECT";
 const isoWeekdays: readonly IsoWeekdayValue[] = [1, 2, 3, 4, 5, 6, 7];
 const chinaDateFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -526,7 +527,7 @@ export class AttendanceService {
         attendanceDate,
         facePassed,
         faceScore: String(faceResult.score),
-        geofenceDistanceM: formatMeters(geofenceDecision.distanceM),
+        geofenceDistanceM: formatMeters(Math.min(geofenceDecision.distanceM, maxStoredGeofenceDistanceM)),
         latitude: request.latitude,
         locationAccuracyM: request.locationAccuracyM,
         longitude: request.longitude,
