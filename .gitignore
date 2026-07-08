@@ -11,3 +11,4 @@ coverage/
 .superpowers/
 .swc/
 .temp/
+apps/api/var/

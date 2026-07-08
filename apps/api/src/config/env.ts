@@ -26,6 +26,7 @@ const envSchema = z
     TENCENT_FACE_REGION: z.string().default(""),
     TENCENT_SECRET_ID: z.string().default(""),
     TENCENT_SECRET_KEY: z.string().default(""),
+    UPLOADS_DIR: z.string().min(1).default("./var/uploads"),
     WECHAT_APP_ID: z.string().min(1),
     WECHAT_APP_SECRET: z.string().min(1),
     WECHAT_DEV_LOGIN: booleanStringSchema
