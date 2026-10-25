@@ -1,5 +1,7 @@
 node_modules/
 dist/
+apps/miniprogram/dist-weapp/
+apps/miniprogram/src/verify_mpsdk/
 coverage/
 .env
 .env.local
@@ -12,3 +14,9 @@ coverage/
 .swc/
 .temp/
 apps/api/var/
+apps/miniprogram/project.private.config.json
+/项目对接/
+/市场调研/
+/*.xlsx
+/*.docx
+/未命名.txt

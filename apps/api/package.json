@@ -6,8 +6,13 @@
   "scripts": {
     "build": "nest build",
     "start": "node dist/main.js",
+    "start:local": "node --env-file=.env dist/main.js",
     "start:dev": "nest start --watch",
     "test": "vitest run",
+    "test:face": "node --env-file=.env scripts/test-native-face.mjs",
+    "test:face:video": "FACE_TEST_MODE=VIDEO_ACTION node --env-file=.env scripts/test-native-face.mjs",
+    "face:check": "node --env-file=.env scripts/check-video-face.mjs",
+    "face:compare": "tsx --env-file=.env scripts/compare-face.ts",
     "lint": "tsc --noEmit --project tsconfig.json",
     "typecheck": "tsc --noEmit --project tsconfig.json && tsc --project tsconfig.test.json",
     "prisma:generate": "prisma generate",
@@ -27,6 +32,8 @@
     "@prisma/client": "^6.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "tencentcloud-sdk-nodejs-faceid": "^4.1.317",
+    "tencentcloud-sdk-nodejs-iai": "4.1.330",
     "zod": "^3.24.1"
   },
   "devDependencies": {

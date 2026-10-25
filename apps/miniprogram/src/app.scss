@@ -1,8 +1,63 @@
 @import "./styles/tokens.scss";
 
 page,
-.taro_router {
-  background: var(--bg);
-  color: var(--ink);
-  font-family: -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+body,
+.taro_router,
+.taro_page {
+  background: #f5f6f8;
+  color: #202c3a;
+  font-family:
+    -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  font-size: 28rpx;
+  line-height: 1.5;
+}
+
+body {
+  margin: 0;
+}
+button::after {
+  border: 0;
+}
+button {
+  font-family: inherit;
+}
+view,
+text,
+input,
+textarea {
+  box-sizing: border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  view,
+  text,
+  button,
+  image,
+  input,
+  textarea,
+  scroll-view,
+  div,
+  span,
+  img {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+ .face-capture-placeholder {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7d8799;
+  background: #f1f5fb;
+  border: 2px dashed #cbd8e9;
+  border-radius: 24px;
+  margin-bottom: 24px;
+}
+.face-consent {
+  display: flex;
+  align-items: center;
+  margin-top: 24px;
+  font-size: 26px;
+  color: #334155;
 }

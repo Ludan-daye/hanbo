@@ -1,0 +1,52 @@
+.binding-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 28rpx 0 40rpx;
+}
+.binding-step {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  color: #8b9ab0;
+  font-size: 22rpx;
+  white-space: nowrap;
+}
+.binding-step__number {
+  width: 36rpx;
+  height: 36rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e9eef5;
+  font-size: 21rpx;
+}
+.binding-step--done {
+  color: #168852;
+}
+.binding-step--done .binding-step__number {
+  background: #e7f6ee;
+}
+.binding-step--active {
+  color: #2675ed;
+}
+.binding-step--active .binding-step__number {
+  color: #fff;
+  background: #2675ed;
+}
+.binding-step__line {
+  height: 1rpx;
+  flex: 1;
+  margin: 0 12rpx;
+  background: #dce5f0;
+}
+.binding-help {
+  margin: 0 0 24rpx;
+  font-size: 22rpx;
+  line-height: 1.8;
+  color: #72849b;
+}
+.binding-success-icon {
+  background: #e7f6ee;
+}

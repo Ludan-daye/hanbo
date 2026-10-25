@@ -1,6 +1,7 @@
 export default defineAppConfig({
   pages: [
     "pages/login/index",
+    "pages/complete-profile/index",
     "pages/bind/index",
     "pages/home/index",
     "pages/participants/index",
@@ -17,13 +18,28 @@ export default defineAppConfig({
     "pages/schedules/index",
     "pages/create-project/index",
     "pages/company-reports/index",
-    "pages/punch/index"
+    "pages/punch/index",
+    "pages/workspace/index",
+    "pages/profile/index",
+    "pages/face-profile/index",
+    "pages/face-review/index",
+    "pages/person-form/index",
+    "pages/project-detail/index",
+    "pages/system-management/index",
+    ...(process.env.TARO_ENV === "weapp" && process.env.TARO_APP_FACE_NATIVE_SDK === "true" ? ["verify_mpsdk/index/index"] : []),
   ],
+  permission: {
+    "scope.userLocation": {
+      desc: "用于判断您是否位于所参与项目的考勤范围内，完成现场考勤打卡。",
+    },
+  },
+  requiredPrivateInfos: ["getLocation"],
   window: {
-    backgroundColor: "#F3ECE1",
+    backgroundColor: "#f5f6f8",
     backgroundTextStyle: "dark",
-    navigationBarBackgroundColor: "#F3ECE1",
+    navigationStyle: "custom",
+    navigationBarBackgroundColor: "#ffffff",
     navigationBarTitleText: "工地考勤",
-    navigationBarTextStyle: "black"
-  }
+    navigationBarTextStyle: "black",
+  },
 });

@@ -98,14 +98,15 @@ export type AttendanceToday = {
 };
 
 export type SubmitAttendanceRecordBody = {
+  readonly faceVerificationSessionId?: string;
   readonly attendanceDate: string;
   readonly latitude: string;
   readonly locationAccuracyM: string | null;
   readonly longitude: string;
   readonly occurredAt: string;
   readonly pointCode: AttendancePointCode;
-  readonly selfieHash: string;
-  readonly selfieObjectKey: string;
+  readonly selfieHash?: string;
+  readonly selfieObjectKey?: string;
   readonly sitePhotoHash: string;
   readonly sitePhotoObjectKey: string;
 };

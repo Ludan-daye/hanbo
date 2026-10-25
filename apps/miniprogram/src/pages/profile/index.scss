@@ -1,0 +1,10 @@
+.profile-card__name {
+  overflow-wrap: anywhere;
+}
+.profile-card > view:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.profile-card .profile-avatar {
+  flex-shrink: 0;
+}

@@ -14,9 +14,9 @@ describe("totalsStatItems", () => {
       missingPunchCount: 7,
       participantCount: 8,
       scheduledDays: 9,
-      workedMinutes: 600
+      workedMinutes: 600,
     });
-    expect(items).toContainEqual({ label: "出勤人数", value: "8" });
+    expect(items).toContainEqual({ label: "统计人数", value: "8" });
     expect(items).toContainEqual({ label: "迟到", value: "6" });
     expect(items).toContainEqual({ label: "缺勤", value: "2" });
     expect(items).toContainEqual({ label: "工时", value: "10.0h" });

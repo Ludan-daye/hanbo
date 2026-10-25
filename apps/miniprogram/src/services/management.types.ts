@@ -52,7 +52,8 @@ export type DailyReportParticipant = ReportParticipantBase & {
   readonly workedMinutes: number;
 };
 
-export type RangeReportParticipant = ReportParticipantBase & Omit<ReportTotals, "participantCount">;
+export type RangeReportParticipant = ReportParticipantBase &
+  Omit<ReportTotals, "participantCount">;
 
 export type DailyReport = {
   readonly endDate: string;
@@ -87,7 +88,9 @@ export type CompanyProject = {
   readonly plannedEndDate: string | null;
 };
 
-export type CompanyParticipant = ProjectParticipant & { readonly projectName: string };
+export type CompanyParticipant = ProjectParticipant & {
+  readonly projectName: string;
+};
 
 export type ProjectTeam = {
   readonly id: string;
@@ -96,7 +99,11 @@ export type ProjectTeam = {
   readonly status: string;
 };
 
-export type BindingInvitationStatus = "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
+export type BindingInvitationStatus =
+  | "PENDING"
+  | "ACCEPTED"
+  | "EXPIRED"
+  | "REVOKED";
 export type BindingTargetType = "WORKER" | "MANAGER";
 
 export type ProjectInvitation = {
@@ -129,6 +136,13 @@ export type DefaultScheduleBody = {
   readonly startsOn: string;
   readonly endsOn: string | null;
   readonly workdays: readonly IsoWeekday[];
+};
+
+export type DefaultAttendanceConfiguration = {
+  readonly shift: (DefaultShiftBody & { readonly id: string }) | null;
+  readonly schedule:
+    | (DefaultScheduleBody & { readonly shiftId: string })
+    | null;
 };
 
 export type CreateProjectBody = {

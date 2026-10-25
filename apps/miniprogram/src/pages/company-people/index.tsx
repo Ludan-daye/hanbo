@@ -1,24 +1,44 @@
+import Taro from "@tarojs/taro";
 import { View } from "@tarojs/components";
 import { useEffect, useMemo, useState } from "react";
+import { displayProjectRole } from "../../routing/features";
+import { useSessionGuard } from "../../hooks/use-session-guard";
 
-import { ListItem, PageHeader, Screen, Segmented, StateView } from "../../components/ui/index";
-import { resolveCompanyAdminCompanyId } from "../../routing/companyAdmin";
+import {
+  Field,
+  Subtitle,
+  ListItem,
+  PageHeader,
+  Screen,
+  Segmented,
+  StateView,
+} from "../../components/ui/index";
+import { useManagedCompanyId } from "../../hooks/use-management-scope";
 import { fetchCompanyParticipants } from "../../services/management";
-import type { CompanyParticipant, ParticipantType } from "../../services/management.types";
+import type {
+  CompanyParticipant,
+  ParticipantType,
+} from "../../services/management.types";
+import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSession } from "../../store/session";
 
 type Filter = "ALL" | ParticipantType;
 const FILTER_OPTIONS = [
   { label: "全部", value: "ALL" as const },
   { label: "工人", value: "WORKER" as const },
-  { label: "管理员", value: "MANAGER" as const }
+  { label: "管理员", value: "MANAGER" as const },
 ];
 
 export default function CompanyPeople(): JSX.Element {
+  useSessionGuard();
   const { state } = useSession();
-  const companyId = resolveCompanyAdminCompanyId(state.me);
+  const { revision, refresh } = usePageRefresh();
+  const [search, setSearch] = useState<string>("");
+  const companyId = useManagedCompanyId(state.me);
   const [filter, setFilter] = useState<Filter>("ALL");
-  const [items, setItems] = useState<ReadonlyArray<CompanyParticipant> | null>(null);
+  const [items, setItems] = useState<ReadonlyArray<CompanyParticipant> | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -26,6 +46,7 @@ export default function CompanyPeople(): JSX.Element {
       return;
     }
     let cancelled = false;
+    setError(null);
     void (async () => {
       try {
         const rows = await fetchCompanyParticipants(companyId);
@@ -38,15 +59,23 @@ export default function CompanyPeople(): JSX.Element {
         }
       }
     })();
-    return () => { cancelled = true; };
-  }, [companyId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, revision]);
 
   const visible = useMemo(() => {
     if (items === null) {
       return [];
     }
-    return filter === "ALL" ? items : items.filter((p) => p.participantType === filter);
-  }, [items, filter]);
+    return items.filter(
+      (p) =>
+        (filter === "ALL" || p.participantType === filter) &&
+        `${p.displayName ?? ""} ${p.phone} ${p.teamName ?? ""} ${displayProjectRole(p.projectRoleLabel)}`.includes(
+          search.trim(),
+        ),
+    );
+  }, [items, filter, search]);
 
   if (companyId === null) {
     return (
@@ -60,17 +89,34 @@ export default function CompanyPeople(): JSX.Element {
   return (
     <Screen>
       <PageHeader title="公司人员" />
-      <Segmented options={FILTER_OPTIONS} value={filter} onChange={(v) => { setFilter(v); }} />
+      <Field
+        value={search}
+        placeholder="搜索姓名、手机号、班组或工种"
+        onInput={setSearch}
+      />
+      <Segmented
+        options={FILTER_OPTIONS}
+        value={filter}
+        onChange={(v) => {
+          setFilter(v);
+        }}
+      />
       {items === null && error === null ? <StateView title="加载中…" /> : null}
-      {error !== null ? <StateView title="加载失败" sub={error} /> : null}
-      {items !== null && visible.length === 0 ? <StateView title="尚无人员" /> : null}
+      {error !== null ? (
+        <StateView title="加载失败" sub={error} onRetry={refresh} />
+      ) : null}
+      {items !== null && visible.length === 0 ? (
+        <StateView title="尚无人员" />
+      ) : null}
+      {items !== null ? <Subtitle>共 {visible.length} 名成员 · 点击查看或编辑资料</Subtitle> : null}
       <View>
         {visible.map((p) => (
           <ListItem
             key={p.memberId}
-            primary={p.displayName ?? "(未填写姓名)"}
-            secondary={`${p.projectRoleLabel} · ${p.teamName ?? "无班组"} · ${p.phone}`}
+            primary={p.displayName ?? `成员 · ${p.phone.slice(-4)}`}
+            secondary={`${displayProjectRole(p.projectRoleLabel)} · ${p.teamName ?? "无班组"} · ${p.phone}`}
             chip={p.projectName}
+            onClick={() => { void Taro.navigateTo({ url: `/pages/person-form/index?projectId=${p.projectId}&memberId=${p.memberId}` }); }}
           />
         ))}
       </View>

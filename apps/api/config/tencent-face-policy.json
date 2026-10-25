@@ -1,0 +1,10 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": ["faceid:GetActionSequence", "faceid:LivenessCompare"],
+      "resource": ["*"]
+    }
+  ]
+}

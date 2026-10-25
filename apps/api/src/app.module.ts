@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 
+import { AccountModule } from "./account/account.module.js";
 import { AttendanceModule } from "./attendance/attendance.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { AuthorizationModule } from "./authorization/authorization.module.js";
@@ -18,6 +19,7 @@ import { UploadsModule } from "./uploads/uploads.module.js";
     EnvModule,
     PrismaModule,
     AuthModule,
+    AccountModule,
     AuthorizationModule,
     BindingsModule,
     ManagementModule,
@@ -25,8 +27,8 @@ import { UploadsModule } from "./uploads/uploads.module.js";
     MakeupModule,
     MeModule,
     ReportsModule,
-    UploadsModule
+    UploadsModule,
   ],
-  controllers: [HealthController]
+  controllers: [HealthController],
 })
 export class AppModule {}

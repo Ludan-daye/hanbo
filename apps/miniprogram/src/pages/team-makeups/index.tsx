@@ -1,110 +1,212 @@
 import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
+import { useSessionGuard } from "../../hooks/use-session-guard";
 
-import { Button, Field, ListItem, PageHeader, Screen, StateView } from "../../components/ui/index";
+import {
+  Button,
+  Field,
+  ListItem,
+  Notice,
+  PageHeader,
+  Screen,
+  StateView,
+  Subtitle,
+} from "../../components/ui/index";
+import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { resolveTeamLeaderTeamId } from "../../routing/teamLeader";
-import { approveMakeup, fetchPendingMakeups, rejectMakeup, type PendingMakeup } from "../../services/makeups";
+import {
+  approveMakeup,
+  fetchPendingMakeups,
+  rejectMakeup,
+  type PendingMakeup,
+} from "../../services/makeups";
+import { fetchTeamParticipants } from "../../services/management";
+import type { ProjectParticipant } from "../../services/management.types";
+import { formatChinaHm } from "../../services/time";
 import { useSession } from "../../store/session";
 
-const POINT_LABEL: Record<PendingMakeup["pointCode"], string> = {
+const POINT_LABEL: Readonly<Record<PendingMakeup["pointCode"], string>> = {
   SEGMENT_1_END: "上午下班",
   SEGMENT_1_START: "上午上班",
   SEGMENT_2_END: "下午下班",
-  SEGMENT_2_START: "下午上班"
+  SEGMENT_2_START: "下午上班",
 };
-
+type ReviewAction = (
+  id: string,
+  body: { readonly approvalReason: string },
+) => Promise<unknown>;
 export default function TeamMakeups(): JSX.Element {
+  useSessionGuard();
   const { state } = useSession();
+  const { revision, refresh } = usePageRefresh();
   const teamId = resolveTeamLeaderTeamId(state.me);
-  const [items, setItems] = useState<ReadonlyArray<PendingMakeup> | null>(null);
+  const [items, setItems] = useState<readonly PendingMakeup[] | null>(null);
+  const [members, setMembers] = useState<readonly ProjectParticipant[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [reasons, setReasons] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState<string | null>(null);
-
   useEffect(() => {
-    if (teamId === null) {
-      return;
-    }
+    if (teamId === null) return;
     let cancelled = false;
-    void (async () => {
-      try {
-        const rows = await fetchPendingMakeups(teamId);
+    setError(null);
+    void Promise.all([
+      fetchPendingMakeups(teamId),
+      fetchTeamParticipants(teamId),
+    ]).then(
+      ([rows, people]) => {
         if (!cancelled) {
           setItems(rows);
+          setMembers(people);
         }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "REQUEST_FAILED");
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [teamId]);
-
-  if (teamId === null) {
-    return (
-      <Screen>
-        <PageHeader title="补卡审批" />
-        <StateView title="无班组" sub="当前账号没有班组长身份。" />
-      </Screen>
+      },
+      (cause) => {
+        if (!cancelled)
+          setError(cause instanceof Error ? cause.message : "无法读取审批列表");
+      },
     );
-  }
-
-  const act = async (id: string, kind: "approve" | "reject"): Promise<void> => {
+    return () => {
+      cancelled = true;
+    };
+  }, [teamId, revision]);
+  const review = async (
+    id: string,
+    action: ReviewAction,
+    title: string,
+  ): Promise<void> => {
+    if (busy !== null) return;
     const approvalReason = (reasons[id] ?? "").trim();
     if (approvalReason.length === 0) {
-      await Taro.showToast({ icon: "none", title: "请填写理由" });
+      await Taro.showToast({ icon: "none", title: "请填写审批意见" });
       return;
     }
+    const confirmation = await Taro.showModal({
+      title,
+      content: `审批意见：${approvalReason}`,
+      confirmText: "确认处理",
+      confirmColor: "#2675ed",
+    });
+    if (!confirmation.confirm) return;
     setBusy(id);
+    setError(null);
     try {
-      if (kind === "approve") {
-        await approveMakeup(id, { approvalReason });
-      } else {
-        await rejectMakeup(id, { approvalReason });
-      }
-      setItems((prev) => (prev ?? []).filter((r) => r.id !== id));
+      await action(id, { approvalReason });
+      setItems((rows) => (rows ?? []).filter((row) => row.id !== id));
       setOpenId(null);
-      setReasons((prev) => { const next = { ...prev }; delete next[id]; return next; });
-      await Taro.showToast({ icon: "success", title: kind === "approve" ? "已通过" : "已驳回" });
-    } catch {
-      await Taro.showToast({ icon: "none", title: "操作失败" });
+      await Taro.showToast({ icon: "success", title: "已处理" });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "审批未完成，请重试");
     } finally {
       setBusy(null);
     }
   };
-
   return (
     <Screen>
       <PageHeader title="补卡审批" />
-      {items === null && error === null ? <StateView title="加载中…" /> : null}
-      {error !== null ? <StateView title="加载失败" sub={error} /> : null}
-      {items !== null && items.length === 0 ? <StateView title="无待审补卡" /> : null}
-      <View>
-        {(items ?? []).map((r) => (
-          <View key={r.id}>
-            <ListItem
-              primary={`${POINT_LABEL[r.pointCode]} · ${r.attendanceDate}`}
-              secondary={r.reason}
-              chip={openId === r.id ? "审批中" : "待审"}
-              onClick={() => { setOpenId(openId === r.id ? null : r.id); }}
-            />
-            {openId === r.id ? (
-              <View>
-                <Field
-                  value={reasons[r.id] ?? ""}
-                  placeholder="审批理由(必填)"
-                  onInput={(v) => { setReasons((prev) => ({ ...prev, [r.id]: v })); }}
-                />
-                <Button onClick={() => { void act(r.id, "approve"); }}>{busy === r.id ? "处理中…" : "通过"}</Button>
-                <Button variant="outline" onClick={() => { void act(r.id, "reject"); }}>{busy === r.id ? "处理中…" : "驳回"}</Button>
-              </View>
-            ) : null}
+      {teamId === null ? (
+        <StateView title="暂无班组管理权限" />
+      ) : (
+        <View>
+          <Notice>
+            请核实实际出勤情况后处理申请，审批结果将同步到工人的考勤记录。
+          </Notice>
+          <View className="report-section-title">
+            待处理申请 · {items?.length ?? 0} 条
           </View>
-        ))}
-      </View>
+          {items === null && error === null ? (
+            <StateView title="加载中…" />
+          ) : null}
+          {error ? (
+            <StateView title="操作未完成" sub={error} onRetry={refresh} />
+          ) : null}
+          {items?.length === 0 ? (
+            <StateView title="全部处理完毕" sub="目前没有待审批的补卡申请。" />
+          ) : null}
+          {(items ?? []).map((item) => {
+            const member = members.find(
+              (person) =>
+                person.profileId === item.participantId &&
+                person.participantType === item.participantType,
+            );
+            const name =
+              member?.displayName ??
+              (member ? `成员 · ${member.phone.slice(-4)}` : "班组成员");
+            return (
+              <View key={item.id} className="form-card">
+                <ListItem
+                  primary={name}
+                  secondary={`${item.attendanceDate} · ${POINT_LABEL[item.pointCode]} · ${formatChinaHm(item.requestedOccurredAt)}`}
+                  chip="待审批"
+                  onClick={() => {
+                    if (busy === null)
+                      setOpenId(openId === item.id ? null : item.id);
+                  }}
+                />
+                <Subtitle>申请原因：{item.reason}</Subtitle>
+                {openId === item.id ? (
+                  <View>
+                    <Field
+                      value={reasons[item.id] ?? ""}
+                      placeholder="填写审批意见（必填）"
+                      onInput={(value) => {
+                        setReasons((previous) => ({
+                          ...previous,
+                          [item.id]: value,
+                        }));
+                      }}
+                    />
+                    <View className="action-row">
+                      <Button
+                        loading={busy === item.id}
+                        disabled={
+                          busy !== null ||
+                          (reasons[item.id] ?? "").trim().length === 0
+                        }
+                        onClick={() => {
+                          void review(
+                            item.id,
+                            approveMakeup,
+                            "确认通过这条补卡？",
+                          );
+                        }}
+                      >
+                        通过申请
+                      </Button>
+                      <Button
+                        variant="danger"
+                        disabled={
+                          busy !== null ||
+                          (reasons[item.id] ?? "").trim().length === 0
+                        }
+                        onClick={() => {
+                          void review(
+                            item.id,
+                            rejectMakeup,
+                            "确认驳回这条补卡？",
+                          );
+                        }}
+                      >
+                        驳回申请
+                      </Button>
+                    </View>
+                  </View>
+                ) : (
+                  <Button
+                    variant="outline"
+                    disabled={busy !== null}
+                    onClick={() => {
+                      setOpenId(item.id);
+                    }}
+                  >
+                    查看并审批
+                  </Button>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      )}
     </Screen>
   );
 }

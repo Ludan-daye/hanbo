@@ -11,10 +11,15 @@
   },
   "scripts": {
     "build:weapp": "taro build --type weapp",
+    "build:weapp:face": "node scripts/check-face-sdk.mjs && TARO_APP_FACE_NATIVE_SDK=true taro build --type weapp",
+    "face:sdk:install": "node scripts/install-face-sdk.mjs",
     "build:h5": "taro build --type h5",
     "dev:weapp": "taro build --type weapp --watch",
     "dev:h5": "taro build --type h5 --watch",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:wechat": "node scripts/check-wechat-login.mjs",
+    "build:h5:demo": "TARO_APP_DATA_MODE=demo taro build --type h5",
+    "build:weapp:demo": "TARO_APP_DATA_MODE=demo taro build --type weapp"
   },
   "browserslist": [
     "defaults and fully supports es6-module",
@@ -47,6 +52,7 @@
     "@types/react": "^18.0.0",
     "@types/webpack-env": "^1.13.6",
     "babel-preset-taro": "4.2.0",
+    "miniprogram-automator": "0.13.0",
     "postcss": "^8.5.6",
     "react-refresh": "^0.14.0",
     "sass": "^1.75.0",

@@ -12,6 +12,7 @@ import { UploadsService } from "./uploads.service.js";
 @Module({
   imports: [AuthModule],
   controllers: [UploadsController],
+  exports: [UploadsService, STORAGE_PORT],
   providers: [
     UploadsService,
     {

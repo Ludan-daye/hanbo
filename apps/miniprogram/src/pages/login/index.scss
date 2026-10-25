@@ -1,0 +1,229 @@
+.login-intro {
+  position: relative;
+  padding: 24rpx 0 32rpx;
+}
+.login-logo {
+  width: 76rpx;
+  height: 76rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e7f0ff;
+  border-radius: 24rpx;
+  margin-bottom: 32rpx;
+}
+.login-title {
+  font-size: 54rpx;
+  font-weight: 750;
+  letter-spacing: -1rpx;
+  color: #172b46;
+  line-height: 1.4;
+}
+.login-title > view {
+  color: #2675ed;
+}
+.login-intro .ui-subtitle {
+  font-size: 23rpx;
+  margin-top: 16rpx;
+  max-width: 430rpx;
+}
+.login-illustration {
+  height: 210rpx;
+  position: relative;
+  margin-top: 24rpx;
+  overflow: hidden;
+}
+.login-orbit {
+  position: absolute;
+  width: 550rpx;
+  height: 270rpx;
+  background: linear-gradient(130deg, #e4efff, #f4f7fb);
+  border-radius: 50%;
+  left: 70rpx;
+  top: 30rpx;
+  transform: rotate(-12deg);
+}
+.login-building {
+  position: absolute;
+  bottom: 0;
+  border: 3rpx solid #b4d0fa;
+  border-radius: 10rpx 10rpx 0 0;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 22rpx,
+      #cee0fb 23rpx,
+      #cee0fb 26rpx
+    ),
+    repeating-linear-gradient(
+      90deg,
+      #edf4ff 0,
+      #edf4ff 25rpx,
+      #cee0fb 26rpx,
+      #cee0fb 29rpx
+    );
+}
+.login-building--one {
+  width: 110rpx;
+  height: 132rpx;
+  left: 194rpx;
+  transform: skewY(-8deg);
+}
+.login-building--two {
+  width: 126rpx;
+  height: 202rpx;
+  left: 326rpx;
+  transform: skewY(-8deg);
+}
+.login-building--three {
+  width: 92rpx;
+  height: 98rpx;
+  left: 474rpx;
+  transform: skewY(-8deg);
+}
+.login-check {
+  position: absolute;
+  top: 10rpx;
+  right: 90rpx;
+  width: 64rpx;
+  height: 64rpx;
+  background: #fff;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(8deg);
+  box-shadow: 0 10rpx 28rpx rgba(38, 117, 237, 0.08);
+}
+.login-float {
+  position: absolute;
+  left: 20rpx;
+  bottom: 26rpx;
+  padding: 14rpx 22rpx;
+  font-size: 21rpx;
+  color: #5b7ca9;
+  border-radius: 12rpx;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 6rpx 24rpx rgba(38, 117, 237, 0.05);
+}
+.login-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 12rpx 0 22rpx;
+}
+.login-section__title {
+  font-size: 30rpx;
+  font-weight: 650;
+}
+.login-section__tag {
+  font-size: 19rpx;
+  color: #6b8fbd;
+  background: #eaf2ff;
+  border-radius: 6rpx;
+  padding: 5rpx 12rpx;
+}
+.login-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+.login-role {
+  position: relative;
+  width: calc(50% - 8rpx);
+  box-sizing: border-box;
+  padding: 24rpx;
+  border: 1rpx solid #e7edf6;
+  background: #fff;
+  border-radius: 24rpx;
+}
+.login-role:active,
+.login-role--busy {
+  background: #eaf2ff;
+  border-color: #a8c9fa;
+}
+.login-role__icon {
+  background: #edf4ff;
+  border-radius: 16rpx;
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18rpx;
+}
+.login-role__icon .app-icon {
+  width: 36rpx;
+  height: 36rpx;
+}
+.login-role__title {
+  font-size: 28rpx;
+  font-weight: 650;
+}
+.login-role__sub {
+  font-size: 21rpx;
+  color: #8b9ab0;
+  margin-top: 7rpx;
+}
+.login-role__arrow {
+  position: absolute;
+  top: 28rpx;
+  right: 26rpx;
+  font-size: 27rpx;
+  color: #a9bed8;
+}
+.login-disclaimer {
+  text-align: center;
+  font-size: 21rpx;
+  color: #99a8bb;
+  line-height: 1.8;
+  margin-top: 32rpx;
+}
+.login-wechat {
+  padding: 28rpx;
+  border-radius: 24rpx;
+  border: 1rpx solid #d7eadf;
+  background: #fff;
+}
+.login-wechat__heading {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  margin-bottom: 24rpx;
+}
+.login-wechat__icon {
+  width: 64rpx;
+  height: 64rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eaf7ee;
+  border-radius: 20rpx;
+}
+.login-wechat__title {
+  font-size: 28rpx;
+  font-weight: 650;
+}
+.login-wechat__sub {
+  margin-top: 8rpx;
+  font-size: 20rpx;
+  color: #72849b;
+  line-height: 1.7;
+}
+.login-wechat .ui-btn--primary {
+  background: #07a653;
+}
+.login-wechat__note {
+  margin-top: 18rpx;
+  font-size: 21rpx;
+  line-height: 1.8;
+  color: #72849b;
+}
+.login-section--demo {
+  margin-top: 36rpx;
+}
+.login-section--demo .login-section__title {
+  font-size: 26rpx;
+}

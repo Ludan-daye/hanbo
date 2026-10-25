@@ -1,25 +1,46 @@
 import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useMemo, useState } from "react";
+import { displayProjectRole } from "../../routing/features";
+import { useSessionGuard } from "../../hooks/use-session-guard";
 
-import { ListItem, PageHeader, Screen, Segmented, StateView } from "../../components/ui/index";
-import { resolveAdminProjectId } from "../../routing/projectAdmin";
+import {
+  Field,
+  Button,
+  Subtitle,
+  ListItem,
+  PageHeader,
+  Screen,
+  Segmented,
+  StateView,
+} from "../../components/ui/index";
+import { useManagedProjectId } from "../../hooks/use-management-scope";
 import { fetchParticipants } from "../../services/management";
-import type { ParticipantType, ProjectParticipant } from "../../services/management.types";
+import type {
+  ParticipantType,
+  ProjectParticipant,
+} from "../../services/management.types";
+import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSession } from "../../store/session";
 
 type Filter = "ALL" | ParticipantType;
 const FILTER_OPTIONS = [
   { label: "全部", value: "ALL" as const },
   { label: "工人", value: "WORKER" as const },
-  { label: "管理员", value: "MANAGER" as const }
+  { label: "管理员", value: "MANAGER" as const },
 ];
 
 export default function Participants(): JSX.Element {
+  useSessionGuard();
   const { state } = useSession();
-  const projectId = resolveAdminProjectId(state.me);
+  const { revision, refresh } = usePageRefresh();
+  const teamId = Taro.useRouter().params.teamId;
+  const [search, setSearch] = useState<string>("");
+  const projectId = useManagedProjectId(state.me);
   const [filter, setFilter] = useState<Filter>("ALL");
-  const [items, setItems] = useState<ReadonlyArray<ProjectParticipant> | null>(null);
+  const [items, setItems] = useState<ReadonlyArray<ProjectParticipant> | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,6 +48,7 @@ export default function Participants(): JSX.Element {
       return;
     }
     let cancelled = false;
+    setError(null);
     void (async () => {
       try {
         const rows = await fetchParticipants(projectId);
@@ -39,15 +61,24 @@ export default function Participants(): JSX.Element {
         }
       }
     })();
-    return () => { cancelled = true; };
-  }, [projectId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, revision]);
 
   const visible = useMemo(() => {
     if (items === null) {
       return [];
     }
-    return filter === "ALL" ? items : items.filter((p) => p.participantType === filter);
-  }, [items, filter]);
+    return items.filter(
+      (p) =>
+        (filter === "ALL" || p.participantType === filter) &&
+        (!teamId || p.teamId === teamId) &&
+        `${p.displayName ?? ""} ${p.phone} ${p.teamName ?? ""} ${displayProjectRole(p.projectRoleLabel)}`.includes(
+          search.trim(),
+        ),
+    );
+  }, [items, filter, search, teamId]);
 
   if (projectId === null) {
     return (
@@ -60,19 +91,37 @@ export default function Participants(): JSX.Element {
 
   return (
     <Screen>
-      <PageHeader title="项目参与者" />
-      <Segmented options={FILTER_OPTIONS} value={filter} onChange={(v) => { setFilter(v); }} />
+      <PageHeader title="项目人员" />
+      <Button onClick={() => { void Taro.navigateTo({ url: `/pages/person-form/index?projectId=${projectId}${teamId ? `&teamId=${teamId}` : ""}` }); }}>＋ 添加成员</Button>
+      <Button variant="outline" onClick={() => { void Taro.navigateTo({ url: `/pages/face-review/index?projectId=${projectId}` }); }}>人脸档案审核</Button>
+      <Field
+        value={search}
+        placeholder="搜索姓名、手机号、班组或工种"
+        onInput={setSearch}
+      />
+      <Segmented
+        options={FILTER_OPTIONS}
+        value={filter}
+        onChange={(v) => {
+          setFilter(v);
+        }}
+      />
       {items === null && error === null ? <StateView title="加载中…" /> : null}
-      {error !== null ? <StateView title="加载失败" sub={error} /> : null}
-      {items !== null && visible.length === 0 ? <StateView title="尚无参与者" /> : null}
+      {error !== null ? (
+        <StateView title="加载失败" sub={error} onRetry={refresh} />
+      ) : null}
+      {items !== null && visible.length === 0 ? (
+        <StateView title="尚无参与者" />
+      ) : null}
+      {items !== null ? <Subtitle>共 {visible.length} 名成员</Subtitle> : null}
       <View>
         {visible.map((p) => (
           <ListItem
             key={p.memberId}
-            primary={p.displayName ?? "(未填写姓名)"}
-            secondary={`${p.projectRoleLabel} · ${p.teamName ?? "无班组"} · ${p.phone}`}
-            chip={p.participantType === "WORKER" ? "工人" : "管理员"}
-            onClick={() => { void Taro.showToast({ icon: "none", title: p.status }); }}
+            primary={p.displayName ?? `成员 · ${p.phone.slice(-4)}`}
+            secondary={`${displayProjectRole(p.projectRoleLabel)} · ${p.teamName ?? "无班组"} · ${p.phone}`}
+            chip={p.status === "EXITED" ? "已退场" : p.status === "SUSPENDED" ? "已暂停" : p.participantType === "WORKER" ? "工人" : "管理员"}
+            onClick={() => { void Taro.navigateTo({ url: `/pages/person-form/index?projectId=${projectId}&memberId=${p.memberId}` }); }}
           />
         ))}
       </View>

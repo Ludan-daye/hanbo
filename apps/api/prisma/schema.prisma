@@ -80,6 +80,9 @@ model User {
   openid                     String              @unique
   unionid                    String?             @unique
   phone                      String?
+  nickname                   String?
+  avatarObjectKey            String?
+  avatarContentType          String?
   status                     UserStatus          @default(ACTIVE)
   sessionVersion             Int                 @default(1)
   isBound                    Boolean             @default(false)
@@ -95,6 +98,7 @@ model User {
   createdBindingInvitations  BindingInvitation[] @relation("bindingInvitationCreator")
   acceptedBindingInvitations BindingInvitation[] @relation("bindingInvitationAcceptor")
   auditLogs                  AuditLog[]
+  faceLivenessTests          FaceLivenessTestSession[]
 
   @@map("users")
 }
@@ -357,15 +361,15 @@ model ShiftSegment {
 }
 
 model Schedule {
-  id        String    @id @default(uuid())
-  shiftId   String
-  ownerType String
-  ownerId   String
-  startsOn  DateTime  @db.Date
-  endsOn    DateTime? @db.Date
-  workdayMask Int      @default(127)
-  createdAt DateTime  @default(now())
-  shift     Shift     @relation(fields: [shiftId], references: [id])
+  id          String    @id @default(uuid())
+  shiftId     String
+  ownerType   String
+  ownerId     String
+  startsOn    DateTime  @db.Date
+  endsOn      DateTime? @db.Date
+  workdayMask Int       @default(127)
+  createdAt   DateTime  @default(now())
+  shift       Shift     @relation(fields: [shiftId], references: [id])
 
   @@index([shiftId, startsOn])
   @@index([ownerType, ownerId, startsOn])
@@ -373,21 +377,79 @@ model Schedule {
 }
 
 model FaceProfile {
-  id                String           @id @default(uuid())
-  ownerType         ProfileOwnerType
-  ownerId           String
-  baselineObjectKey String
-  baselineImageHash String
-  faceServiceId     String?
-  status            String
-  version           Int              @default(1)
-  reviewedByUserId  String?
-  reviewedAt        DateTime?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  id                   String                    @id @default(uuid())
+  ownerType            ProfileOwnerType
+  ownerId              String
+  baselineObjectKey    String
+  baselineImageHash    String
+  faceServiceId        String?
+  status               String
+  version              Int                       @default(1)
+  reviewedByUserId     String?
+  reviewedAt           DateTime?
+  submittedByUserId    String?
+  consentedAt          DateTime?
+  consentVersion       String?
+  reviewReason         String?
+  verificationSessions FaceVerificationSession[]
+  livenessTests        FaceLivenessTestSession[]
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
 
   @@index([ownerType, ownerId, status])
   @@map("face_profiles")
+}
+
+model FaceVerificationSession {
+  id                 String              @id @default(uuid())
+  userId             String
+  projectId          String
+  participantType    ProfileOwnerType
+  participantId      String
+  pointCode          AttendancePointCode
+  attendanceDate     DateTime            @db.Date
+  faceProfileId      String
+  faceProfileVersion Int
+  bizToken           String?             @unique
+  provider           String              @default("WECHAT_NATIVE")
+  actionSequence     String?
+  videoHash          String?
+  providerAttempts   Int                 @default(0)
+  status             String
+  score              Decimal?            @db.Decimal(7, 4)
+  selfieObjectKey    String?
+  selfieHash         String?
+  providerRequestId  String?
+  failureCode        String?
+  expiresAt          DateTime
+  verifiedAt         DateTime?
+  consumedAt         DateTime?
+  createdAt          DateTime            @default(now())
+  faceProfile        FaceProfile         @relation(fields: [faceProfileId], references: [id])
+
+  @@index([userId, projectId, createdAt])
+  @@map("face_verification_sessions")
+}
+
+model FaceLivenessTestSession {
+  id                 String      @id @default(uuid())
+  userId             String
+  faceProfileId      String
+  faceProfileVersion Int
+  actionSequence     String?
+  status             String
+  videoHash          String?
+  score              Decimal?    @db.Decimal(7, 4)
+  providerRequestId  String?
+  failureCode        String?
+  expiresAt          DateTime
+  completedAt        DateTime?
+  createdAt          DateTime    @default(now())
+  user               User        @relation(fields: [userId], references: [id])
+  faceProfile        FaceProfile @relation(fields: [faceProfileId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("face_liveness_test_sessions")
 }
 
 model AttendanceRecord {
@@ -409,7 +471,7 @@ model AttendanceRecord {
   sitePhotoObjectKey String
   selfieHash         String
   sitePhotoHash      String
-  faceScore          Decimal?               @db.Decimal(6, 4)
+  faceScore          Decimal?               @db.Decimal(7, 4)
   facePassed         Boolean
   abnormalReason     String?
   createdAt          DateTime               @default(now())

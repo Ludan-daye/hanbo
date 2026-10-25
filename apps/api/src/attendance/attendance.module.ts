@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { AuthModule } from "../auth/auth.module.js";
 import { AuthorizationModule } from "../authorization/authorization.module.js";
+import { FaceModule } from "../face/face.module.js";
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { FACE_VERIFICATION_CONNECTOR, type FaceVerificationConnector } from "../infrastructure/face/face-verification.types.js";
@@ -13,7 +14,7 @@ import { AttendanceController } from "./attendance.controller.js";
 import { AttendanceService } from "./attendance.service.js";
 
 @Module({
-  imports: [AuthModule, AuthorizationModule, PrismaModule],
+  imports: [AuthModule, AuthorizationModule, PrismaModule, FaceModule],
   controllers: [AttendanceController],
   providers: [
     AttendanceService,

@@ -1,0 +1,41 @@
+.account-avatar-button {
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  padding: 8rpx 0 24rpx;
+  margin: 0 0 22rpx;
+  border-radius: 0;
+  border-bottom: 1rpx solid #edf1f7;
+  background: transparent;
+  color: #172b46;
+  text-align: left;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+.account-avatar-button::after {
+  border: 0;
+}
+.account-avatar-button .profile-avatar {
+  flex-shrink: 0;
+  width: 88rpx;
+  height: 88rpx;
+  background: #edf4ff;
+}
+.account-avatar-button__sub {
+  font-size: 21rpx;
+  color: #8492a6;
+  margin-top: 6rpx;
+}
+.account-avatar-button__title {
+  color: #172b46;
+}
+.account-avatar-button__arrow {
+  margin-left: auto;
+  color: #8b9ab0;
+  font-size: 36rpx;
+}
+.account-saved {
+  color: #168852;
+  font-size: 23rpx;
+  margin: 16rpx 0;
+}

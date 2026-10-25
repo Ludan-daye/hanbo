@@ -9,6 +9,8 @@
     "lint": "corepack pnpm -r lint",
     "typecheck": "corepack pnpm -r typecheck",
     "dev:api": "corepack pnpm --filter @construction/api start:dev",
+    "package:weapp": "node apps/miniprogram/scripts/package-weapp.mjs",
+    "package:weapp:face": "TARO_APP_FACE_NATIVE_SDK=true node apps/miniprogram/scripts/package-weapp.mjs",
     "db:generate": "corepack pnpm --filter @construction/api prisma:generate",
     "db:migrate": "corepack pnpm --filter @construction/api prisma:migrate",
     "db:studio": "corepack pnpm --filter @construction/api prisma:studio"

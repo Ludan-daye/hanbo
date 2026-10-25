@@ -322,6 +322,11 @@ const applyTestEnv = (): void => {
   process.env.JWT_ACCESS_TOKEN_SECRET = "test-jwt-secret-with-at-least-32-characters";
   process.env.JWT_ACCESS_TOKEN_TTL_SECONDS = "900";
   process.env.NODE_ENV = "test";
+  process.env.FACE_DEV_STUB = "true";
+  process.env.TENCENT_FACE_MODE = "WECHAT_NATIVE";
+  process.env.TENCENT_FACE_RULE_ID = "";
+  process.env.TENCENT_SECRET_ID = "";
+  process.env.TENCENT_SECRET_KEY = "";
   process.env.OBJECT_STORAGE_ACCESS_KEY = "object-storage-access-key";
   process.env.OBJECT_STORAGE_BUCKET = "construction-personnel";
   process.env.OBJECT_STORAGE_ENDPOINT = "http://localhost:9000";
@@ -791,6 +796,13 @@ describe("AttendanceModule", (): void => {
     const projectAdminAccessToken = await createAccessToken(app, "project-admin-user", "session-project-admin");
     const workerAccessToken = await createAccessToken(app, "worker-user", "session-worker");
 
+    await request(app.getHttpServer()).get("/attendance/projects/project-1/default-configuration").expect(401);
+    await request(app.getHttpServer()).get("/attendance/projects/project-1/default-configuration")
+      .set("Authorization", `Bearer ${workerAccessToken}`).expect(403);
+    const emptyConfiguration = await request(app.getHttpServer()).get("/attendance/projects/project-1/default-configuration")
+      .set("Authorization", `Bearer ${projectAdminAccessToken}`).expect(200);
+    expect(emptyConfiguration.body).toEqual({ shift: null, schedule: null });
+
     const shiftResponse = await request(app.getHttpServer())
       .put("/attendance/projects/project-1/default-shift")
       .set("Authorization", `Bearer ${projectAdminAccessToken}`)
@@ -841,6 +853,10 @@ describe("AttendanceModule", (): void => {
         }
       ]
     });
+
+    const configuration = await request(app.getHttpServer()).get("/attendance/projects/project-1/default-configuration")
+      .set("Authorization", `Bearer ${projectAdminAccessToken}`).expect(200);
+    expect(configuration.body).toEqual({ shift: shiftResponse.body, schedule: null });
 
     await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
@@ -988,6 +1004,10 @@ describe("AttendanceModule", (): void => {
       workdays: [1, 2, 3, 4, 5, 6]
     });
     expect(prisma.schedules.size).toBe(1);
+
+    const savedConfiguration = await request(app.getHttpServer()).get("/attendance/projects/project-1/default-configuration")
+      .set("Authorization", `Bearer ${projectAdminAccessToken}`).expect(200);
+    expect(savedConfiguration.body.schedule).toEqual(replacementScheduleResponse.body);
 
     const scheduledDayResponse = await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")

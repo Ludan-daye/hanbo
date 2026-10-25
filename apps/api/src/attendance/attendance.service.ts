@@ -12,6 +12,7 @@ import type {
   ShiftSegment,
   WorkerProfile
 } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import {
   summarizeDailyAttendance,
   type AttendancePointCode,
@@ -21,6 +22,9 @@ import {
 
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
+import { FaceService } from "../face/face.service.js";
+import type { UploadedMultipartFile } from "../uploads/uploads.types.js";
+import type { FaceSessionContext, IssuedFaceSession, IssuedVideoFaceSession, CompletedFaceSession } from "../face/face.types.js";
 import {
   deriveFacePassed,
   FACE_VERIFICATION_CONNECTOR,
@@ -39,6 +43,7 @@ import type {
   ConfigureDefaultShiftRequest,
   DefaultShiftResponse,
   DefaultScheduleResponse,
+  DefaultAttendanceConfiguration,
   IsoWeekdayValue,
   ProfileOwnerTypeValue,
   ScheduleOwnerTypeValue,
@@ -431,7 +436,49 @@ export class AttendanceService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(FACE_VERIFICATION_CONNECTOR) private readonly faceConnector: FaceVerificationConnector,
     @Inject(API_ENV) private readonly env: ApiEnv,
+    @Inject(FaceService) private readonly faces: FaceService,
   ) {}
+
+  async createNativeFaceSession(projectId: string, userId: string, pointCode: AttendancePointCode): Promise<IssuedFaceSession> {
+    return this.faces.startSession(await this.nativeFaceContext(projectId, userId, pointCode));
+  }
+
+  async completeNativeFaceSession(projectId: string, userId: string, pointCode: AttendancePointCode, sessionId: string): Promise<CompletedFaceSession> {
+    return this.faces.completeSession(await this.nativeFaceContext(projectId, userId, pointCode), sessionId);
+  }
+
+  async createVideoFaceSession(projectId: string, userId: string, pointCode: AttendancePointCode): Promise<IssuedVideoFaceSession> {
+    return this.faces.startVideoSession(await this.nativeFaceContext(projectId, userId, pointCode));
+  }
+
+  async verifyVideoFaceSession(projectId: string, userId: string, pointCode: AttendancePointCode, sessionId: string, file: UploadedMultipartFile | undefined): Promise<CompletedFaceSession> {
+    return this.faces.verifyVideoSession(await this.nativeFaceContext(projectId, userId, pointCode), sessionId, file);
+  }
+
+  async videoFaceResult(projectId: string, userId: string, pointCode: AttendancePointCode, sessionId: string): Promise<CompletedFaceSession> {
+    return this.faces.videoResult(await this.nativeFaceContext(projectId, userId, pointCode), sessionId);
+  }
+
+  private async nativeFaceContext(projectId: string, userId: string, pointCode: AttendancePointCode): Promise<FaceSessionContext> {
+    const today = await this.getAttendanceToday(projectId, userId);
+    if (!today.configured || !today.isWorkday || !today.points.some((point) => point.pointCode === pointCode)) {
+      throw new BadRequestException({ message: "ATTENDANCE_DATE_NOT_SCHEDULED" });
+    }
+    const participant = await this.resolveAttendanceParticipant(userId, projectId);
+    return { projectId, userId, attendanceDate: today.attendanceDate, pointCode, owner: { ownerType: participant.participantType, ownerId: participant.participantId } };
+  }
+
+  async getDefaultConfiguration(projectId: string): Promise<DefaultAttendanceConfiguration> {
+    await this.getProjectOrThrow(projectId);
+    const [shift, schedules] = await Promise.all([
+      this.prisma.shift.findFirst({ include: { segments: true }, where: { isDefault: true, projectId } }),
+      this.loadProjectSchedulesWithShift(projectId)
+    ]);
+    return {
+      shift: shift === null ? null : createDefaultShiftResponse(shift, shift.segments),
+      schedule: schedules[0] === undefined ? null : createDefaultScheduleResponse(schedules[0])
+    };
+  }
 
   async configureDefaultShift(projectId: string, request: ConfigureDefaultShiftRequest): Promise<DefaultShiftResponse> {
     await this.getProjectOrThrow(projectId);
@@ -509,20 +556,23 @@ export class AttendanceService {
     const project = await this.getProjectOrThrow(projectId);
     const participant = await this.resolveAttendanceParticipant(userId, projectId);
     const attendanceDate = dateOnlyToDate(request.attendanceDate);
-    const occurredAt = new Date(request.occurredAt);
+    const occurredAt = this.env.FACE_DEV_STUB ? new Date(request.occurredAt) : new Date();
     this.assertOccurredAtMatchesAttendanceDate(occurredAt, request.attendanceDate);
     const shift = await this.getShiftForAttendanceSubmissionOrThrow(projectId, attendanceDate);
 
     const geofenceDecision = this.createGeofenceDecision(project, request.latitude, request.longitude);
-    const faceResult = await this.faceConnector.verifyFace({
-      baselineRef: null,
-      selfieObjectKey: request.selfieObjectKey
-    });
+    const proof = this.env.FACE_DEV_STUB ? null : await this.faces.requireProof({
+      projectId, userId, attendanceDate: request.attendanceDate, pointCode: request.pointCode,
+      owner: { ownerType: participant.participantType, ownerId: participant.participantId }
+    }, request.faceVerificationSessionId);
+    const selfieObjectKey = proof === null ? request.selfieObjectKey : proof.selfieObjectKey;
+    const selfieHash = proof === null ? request.selfieHash : proof.selfieHash;
+    if (typeof selfieObjectKey !== "string" || typeof selfieHash !== "string") throw new BadRequestException({ message: "ATTENDANCE_SELFIE_REQUIRED" });
+    const faceResult = proof === null ? await this.faceConnector.verifyFace({ baselineRef: null, selfieObjectKey }) : { detected: true, score: Number(proof.score) };
     const facePassed = deriveFacePassed(faceResult, this.env.FACE_SCORE_THRESHOLD);
     const abnormalReason = getAbnormalReason(facePassed, geofenceDecision);
     const status: AttendanceRecordStatusValue = abnormalReason === null ? "VALID" : "INVALID";
-    const record = await this.prisma.attendanceRecord.create({
-      data: {
+    const recordData: Prisma.AttendanceRecordUncheckedCreateInput = {
         abnormalReason,
         attendanceDate,
         facePassed,
@@ -539,13 +589,16 @@ export class AttendanceService {
         participantType: participant.participantType,
         pointCode: request.pointCode,
         projectId,
-        selfieHash: request.selfieHash,
-        selfieObjectKey: request.selfieObjectKey,
+        selfieHash,
+        selfieObjectKey,
         sitePhotoHash: request.sitePhotoHash,
         sitePhotoObjectKey: request.sitePhotoObjectKey,
         source: "DEVICE",
         status
-      }
+    };
+    const record = proof === null ? await this.prisma.attendanceRecord.create({ data: recordData }) : await this.prisma.$transaction(async (tx) => {
+      await this.faces.consumeProof(tx, proof);
+      return tx.attendanceRecord.create({ data: recordData });
     });
     const result = await this.recalculateAttendanceResult(projectId, request.attendanceDate, attendanceDate, participant, shift);
 

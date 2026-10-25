@@ -47,15 +47,21 @@ export type DefaultScheduleResponse = {
   readonly workdays: readonly IsoWeekdayValue[];
 };
 
+export type DefaultAttendanceConfiguration = {
+  readonly shift: DefaultShiftResponse | null;
+  readonly schedule: DefaultScheduleResponse | null;
+};
+
 export type SubmitAttendanceRecordRequest = {
+  readonly faceVerificationSessionId?: string | undefined;
   readonly attendanceDate: string;
   readonly latitude: string;
   readonly locationAccuracyM: string | null;
   readonly longitude: string;
   readonly occurredAt: string;
   readonly pointCode: AttendancePointCode;
-  readonly selfieHash: string;
-  readonly selfieObjectKey: string;
+  readonly selfieHash?: string | undefined;
+  readonly selfieObjectKey?: string | undefined;
   readonly sitePhotoHash: string;
   readonly sitePhotoObjectKey: string;
 };

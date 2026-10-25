@@ -129,17 +129,24 @@ const configureDefaultScheduleRequestSchema = z
   });
 
 const submitAttendanceRecordRequestSchema = z.object({
+  faceVerificationSessionId: z.string().uuid().optional(),
   attendanceDate: dateOnlySchema,
   latitude: z.string().refine((value: string): boolean => isCoordinate(value, -90, 90)),
   locationAccuracyM: z.union([positiveDecimalStringSchema, z.null()]),
   longitude: z.string().refine((value: string): boolean => isCoordinate(value, -180, 180)),
   occurredAt: z.string().datetime({ offset: true }),
   pointCode: z.enum(attendancePointCodes),
-  selfieHash: nonEmptyStringSchema,
-  selfieObjectKey: nonEmptyStringSchema,
+  selfieHash: nonEmptyStringSchema.optional(),
+  selfieObjectKey: nonEmptyStringSchema.optional(),
   sitePhotoHash: nonEmptyStringSchema,
   sitePhotoObjectKey: nonEmptyStringSchema
 });
+
+export const parseFaceVerificationPoint = (body: unknown): (typeof attendancePointCodes)[number] => {
+  const result = z.object({ pointCode: z.enum(attendancePointCodes) }).safeParse(body);
+  if (!result.success) throw new BadRequestException({ message: "INVALID_FACE_VERIFICATION_POINT" });
+  return result.data.pointCode;
+};
 
 const parseBody = <T>(body: unknown, schema: z.ZodType<T>, message: string): T => {
   const result = schema.safeParse(body);

@@ -24,6 +24,8 @@ const envSchema = z
     OBJECT_STORAGE_ENDPOINT: z.string().url(),
     OBJECT_STORAGE_SECRET_KEY: z.string().min(1),
     TENCENT_FACE_REGION: z.string().default(""),
+    TENCENT_FACE_MODE: z.enum(["WECHAT_NATIVE", "VIDEO_ACTION"]).default("WECHAT_NATIVE"),
+    TENCENT_FACE_RULE_ID: z.string().default(""),
     TENCENT_SECRET_ID: z.string().default(""),
     TENCENT_SECRET_KEY: z.string().default(""),
     UPLOADS_DIR: z.string().min(1).default("./var/uploads"),
@@ -32,6 +34,22 @@ const envSchema = z
     WECHAT_DEV_LOGIN: booleanStringSchema
   })
   .superRefine((env, ctx): void => {
+    if ((env.TENCENT_SECRET_ID.length > 0) !== (env.TENCENT_SECRET_KEY.length > 0)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["TENCENT_SECRET_KEY"], message: "Configure both Tencent server credentials together" });
+    }
+    if (env.TENCENT_FACE_MODE === "VIDEO_ACTION" && env.FACE_DEV_STUB) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["FACE_DEV_STUB"], message: "Disable FACE_DEV_STUB before selecting video action verification" });
+    }
+    if (env.TENCENT_FACE_RULE_ID.length > 0) {
+      for (const key of ["TENCENT_SECRET_ID", "TENCENT_SECRET_KEY"] as const) {
+        if (env[key].length === 0) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is required for Tencent face verification` });
+        }
+      }
+      if (env.FACE_DEV_STUB) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["FACE_DEV_STUB"], message: "Disable FACE_DEV_STUB when configuring Tencent face verification" });
+      }
+    }
     if (env.NODE_ENV === "production" && env.WECHAT_DEV_LOGIN) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
