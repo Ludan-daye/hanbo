@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   gap: 8rpx;
-  color: #8b9ab0;
+  color: var(--ink-soft);
   font-size: 22rpx;
   white-space: nowrap;
 }
@@ -29,11 +29,11 @@
   background: #e7f6ee;
 }
 .binding-step--active {
-  color: #2675ed;
+  color: var(--clay);
 }
 .binding-step--active .binding-step__number {
   color: #fff;
-  background: #2675ed;
+  background: var(--clay);
 }
 .binding-step__line {
   height: 1rpx;
@@ -45,7 +45,7 @@
   margin: 0 0 24rpx;
   font-size: 22rpx;
   line-height: 1.8;
-  color: #72849b;
+  color: var(--ink-soft);
 }
 .binding-success-icon {
   background: #e7f6ee;

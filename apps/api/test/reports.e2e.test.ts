@@ -16,6 +16,12 @@ type ProfileOwnerTypeValue = "WORKER" | "MANAGER";
 type MemberStatusValue = "ACTIVE" | "EXITED" | "SUSPENDED";
 
 type UserRecord = {
+  readonly openid: string;
+  readonly isBound: boolean;
+  readonly encryptedRealName: string;
+  readonly phone: string;
+  readonly nickname: string;
+  readonly avatarObjectKey: string;
   readonly id: string;
   readonly sessionVersion: number;
   readonly status: UserStatusValue;
@@ -185,7 +191,7 @@ type AttendanceResultFindManyArgs = {
       readonly gte: Date;
       readonly lte: Date;
     };
-    readonly projectId: string | { readonly in: readonly string[] };
+    readonly OR: readonly { readonly projectId: string }[];
   };
 };
 
@@ -241,6 +247,12 @@ const matchesOwnerIdFilter = (ownerId: string, filter: string | { readonly in: r
 };
 
 class ReportsPrismaTestDouble {
+  readonly shift = { findMany: async (): Promise<readonly { projectId: string; segments: readonly { sequence: number; startTime: string; endTime: string; lateGraceMins: number; earlyGraceMins: number }[] }[]> => Array.from(this.projects.values()).map((project) => ({ projectId: project.id, segments: [{ sequence: 1, startTime: "08:00", endTime: "12:00", lateGraceMins: 0, earlyGraceMins: 0 }, { sequence: 2, startTime: "13:30", endTime: "17:30", lateGraceMins: 0, earlyGraceMins: 0 }] })) };
+  readonly attendancePlan = { findMany: async (): Promise<[]> => [] };
+  readonly attendanceRecord = { findMany: async (): Promise<[]> => [] };
+  readonly makeupRequest = { findMany: async (): Promise<[]> => [] };
+  readonly projectMemberHistory = { findMany: async (): Promise<[]> => [] };
+
   readonly users = new Map<string, UserRecord>();
   readonly sessions = new Map<string, SessionRecord>();
   readonly companies = new Map<string, CompanyRecord>();
@@ -284,6 +296,7 @@ class ReportsPrismaTestDouble {
   };
 
   readonly team = {
+    findMany: async (): Promise<TeamRecord[]> => [...this.teams.values(), ...this.workerMembers.flatMap((m) => m.team === null ? [] : [m.team])],
     findUnique: async (args: TeamFindUniqueArgs): Promise<(TeamRecord & { readonly project: ProjectRecord }) | null> => {
       const teamRecord = this.teams.get(args.where.id);
       if (teamRecord === undefined) {
@@ -302,10 +315,10 @@ class ReportsPrismaTestDouble {
       this.workerMembers.filter(
         (member: ProjectWorkerMemberRecord): boolean =>
           matchesProjectIdFilter(member.projectId, args.where.projectId) &&
-          member.status === args.where.status &&
-          member.requiresAttendance === args.where.requiresAttendance &&
+          (args.where.status === undefined || member.status === args.where.status) &&
+          (args.where.requiresAttendance === undefined || member.requiresAttendance === args.where.requiresAttendance) &&
           (args.where.teamId === undefined || member.teamId === args.where.teamId)
-      )
+      ).map((member) => ({ ...member, enteredAt: new Date("2020-01-01"), exitedAt: member.status === "EXITED" ? new Date("2020-01-02") : null, worker: { encryptedName: "legacy-name", userId: null, ...member.worker } }))
   };
 
   readonly projectManagerMember = {
@@ -313,17 +326,17 @@ class ReportsPrismaTestDouble {
       this.managerMembers.filter(
         (member: ProjectManagerMemberRecord): boolean =>
           matchesProjectIdFilter(member.projectId, args.where.projectId) &&
-          member.status === args.where.status &&
-          member.requiresAttendance === args.where.requiresAttendance &&
+          (args.where.status === undefined || member.status === args.where.status) &&
+          (args.where.requiresAttendance === undefined || member.requiresAttendance === args.where.requiresAttendance) &&
           (args.where.teamScopeId === undefined || member.teamScopeId === args.where.teamScopeId)
-      )
+      ).map((member) => ({ ...member, enteredAt: new Date("2020-01-01"), exitedAt: member.status === "EXITED" ? new Date("2020-01-02") : null, manager: { workType: null, userId: null, ...member.manager } }))
   };
 
   readonly attendanceResult = {
     findMany: async (args: AttendanceResultFindManyArgs): Promise<AttendanceResultRecord[]> =>
       this.attendanceResults.filter(
         (result: AttendanceResultRecord): boolean =>
-          matchesProjectIdFilter(result.projectId, args.where.projectId) &&
+          args.where.OR.some((owner) => owner.projectId === result.projectId) &&
           result.attendanceDate.getTime() >= args.where.attendanceDate.gte.getTime() &&
           result.attendanceDate.getTime() <= args.where.attendanceDate.lte.getTime()
       )
@@ -338,7 +351,7 @@ class ReportsPrismaTestDouble {
         const isNotEnded = rangeStartDate === undefined || schedule.endsOn === null || schedule.endsOn.getTime() >= rangeStartDate.getTime();
 
         return isOwnerMatched && isStarted && isNotEnded;
-      })
+      }).map((row) => ({ ...row, shift: { name: "Legacy test shift", segments: [{ sequence: 1, startTime: "08:00", endTime: "12:00", lateGraceMins: 0, earlyGraceMins: 0 }, { sequence: 2, startTime: "13:30", endTime: "17:30", lateGraceMins: 0, earlyGraceMins: 0 }] } }))
   };
 
   seedRole(roleCode: RoleCode, permissionCodes: readonly string[]): void {
@@ -358,6 +371,12 @@ class ReportsPrismaTestDouble {
   seedActiveSession(userId: string, sessionId: string): void {
     const user: UserRecord = {
       id: userId,
+      openid: userId,
+      isBound: true,
+      encryptedRealName: "test-encrypted-name",
+      phone: "13800000000",
+      nickname: "Test",
+      avatarObjectKey: "test/avatar.png",
       sessionVersion: 1,
       status: "ACTIVE"
     };
@@ -577,6 +596,7 @@ describe("ReportsModule", (): void => {
           participantId: "worker-1",
           participantType: "WORKER",
           phone: "13800000001",
+          projectId: "project-1",
           projectRoleLabel: "Welder",
           requiresAttendance: true,
           teamId: "team-1",
@@ -597,6 +617,7 @@ describe("ReportsModule", (): void => {
           participantId: "worker-2",
           participantType: "WORKER",
           phone: "13800000003",
+          projectId: "project-1",
           projectRoleLabel: "Carpenter",
           requiresAttendance: true,
           teamId: "team-1",
@@ -617,6 +638,7 @@ describe("ReportsModule", (): void => {
           participantId: "manager-1",
           participantType: "MANAGER",
           phone: "13800000002",
+          projectId: "project-1",
           projectRoleLabel: "TEAM_LEADER",
           requiresAttendance: true,
           teamId: "team-1",
@@ -1144,7 +1166,7 @@ describe("ReportsModule", (): void => {
       startDate: "2026-06-07",
       totals: {
         absenceCount: 0,
-        actualAttendedDays: 1,
+        actualAttendedDays: 0,
         missingPunchCount: 0,
         participantCount: 3,
         scheduledDays: 0,
@@ -1184,7 +1206,7 @@ describe("ReportsModule", (): void => {
       startDate: "2026-06-01",
       totals: {
         absenceCount: 15,
-        actualAttendedDays: 4,
+        actualAttendedDays: 3,
         missingPunchCount: 16,
         participantCount: 3,
         scheduledDays: 18,
@@ -1194,7 +1216,7 @@ describe("ReportsModule", (): void => {
     expect(weeklyResponse.body.participants).toEqual([
       expect.objectContaining({
         absenceCount: 4,
-        actualAttendedDays: 3,
+        actualAttendedDays: 2,
         participantId: "worker-1",
         scheduledDays: 6,
         workedMinutes: 1260
@@ -1227,7 +1249,7 @@ describe("ReportsModule", (): void => {
       startDate: "2026-06-01",
       totals: {
         absenceCount: 75,
-        actualAttendedDays: 4,
+        actualAttendedDays: 3,
         participantCount: 3,
         scheduledDays: 78,
         workedMinutes: 1775

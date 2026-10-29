@@ -6,6 +6,8 @@ import { apiClient } from "./client";
 import { readDemoPhoto } from "./demo/photo";
 
 export type AccountProfile = {
+  readonly realName: string | null;
+  readonly phone: string | null;
   readonly nickname: string | null;
   readonly avatarDataUrl: string | null;
   readonly isBound: boolean;
@@ -15,12 +17,18 @@ export type AccountProfile = {
 export const fetchAccountProfile = async (): Promise<AccountProfile> =>
   apiClient.request<AccountProfile>("/account/profile", { method: "GET" });
 
-export const saveAccountNickname = async (
-  nickname: string,
+export type AccountProfileInput = {
+  readonly nickname: string;
+  readonly realName: string;
+  readonly phone: string;
+};
+
+export const saveAccountProfile = async (
+  profile: AccountProfileInput,
 ): Promise<AccountProfile> =>
   apiClient.request<AccountProfile>("/account/profile", {
     method: "PUT",
-    data: { nickname },
+    data: profile,
   });
 
 export const saveAccountAvatar = async (

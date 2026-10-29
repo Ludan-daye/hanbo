@@ -16,6 +16,12 @@ type ProjectStatusValue = "PREPARING" | "ACTIVE" | "SUSPENDED" | "COMPLETED";
 type MemberStatusValue = "ACTIVE" | "EXITED" | "SUSPENDED";
 
 type UserRecord = {
+  readonly openid: string;
+  readonly isBound: boolean;
+  readonly encryptedRealName: string;
+  readonly phone: string;
+  readonly nickname: string;
+  readonly avatarObjectKey: string;
   readonly id: string;
   readonly sessionVersion: number;
   readonly status: UserStatusValue;
@@ -709,6 +715,12 @@ class ManagementPrismaTestDouble {
   seedActiveSession(userId: string, sessionId: string): void {
     const user: UserRecord = {
       id: userId,
+      openid: userId,
+      isBound: true,
+      encryptedRealName: "test-encrypted-name",
+      phone: "13800000000",
+      nickname: "Test",
+      avatarObjectKey: "test/avatar.png",
       sessionVersion: 1,
       status: "ACTIVE"
     };
@@ -807,7 +819,7 @@ describe("ManagementModule", (): void => {
     }
   });
 
-  test("creates a managed project, team, worker, manager, and unified participant list", async (): Promise<void> => {
+  test("creates a project and team and retires obsolete personnel creation routes", async (): Promise<void> => {
     app = await createApp(prisma);
     const accessToken = await createAccessToken(app, "user-1", "session-1");
 
@@ -863,99 +875,8 @@ describe("ManagementModule", (): void => {
       status: "ACTIVE"
     });
 
-    const workerResponse = await request(app.getHttpServer())
-      .post("/management/projects/project-1/workers")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({
-        encryptedIdNumber: "encrypted-id-number",
-        encryptedName: "encrypted-worker-name",
-        employmentStatus: "ACTIVE",
-        enteredAt: "2026-06-03T08:00:00.000Z",
-        exitedAt: null,
-        faceProfileStatus: "PENDING",
-        idNumberHash: "id-number-hash-1",
-        memberStatus: "ACTIVE",
-        phone: "13800000001",
-        projectRoleLabel: "Welder",
-        realNameStatus: "VERIFIED",
-        requiresAttendance: true,
-        teamId: "team-1",
-        workType: "Steel"
-      })
-      .expect(201);
-
-    expect(workerResponse.body).toMatchObject({
-      enteredAt: "2026-06-03T08:00:00.000Z",
-      id: "worker-member-1",
-      participantType: "WORKER",
-      phone: "13800000001",
-      profileId: "worker-1",
-      projectId: "project-1",
-      projectRoleLabel: "Welder",
-      requiresAttendance: true,
-      status: "ACTIVE",
-      teamId: "team-1"
-    });
-
-    const managerResponse = await request(app.getHttpServer())
-      .post("/management/projects/project-1/managers")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({
-        memberStatus: "ACTIVE",
-        name: "Team Lead Zhang",
-        phone: "13800000002",
-        profileStatus: "ACTIVE",
-        requiresAttendance: true,
-        roleCode: "TEAM_LEADER",
-        teamScopeId: "team-1"
-      })
-      .expect(201);
-
-    expect(managerResponse.body).toMatchObject({
-      id: "manager-member-1",
-      participantType: "MANAGER",
-      phone: "13800000002",
-      profileId: "manager-1",
-      projectId: "project-1",
-      projectRoleLabel: "TEAM_LEADER",
-      requiresAttendance: true,
-      status: "ACTIVE",
-      teamId: "team-1"
-    });
-
-    const participantsResponse = await request(app.getHttpServer())
-      .get("/management/projects/project-1/participants")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .expect(200);
-
-    expect(participantsResponse.body).toEqual([
-      {
-        displayName: null,
-        memberId: "worker-member-1",
-        participantType: "WORKER",
-        phone: "13800000001",
-        profileId: "worker-1",
-        projectId: "project-1",
-        projectRoleLabel: "Welder",
-        requiresAttendance: true,
-        status: "ACTIVE",
-        teamId: "team-1",
-        teamName: "Steel Team"
-      },
-      {
-        displayName: "Team Lead Zhang",
-        memberId: "manager-member-1",
-        participantType: "MANAGER",
-        phone: "13800000002",
-        profileId: "manager-1",
-        projectId: "project-1",
-        projectRoleLabel: "TEAM_LEADER",
-        requiresAttendance: true,
-        status: "ACTIVE",
-        teamId: "team-1",
-        teamName: "Steel Team"
-      }
-    ]);
+    for (const route of ["workers", "managers"]) await request(app.getHttpServer()).post(`/management/projects/project-1/${route}`)
+      .set("Authorization", `Bearer ${accessToken}`).send({}).expect(410);
   });
 
   test("GET /management/teams/:teamId/participants returns only team participants", async (): Promise<void> => {

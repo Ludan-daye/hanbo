@@ -1,4 +1,6 @@
-import { CanActivate, ExecutionContext, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Inject, Injectable, ForbiddenException, UnauthorizedException } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { ALLOW_INCOMPLETE_ACCOUNT, assertAccountProfileComplete } from "./account-onboarding.js";
 import { JwtService } from "@nestjs/jwt";
 import { z } from "zod";
 
@@ -63,6 +65,7 @@ const parseAccessTokenPayload = (payload: unknown): AccessTokenPayload => {
 export class AccessTokenGuard implements CanActivate {
   constructor(
     @Inject(JwtService) private readonly jwtService: JwtService,
+    @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(API_ENV) private readonly env: ApiEnv
   ) {}
@@ -109,6 +112,11 @@ export class AccessTokenGuard implements CanActivate {
         message: "USER_DISABLED",
         userId: payload.sub
       });
+    }
+
+    if (!this.reflector.getAllAndOverride<boolean>(ALLOW_INCOMPLETE_ACCOUNT, [context.getHandler(), context.getClass()])) {
+      assertAccountProfileComplete(session.user);
+      if (!session.user.isBound) throw new ForbiddenException({ message: "ACCOUNT_BINDING_REQUIRED" });
     }
 
     request.user = {

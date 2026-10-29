@@ -6,7 +6,6 @@ import {
   AppHeader,
   AppIcon,
   Button,
-  Label,
   Notice,
   Screen,
   Subtitle,
@@ -28,32 +27,32 @@ type DemoRole = {
 const DEMO_ROLES: readonly DemoRole[] = [
   {
     code: "dev-worker",
-    label: "工人",
-    sub: "考勤打卡 · 补卡申请",
+    label: "一级 · 普通工人",
+    sub: "工人权限 · 本人考勤与补卡",
     icon: "user",
   },
   {
     code: "dev-team",
-    label: "班组长",
-    sub: "团队考勤 · 补卡审批",
+    label: "二级 · 班组长",
+    sub: "工人权限 · 班组考勤与审批",
     icon: "people",
   },
   {
     code: "dev-project",
-    label: "项目管理员",
-    sub: "人员管理 · 排班报表",
+    label: "三级 · 项目管理员",
+    sub: "管理人员权限 · 项目人员与排班",
     icon: "building",
   },
   {
     code: "dev-company",
-    label: "公司管理员",
-    sub: "项目总览 · 公司报表",
+    label: "四级 · 公司管理员",
+    sub: "管理人员权限 · 公司项目与报表",
     icon: "chart",
   },
   {
     code: "dev-system",
-    label: "系统管理员",
-    sub: "公司管理 · 账号权限",
+    label: "五级 · 超级管理员",
+    sub: "管理人员权限 · 平台与账号",
     icon: "shield",
   },
 ];
@@ -91,45 +90,13 @@ export default function Login(): JSX.Element {
   };
   return (
     <Screen>
-      <AppHeader title="瀚渤智慧工地" />
+      <AppHeader title="瀚渤" />
       <View className="login-intro">
-        <View className="login-logo">
-          <AppIcon name="building" />
-        </View>
-        <Label>HANBO SMART SITE</Label>
-        <View className="login-title">
-          让每一份付出<View>都有记录。</View>
-        </View>
-        <Subtitle>连接项目与每一个你，让工作简单而有序。</Subtitle>
-        <View className="login-illustration">
-          <View className="login-orbit" />
-          <View className="login-building login-building--one" />
-          <View className="login-building login-building--two" />
-          <View className="login-building login-building--three" />
-          <View className="login-check">
-            <AppIcon name="check" />
-          </View>
-          <View className="login-float">工作有序 · 平安每一天</View>
-        </View>
-      </View>
-      <View className="login-section">
-        <View className="login-section__title">登录，连接你的工作现场</View>
-        <View className="login-section__tag">
-          {FRONTEND_DEMO ? "演示体验" : "微信登录"}
-        </View>
+        <View className="login-logo">H</View>
+        <View className="login-title">欢迎使用瀚渤</View>
+        <Subtitle>项目、人员与考勤，一个入口。</Subtitle>
       </View>
       <View className="login-wechat">
-        <View className="login-wechat__heading">
-          <View className="login-wechat__icon">
-            <AppIcon name="shield" />
-          </View>
-          <View>
-            <View className="login-wechat__title">微信登录与身份绑定</View>
-            <View className="login-wechat__sub">
-              微信登录 → 完善头像昵称 → 绑定本人档案
-            </View>
-          </View>
-        </View>
         <Button
           loading={busy !== null}
           disabled={!FRONTEND_DEMO && !nativeWechatLogin}
@@ -146,7 +113,7 @@ export default function Login(): JSX.Element {
         <View className="login-wechat__note">
           {FRONTEND_DEMO
             ? "此入口体验邀请码绑定流程，不关联真实微信。"
-            : "首次登录须选择头像并填写昵称，再使用邀请码绑定本人档案。已保存的资料无需重复填写。"}
+            : "必须使用本人微信登录，并填写真实姓名、手机号后绑定档案。"}
         </View>
       </View>
       {!FRONTEND_DEMO && !nativeWechatLogin ? (
@@ -158,8 +125,7 @@ export default function Login(): JSX.Element {
       {FRONTEND_DEMO ? (
         <>
           <View className="login-section login-section--demo">
-            <View className="login-section__title">已有身份，快速体验</View>
-            <View className="login-section__tag">演示账号</View>
+            <View className="login-section__title">选择演示身份</View>
           </View>
           <View className="login-roles">
             {DEMO_ROLES.map((role) => (
@@ -173,11 +139,13 @@ export default function Login(): JSX.Element {
                 <View className="login-role__icon">
                   <AppIcon name={role.icon} />
                 </View>
-                <View className="login-role__title">
-                  {busy === role.code ? "正在进入…" : role.label}
+                <View className="login-role__body">
+                  <View className="login-role__title">
+                    {busy === role.code ? "正在进入…" : role.label}
+                  </View>
+                  <View className="login-role__sub">{role.sub}</View>
                 </View>
-                <View className="login-role__sub">{role.sub}</View>
-                <View className="login-role__arrow">↗</View>
+                <View className="login-role__arrow">›</View>
               </View>
             ))}
           </View>
@@ -193,7 +161,6 @@ export default function Login(): JSX.Element {
           "人员档案与岗位权限由管理员统一分配，请使用本人微信登录。"
         )}
       </View>
-      <View className="page-footnote">HANBO · SMART CONSTRUCTION</View>
     </Screen>
   );
 }

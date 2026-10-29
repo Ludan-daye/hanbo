@@ -1,6 +1,7 @@
 import { apiClient } from "./client";
 import type {
   AttendanceRecord,
+  MyAttendanceDay,
   AttendanceToday,
   Makeup,
   MyProjectMembership,
@@ -32,3 +33,6 @@ export const submitAttendanceRecord = async (
     data: body,
     method: "POST"
   });
+
+export const fetchMyAttendanceDays = async (from: string, to: string): Promise<readonly MyAttendanceDay[]> =>
+  apiClient.request<readonly MyAttendanceDay[]>(`/me/attendance-days?from=${from}&to=${to}`, { method: "GET" });

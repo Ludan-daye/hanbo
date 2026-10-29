@@ -21,12 +21,18 @@ export default defineAppConfig({
     "pages/punch/index",
     "pages/workspace/index",
     "pages/profile/index",
+    "pages/permission-levels/index",
     "pages/face-profile/index",
     "pages/face-review/index",
     "pages/person-form/index",
     "pages/project-detail/index",
+    "pages/team-detail/index",
+    "pages/person-reuse/index",
     "pages/system-management/index",
-    ...(process.env.TARO_ENV === "weapp" && process.env.TARO_APP_FACE_NATIVE_SDK === "true" ? ["verify_mpsdk/index/index"] : []),
+    ...(process.env.TARO_ENV === "weapp" &&
+    process.env.TARO_APP_FACE_NATIVE_SDK === "true"
+      ? ["verify_mpsdk/index/index"]
+      : []),
   ],
   permission: {
     "scope.userLocation": {

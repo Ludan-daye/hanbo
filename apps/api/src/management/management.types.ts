@@ -40,6 +40,24 @@ export type ProjectResponse = {
   readonly status: ProjectStatusValue;
 };
 
+export type ManagedProjectResponse = ProjectResponse & {
+  readonly code: string | null;
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+  readonly remark: string | null;
+  readonly updatedAt: string;
+};
+
+export type UpdateProjectRequest = CreateProjectRequest & {
+  readonly id: string;
+  readonly companyId: string;
+  readonly code: string | null;
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+  readonly remark: string | null;
+  readonly expectedUpdatedAt: string;
+};
+
 export type CreateTeamRequest = {
   readonly name: string;
   readonly status: string;

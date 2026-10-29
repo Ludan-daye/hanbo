@@ -8,6 +8,7 @@ export const formatChinaHm = (isoUtc: string): string => {
   const date = chinaDate(new Date(isoUtc));
   return `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
 };
+export const formatChinaDate = (isoUtc: string): string => dateText(chinaDate(new Date(isoUtc)));
 export const chinaToday = (): string => dateText(chinaDate(new Date()));
 export const chinaMonth = (): string => chinaToday().slice(0, 7);
 export const chinaDaysAgo = (days: number): string => {

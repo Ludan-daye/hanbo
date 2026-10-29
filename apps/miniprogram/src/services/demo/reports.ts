@@ -1,3 +1,10 @@
+import { demoMemberOn, demoMemberEligible } from "./member-history";
+import {
+  summarizeScheduledAttendance,
+  type AttendanceRecordInput,
+  type FlexibleAttendanceSummary,
+} from "@construction/domain/attendance.js";
+import { effectiveDemoPlan } from "./plans";
 import type {
   DailyReport,
   DailyReportParticipant,
@@ -7,15 +14,13 @@ import type {
 } from "../management.types";
 import type { AttendanceResultSummary } from "../me.types";
 import type { DemoState } from "./state";
-import { effectiveDemoConfiguration } from "./configuration";
 import { chinaToday } from "../time";
-import { DEMO_POINT_CODES } from "./state";
 
 export const demoDaySummary = (
   state: DemoState,
   person: ProjectParticipant,
   date: string,
-): AttendanceResultSummary => {
+): AttendanceResultSummary & FlexibleAttendanceSummary => {
   const records = state.records.filter(
     (row) =>
       row.projectId === person.projectId &&
@@ -23,92 +28,101 @@ export const demoDaySummary = (
       row.attendanceDate === date &&
       row.status === "VALID",
   );
-  const times: readonly (number | null)[] = DEMO_POINT_CODES.map((code) => {
-    const record = records.find((row) => row.pointCode === code);
-    const makeup = state.makeups.find(
+  const makeups: readonly AttendanceRecordInput[] = state.makeups
+    .filter(
       (row) =>
         row.projectId === person.projectId &&
         row.participantId === person.profileId &&
         row.attendanceDate === date &&
-        row.pointCode === code &&
         row.status === "APPROVED",
-    );
-    return record
-      ? Date.parse(record.occurredAt)
-      : makeup
-        ? Date.parse(makeup.requestedOccurredAt)
-        : null;
-  });
-  const segmentMinutes = (start: number | null, end: number | null): number =>
-    start !== null && end !== null ? Math.max(0, (end - start) / 60000) : 0;
-  const config = effectiveDemoConfiguration(state, person, date);
-  const shift = config?.shift;
-  const hasAny = times.some((time) => time !== null);
+    )
+    .map((row) => ({
+      id: row.id,
+      pointCode: row.pointCode,
+      occurredAt: new Date(row.requestedOccurredAt),
+      source: "MAKEUP",
+      isValid: true,
+    }));
+  const plan = effectiveDemoPlan(state, person, date);
+  const summary = summarizeScheduledAttendance(
+    plan.points,
+    date,
+    [
+      ...records.map(
+        (row): AttendanceRecordInput => ({
+          id: row.id,
+          pointCode: row.pointCode,
+          occurredAt: new Date(row.occurredAt),
+          source: "DEVICE",
+          isValid: true,
+        }),
+      ),
+      ...makeups,
+    ],
+    new Date(),
+  );
   return {
+    ...summary,
     projectId: person.projectId,
     participantId: person.profileId,
     participantType: person.participantType,
     attendanceDate: date,
-    isAbsent: !hasAny,
-    isMissingPunch: times.some((time) => time === null),
-    isLate:
-      times[0] !== null &&
-      shift !== undefined &&
-      shift !== null &&
-      times[0] >
-        Date.parse(`${date}T${shift.segments[0].startTime}:00+08:00`) +
-          shift.segments[0].lateGraceMins * 60000,
-    isEarlyLeave:
-      times[3] !== null &&
-      shift !== undefined &&
-      shift !== null &&
-      times[3] <
-        Date.parse(`${date}T${shift.segments[1].endTime}:00+08:00`) -
-          shift.segments[1].earlyGraceMins * 60000,
-    workedMinutes:
-      segmentMinutes(times[0], times[1]) + segmentMinutes(times[2], times[3]),
   };
 };
-const scheduled = (
+const attended = (
   state: DemoState,
   person: ProjectParticipant,
   date: string,
 ): boolean => {
-  const schedule = effectiveDemoConfiguration(state, person, date)?.schedule;
-  if (
-    date > chinaToday() ||
-    !person.requiresAttendance ||
-    person.status !== "ACTIVE" ||
-    !schedule
-  )
-    return false;
-  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
+  const points = effectiveDemoPlan(state, person, date).points;
   return (
-    date >= schedule.startsOn &&
-    (schedule.endsOn === null || date <= schedule.endsOn) &&
-    schedule.workdays.some((day) => day === weekday)
+    state.records.some(
+      (row) =>
+        row.projectId === person.projectId &&
+        row.participantId === person.profileId &&
+        row.attendanceDate === date &&
+        row.status === "VALID" &&
+        points.some((point) => point.code === row.pointCode),
+    ) ||
+    state.makeups.some(
+      (row) =>
+        row.projectId === person.projectId &&
+        row.participantId === person.profileId &&
+        row.attendanceDate === date &&
+        row.status === "APPROVED" &&
+        points.some((point) => point.code === row.pointCode),
+    )
   );
 };
-const dailyPerson = (
+export const scheduled = (
+  state: DemoState,
+  person: ProjectParticipant,
+  date: string,
+): boolean =>
+  date <= chinaToday() &&
+  demoMemberEligible(demoMemberOn(state, person, date), date) &&
+  effectiveDemoPlan(state, person, date).isWorkday;
+
+export const dailyPerson = (
   state: DemoState,
   person: ProjectParticipant,
   date: string,
 ): DailyReportParticipant => {
-  const result = demoDaySummary(state, person, date);
+  const historical = demoMemberOn(state, person, date);
+  const result = demoDaySummary(state, historical, date);
   const isScheduled = scheduled(state, person, date);
   return {
     displayName: person.displayName,
     memberId: person.memberId,
-    memberStatus: person.status,
+    memberStatus: historical.status,
     participantId: person.profileId,
     participantType: person.participantType,
     phone: person.phone,
     projectRoleLabel: person.projectRoleLabel,
     requiresAttendance: person.requiresAttendance,
-    teamId: person.teamId,
-    teamName: person.teamName,
-    workType:
-      person.participantType === "WORKER" ? person.projectRoleLabel : null,
+    teamId: historical.teamId,
+    teamName: historical.teamName,
+    workType: historical.workType,
     abnormalRecordCount: state.records.filter(
       (r) =>
         r.participantId === person.profileId &&
@@ -137,6 +151,7 @@ export const demoReport = (
   period: string,
   start: string,
   end: string,
+  teamId: string | null,
 ): DailyReport | RangeReport => {
   const dates: readonly string[] = Array.from(
     {
@@ -153,35 +168,51 @@ export const demoReport = (
         .toISOString()
         .slice(0, 10),
   );
-  const participants = people.map((person) => {
-    const days = dates.map((date) => dailyPerson(state, person, date));
-    return {
-      ...days[0],
-      scheduledDays: dates.filter((date) => scheduled(state, person, date))
-        .length,
-      actualAttendedDays: dates.filter(
-        (date) =>
-          scheduled(state, person, date) &&
-          !demoDaySummary(state, person, date).isAbsent,
-      ).length,
-      absenceCount: days.filter((day) => day.isAbsent).length,
-      missingPunchCount: days.filter((day) => day.isMissingPunch).length,
-      lateCount: days.filter((day) => day.isLate).length,
-      earlyLeaveCount: days.filter((day) => day.isEarlyLeave).length,
-      abnormalRecordCount: days.reduce(
-        (sum, day) => sum + day.abnormalRecordCount,
-        0,
-      ),
-      approvedMakeupCount: days.reduce(
-        (sum, day) => sum + day.approvedMakeupCount,
-        0,
-      ),
-      workedMinutes: days.reduce((sum, day) => sum + day.workedMinutes, 0),
-    };
+  const scoped = people.flatMap((person) => {
+    const teamIds = [
+      ...new Set(dates.map((date) => demoMemberOn(state, person, date).teamId)),
+    ];
+    return teamIds
+      .filter((id) => teamId === null || id === teamId)
+      .map((id) => ({ person, id }));
   });
+  const participants = scoped
+    .map(({ person, id }) => {
+      const datesInTeam = dates.filter(
+        (date) =>
+          demoMemberOn(state, person, date).teamId === id &&
+          date <= chinaToday() &&
+          demoMemberEligible(demoMemberOn(state, person, date), date),
+      );
+      const days = datesInTeam.map((date) => dailyPerson(state, person, date));
+      return {
+        ...days[0],
+        scheduledDays: datesInTeam.filter((date) =>
+          scheduled(state, person, date),
+        ).length,
+        actualAttendedDays: datesInTeam.filter(
+          (date) =>
+            scheduled(state, person, date) && attended(state, person, date),
+        ).length,
+        absenceCount: days.filter((day) => day.isAbsent).length,
+        missingPunchCount: days.filter((day) => day.isMissingPunch).length,
+        lateCount: days.filter((day) => day.isLate).length,
+        earlyLeaveCount: days.filter((day) => day.isEarlyLeave).length,
+        abnormalRecordCount: days.reduce(
+          (sum, day) => sum + day.abnormalRecordCount,
+          0,
+        ),
+        approvedMakeupCount: days.reduce(
+          (sum, day) => sum + day.approvedMakeupCount,
+          0,
+        ),
+        workedMinutes: days.reduce((sum, day) => sum + day.workedMinutes, 0),
+      };
+    })
+    .filter((row) => row.memberId !== undefined);
   const totals: ReportTotals = participants.reduce(
     (sum, row) => ({
-      participantCount: sum.participantCount + 1,
+      participantCount: sum.participantCount,
       scheduledDays: sum.scheduledDays + row.scheduledDays,
       actualAttendedDays: sum.actualAttendedDays + row.actualAttendedDays,
       absenceCount: sum.absenceCount + row.absenceCount,
@@ -193,7 +224,7 @@ export const demoReport = (
       workedMinutes: sum.workedMinutes + row.workedMinutes,
     }),
     {
-      participantCount: 0,
+      participantCount: new Set(participants.map((row) => row.memberId)).size,
       scheduledDays: 0,
       actualAttendedDays: 0,
       absenceCount: 0,
@@ -211,7 +242,15 @@ export const demoReport = (
         periodType: "DAILY",
         startDate: start,
         endDate: end,
-        participants: people.map((person) => dailyPerson(state, person, start)),
+        participants: people
+          .filter(
+            (person) =>
+              (teamId === null ||
+                demoMemberOn(state, person, start).teamId === teamId) &&
+              start <= chinaToday() &&
+              demoMemberEligible(demoMemberOn(state, person, start), start),
+          )
+          .map((person) => dailyPerson(state, person, start)),
         totals,
       }
     : {

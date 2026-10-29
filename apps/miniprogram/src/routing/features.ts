@@ -9,7 +9,7 @@ export type Feature = {
 };
 const PUNCH: Feature = {
   title: "考勤打卡",
-  sub: "拍照定位，记录每一份付出",
+  sub: "定位、活体核验与现场照片",
   icon: "clock",
   url: "/pages/punch/index",
 };
@@ -21,21 +21,23 @@ const RECORDS: Feature = {
 };
 const MAKEUPS: Feature = {
   title: "补卡申请",
-  sub: "漏打卡？在线提交申请",
+  sub: "提交申请、查看处理进度",
   icon: "invite",
   url: "/pages/my-makeups/index",
 };
+const APPROVALS: Feature = { title: "补卡审批", sub: "处理授权范围内下级的申请", icon: "check", url: "/pages/team-makeups/index" };
 export const PANEL_LABELS: Readonly<Record<PanelKey, string>> = {
-  worker: "工人",
+  worker: "普通工人",
   teamLeader: "班组长",
   projectAdmin: "项目管理员",
   companyAdmin: "公司管理员",
-  systemAdmin: "系统管理员",
+  systemAdmin: "超级管理员",
   none: "待分配角色",
 };
 export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
   worker: [PUNCH, RECORDS, MAKEUPS],
   teamLeader: [
+    { title: "打卡安排", sub: "设置本班组下级的打卡要求", icon: "calendar", url: "/pages/schedules/index" },
     {
       title: "补卡审批",
       sub: "处理本班组的补卡申请",
@@ -53,9 +55,10 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
     MAKEUPS,
   ],
   projectAdmin: [
+    APPROVALS,
     {
       title: "项目人员",
-      sub: "工人与管理员一目了然",
+      sub: "人员资料、工种与班组",
       icon: "people",
       url: "/pages/participants/index",
     },
@@ -78,17 +81,24 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       url: "/pages/project-management/index",
     },
     {
-      title: "排班设置",
-      sub: "配置班次与工作日期",
+      title: "打卡安排",
+      sub: "设置下级打卡次数与时间",
       icon: "calendar",
       url: "/pages/schedules/index",
     },
-    { title: "项目设置", sub: "管理项目状态与考勤位置", icon: "settings", url: "/pages/project-detail/index" },
+    {
+      title: "项目设置",
+      sub: "管理项目状态与考勤位置",
+      icon: "settings",
+      url: "/pages/project-detail/index",
+    },
     PUNCH,
     RECORDS,
     MAKEUPS,
   ],
   companyAdmin: [
+    APPROVALS,
+    { title: "打卡安排", sub: "设置授权项目下级的打卡要求", icon: "calendar", url: "/pages/schedules/index" },
     {
       title: "公司项目",
       sub: "查看在建与筹备中的项目",
@@ -115,6 +125,8 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
     },
   ],
   systemAdmin: [
+    APPROVALS,
+    { title: "打卡安排", sub: "设置授权范围内下级的打卡要求", icon: "calendar", url: "/pages/schedules/index" },
     {
       title: "平台管理",
       sub: "公司、账号权限与平台设置",
@@ -129,8 +141,8 @@ const PROJECT_ROLE_LABELS: Readonly<Record<string, string>> = {
   TEAM_LEADER: "班组长",
   PROJECT_ADMIN: "项目管理员",
   COMPANY_ADMIN: "公司管理员",
-  SYSTEM_ADMIN: "系统管理员",
-  WORKER: "工人",
+  SYSTEM_ADMIN: "超级管理员",
+  WORKER: "普通工人",
 };
 export const displayProjectRole = (value: string): string =>
   PROJECT_ROLE_LABELS[value] ?? value;

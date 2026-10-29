@@ -1,3 +1,4 @@
+import { permissionLabel } from "../../routing/permissionLevels";
 import { View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { useEffect, useState } from "react";
@@ -13,9 +14,8 @@ import {
   Subtitle,
   Title,
 } from "../../components/ui/index";
+import { AccountProfileForm } from "../../components/account-profile-form";
 import { ACCESS_TOKEN_KEY, FRONTEND_DEMO } from "../../config/env";
-import { PANEL_LABELS } from "../../routing/features";
-import { roleHomePanel } from "../../routing/roleHome";
 import { bindByInvitation } from "../../services/auth";
 import { useSession } from "../../store/session";
 
@@ -23,6 +23,7 @@ import "./index.scss";
 
 export default function Bind(): JSX.Element {
   const { state, phase, refreshMe, clear } = useSession();
+  const [editingProfile, setEditingProfile] = useState<boolean>(false);
   const [code, setCode] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,10 +158,8 @@ export default function Bind(): JSX.Element {
             />
             {state.me?.roles.highestRoleCode ? (
               <ListItem
-                primary="当前身份"
-                secondary={
-                  PANEL_LABELS[roleHomePanel(state.me.roles.highestRoleCode)]
-                }
+                primary="权限等级"
+                secondary={permissionLabel(state.me.roles.highestRoleCode)}
               />
             ) : null}
             <Subtitle>
@@ -178,6 +177,27 @@ export default function Bind(): JSX.Element {
         </>
       ) : (
         <View className="form-card">
+          <ListItem
+            primary="真实姓名"
+            secondary={state.accountProfile?.realName ?? "未填写"}
+            chip={editingProfile ? "收起" : "修改"}
+            onClick={() => setEditingProfile(!editingProfile)}
+          />
+          <ListItem
+            primary="手机号"
+            secondary={state.accountProfile?.phoneMasked ?? "未填写"}
+          />
+          {editingProfile && state.accountProfile !== null ? (
+            <AccountProfileForm
+              profile={state.accountProfile}
+              submitLabel="保存本人资料"
+              onSaved={async (): Promise<void> => {
+                await refreshMe();
+                setEditingProfile(false);
+                setError(null);
+              }}
+            />
+          ) : null}
           <Field
             label="本人专属邀请码"
             value={code}

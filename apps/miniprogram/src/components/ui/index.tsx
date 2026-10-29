@@ -18,7 +18,11 @@ export const Screen = ({ children }: PropsWithChildren): JSX.Element => {
         </View>
       ) : (
         <>
-          {FRONTEND_DEMO ? <View className="demo-mode-strip">前端演示 · 数据仅保存在本机 · 人脸与定位可模拟</View> : null}
+          {FRONTEND_DEMO ? (
+            <View className="demo-mode-strip">
+              演示模式 · 本机数据 · 定位与人脸为模拟
+            </View>
+          ) : null}
           {children}
         </>
       )}
@@ -96,6 +100,7 @@ export const Tile = ({
 );
 
 type FieldProps = {
+  readonly disabled?: boolean;
   readonly value: string;
   readonly placeholder: string;
   readonly onInput: (value: string) => void;
@@ -105,6 +110,7 @@ type FieldProps = {
 };
 
 export const Field = ({
+  disabled,
   value,
   placeholder,
   onInput,
@@ -115,6 +121,7 @@ export const Field = ({
   <View className="ui-field-wrap">
     {label ? <View className="ui-field-label">{label}</View> : null}
     <Input
+      disabled={disabled}
       className="ui-field"
       value={value}
       placeholder={placeholder}

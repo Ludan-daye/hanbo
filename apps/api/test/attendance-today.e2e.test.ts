@@ -15,6 +15,12 @@ type AttendancePointCodeValue = "SEGMENT_1_START" | "SEGMENT_1_END" | "SEGMENT_2
 type AttendanceRecordStatusValue = "VALID" | "INVALID";
 
 type UserRecord = {
+  readonly openid: string;
+  readonly isBound: boolean;
+  readonly encryptedRealName: string;
+  readonly phone: string;
+  readonly nickname: string;
+  readonly avatarObjectKey: string;
   readonly id: string;
   readonly sessionVersion: number;
   readonly status: UserStatusValue;
@@ -42,6 +48,7 @@ type WorkerProfileRecord = {
 };
 
 type ProjectRecord = {
+  readonly status: "ACTIVE";
   readonly centerLatitude: string;
   readonly centerLongitude: string;
   readonly geofenceRadiusM: number;
@@ -114,6 +121,9 @@ type AttendanceResultRow = {
 };
 
 class AttendanceTodayPrismaTestDouble {
+  readonly attendancePlan = { findMany: async (): Promise<[]> => [] };
+  readonly projectMemberHistory = { findMany: async (): Promise<[]> => [] };
+
   readonly sessions = new Map<string, SessionRecord>();
   workerProfileRow: WorkerProfileRecord | null = null;
   projectRow: ProjectRecord | null = null;
@@ -141,7 +151,7 @@ class AttendanceTodayPrismaTestDouble {
         ...profile,
         projectMemberships: profile.projectMemberships.filter(
           (membership: WorkerMembershipRecord): boolean => projectId === undefined || membership.projectId === projectId
-        )
+        ).map((membership) => ({ enteredAt: new Date("2020-01-01"), exitedAt: null, projectRoleLabel: "WORKER", ...membership }))
       };
     }
   };
@@ -159,18 +169,19 @@ class AttendanceTodayPrismaTestDouble {
     findMany: async (args: {
       include?: unknown;
       orderBy?: unknown;
-      where: { ownerId?: string; ownerType?: string };
+      where: { ownerId?: string | { in: string[] }; ownerType?: string };
     }): Promise<ScheduleRecord[]> =>
       [...this.scheduleRows]
         .filter(
           (row: ScheduleRecord): boolean =>
-            (args.where.ownerId === undefined || row.ownerId === args.where.ownerId) &&
+            (args.where.ownerId === undefined || (typeof args.where.ownerId === "string" ? row.ownerId === args.where.ownerId : args.where.ownerId.in.includes(row.ownerId))) &&
             (args.where.ownerType === undefined || row.ownerType === args.where.ownerType)
         )
         .sort((left: ScheduleRecord, right: ScheduleRecord): number => right.startsOn.getTime() - left.startsOn.getTime())
   };
 
   readonly shift = {
+    findMany: async (): Promise<ShiftRecord[]> => this.defaultShiftRow === null ? [] : [this.defaultShiftRow],
     findFirst: async (args: {
       include?: unknown;
       where: { isDefault?: boolean; projectId?: string };
@@ -203,7 +214,9 @@ class AttendanceTodayPrismaTestDouble {
         .sort((left: AttendanceRecordRow, right: AttendanceRecordRow): number => left.occurredAt.getTime() - right.occurredAt.getTime())
   };
 
+  readonly makeupRequest = { findMany: async (): Promise<[]> => [] };
   readonly attendanceResult = {
+    upsert: async (args: { create: Omit<AttendanceResultRow, "id"> }): Promise<AttendanceResultRow> => ({ id: "result-1", ...args.create }),
     findUnique: async (_args: unknown): Promise<AttendanceResultRow | null> => this.attendanceResultRow
   };
 }
@@ -245,7 +258,7 @@ const createAccessToken = async (app: INestApplication, userId: string, sessionI
 };
 
 const seedSession = (prisma: AttendanceTodayPrismaTestDouble, userId: string, sessionId: string): void => {
-  const user: UserRecord = { id: userId, sessionVersion: 1, status: "ACTIVE" };
+  const user: UserRecord = { id: userId, openid: userId, isBound: true, encryptedRealName: "test-encrypted-name", phone: "13800000000", nickname: "Test", avatarObjectKey: "test/avatar.png", sessionVersion: 1, status: "ACTIVE" };
   prisma.sessions.set(sessionId, {
     expiresAt: new Date(Date.now() + 60_000),
     id: sessionId,
@@ -273,6 +286,7 @@ const seedWorkerParticipant = (prisma: AttendanceTodayPrismaTestDouble): void =>
     centerLatitude: "31.2304",
     centerLongitude: "121.4737",
     geofenceRadiusM: 300,
+    status: "ACTIVE",
     id: "project-1"
   };
 };
@@ -340,7 +354,7 @@ describe("GET /me/projects/:projectId/attendance-today", (): void => {
     }
   });
 
-  test("returns configured:false when the project has no schedule and no default shift", async (): Promise<void> => {
+  test("uses two default points when no older schedule exists", async (): Promise<void> => {
     seedWorkerParticipant(prisma);
     app = await createApp(prisma);
     const token = await createAccessToken(app, "user-1", "session-1");
@@ -352,10 +366,10 @@ describe("GET /me/projects/:projectId/attendance-today", (): void => {
 
     expect(response.body).toMatchObject({
       attendanceDate: chinaTodayText(),
-      configured: false,
-      isWorkday: false,
-      points: [],
-      shiftName: null
+      configured: true,
+      isWorkday: true,
+      points: [expect.objectContaining({ pointCode: "START" }), expect.objectContaining({ pointCode: "END" })],
+      shiftName: "每日两次"
     });
     expect(response.body.geofence).toEqual({ centerLatitude: "31.2304", centerLongitude: "121.4737", radiusM: 300 });
   });
@@ -390,14 +404,14 @@ describe("GET /me/projects/:projectId/attendance-today", (): void => {
     expect(response.body.shiftName).toBe("标准两段班");
     expect(response.body.result).toBeNull();
     expect(response.body.points).toEqual([
-      { graceMins: 10, pointCode: "SEGMENT_1_START", record: null, scheduledTime: "08:00" },
-      { graceMins: 10, pointCode: "SEGMENT_1_END", record: null, scheduledTime: "12:00" },
-      { graceMins: 10, pointCode: "SEGMENT_2_START", record: null, scheduledTime: "13:30" },
-      { graceMins: 10, pointCode: "SEGMENT_2_END", record: null, scheduledTime: "17:30" }
+      { graceMins: 10, pointCode: "SEGMENT_1_START", label: "上午上班", kind: "START", record: null, scheduledTime: "08:00" },
+      { graceMins: 10, pointCode: "SEGMENT_1_END", label: "上午下班", kind: "END", record: null, scheduledTime: "12:00" },
+      { graceMins: 10, pointCode: "SEGMENT_2_START", label: "下午上班", kind: "START", record: null, scheduledTime: "13:30" },
+      { graceMins: 10, pointCode: "SEGMENT_2_END", label: "下午下班", kind: "END", record: null, scheduledTime: "17:30" }
     ]);
   });
 
-  test("surfaces the latest record per point and today's result", async (): Promise<void> => {
+  test("surfaces valid records per point and today's result", async (): Promise<void> => {
     seedWorkerParticipant(prisma);
     seedSchedule(prisma, 127);
     const today = chinaTodayText();
@@ -437,19 +451,20 @@ describe("GET /me/projects/:projectId/attendance-today", (): void => {
       record: { abnormalReason: string | null; occurredAt: string; status: string } | null;
     }>;
     expect(points[0]?.record).toEqual({
-      abnormalReason: "OUTSIDE_GEOFENCE",
-      occurredAt: `${today}T00:05:00.000Z`,
-      status: "INVALID"
+      abnormalReason: null,
+      occurredAt: `${today}T00:01:00.000Z`,
+      status: "VALID"
     });
     expect(points[1]?.record?.status).toBe("VALID");
     expect(points[2]?.record).toBeNull();
     expect(points[3]?.record).toBeNull();
-    expect(response.body.result).toMatchObject({ isMissingPunch: true, workedMinutes: 240 });
+    expect(response.body.result).toMatchObject({ workedMinutes: 239 });
   });
 
   test("rejects a non-participant with 400 ATTENDANCE_PARTICIPANT_MEMBERSHIP_NOT_FOUND", async (): Promise<void> => {
     seedSession(prisma, "user-2", "session-2");
-    prisma.projectRow = { centerLatitude: "31.2304", centerLongitude: "121.4737", geofenceRadiusM: 300, id: "project-1" };
+    prisma.projectRow = { centerLatitude: "31.2304", centerLongitude: "121.4737", geofenceRadiusM: 300,
+    status: "ACTIVE", id: "project-1" };
     app = await createApp(prisma);
     const token = await createAccessToken(app, "user-2", "session-2");
 

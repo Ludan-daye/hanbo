@@ -10,11 +10,11 @@
   margin-bottom: 28rpx;
   border-radius: 28rpx;
   color: #3478f6;
-  background: #edf4ff;
+  background: var(--surface-sunk);
 }
 .complete-profile-note {
   margin: 16rpx 0 36rpx;
-  color: #8492a6;
+  color: var(--ink-soft);
   font-size: 24rpx;
   line-height: 1.8;
 }

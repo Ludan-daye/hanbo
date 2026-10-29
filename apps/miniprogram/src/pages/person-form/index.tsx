@@ -13,35 +13,45 @@ import {
   Segmented,
   StateView,
 } from "../../components/ui/index";
+import {
+  participantPermissionRole,
+  permissionLevel,
+} from "../../routing/permissionLevels";
 import { useManagedProjectId } from "../../hooks/use-management-scope";
 import { useSessionGuard } from "../../hooks/use-session-guard";
-import {
-  fetchParticipants,
-  fetchProjectTeams,
-} from "../../services/management";
+import { fetchProjectTeams } from "../../services/management";
 import type { ProjectTeam } from "../../services/management.types";
 import {
   createPerson,
+  fetchPerson,
   updatePerson,
   type PersonForm,
 } from "../../services/workflows";
+import { chinaToday, formatChinaDate } from "../../services/time";
 import { useSession } from "../../store/session";
 
-const EMPTY_PERSON: PersonForm = {
+const emptyPerson = (enteredAt: string): PersonForm => ({
   displayName: "",
   phone: "",
   participantType: "WORKER",
   projectRoleLabel: "",
+  workType: "",
   teamId: null,
   requiresAttendance: true,
   status: "ACTIVE",
-};
+  enteredAt,
+  exitedAt: null,
+  expectedUpdatedAt: null,
+  expectedProfileUpdatedAt: null,
+});
 export default function PersonFormPage(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
   const projectId = useManagedProjectId(state.me);
   const { memberId, teamId: initialTeamId } = Taro.useRouter().params;
-  const [form, setForm] = useState<PersonForm>(EMPTY_PERSON);
+  const [form, setForm] = useState<PersonForm>(() =>
+    emptyPerson(new Date().toISOString()),
+  );
   const [teams, setTeams] = useState<readonly ProjectTeam[]>([]);
   const [loadFailed, setLoadFailed] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
@@ -52,9 +62,9 @@ export default function PersonFormPage(): JSX.Element {
     let cancelled = false;
     void Promise.all([
       fetchProjectTeams(projectId),
-      memberId ? fetchParticipants(projectId) : Promise.resolve([]),
+      memberId ? fetchPerson(projectId, memberId) : Promise.resolve(null),
     ]).then(
-      ([rows, people]) => {
+      ([rows, person]) => {
         if (cancelled) return;
         setTeams(rows);
         if (
@@ -62,9 +72,11 @@ export default function PersonFormPage(): JSX.Element {
           initialTeamId &&
           rows.some((row) => row.id === initialTeamId)
         )
-          setForm({ ...EMPTY_PERSON, teamId: initialTeamId });
+          setForm({
+            ...emptyPerson(new Date().toISOString()),
+            teamId: initialTeamId,
+          });
         if (memberId) {
-          const person = people.find((row) => row.memberId === memberId);
           if (!person) {
             setLoadFailed(true);
             setError("没有找到该成员，请返回列表刷新。");
@@ -76,6 +88,11 @@ export default function PersonFormPage(): JSX.Element {
             phone: person.phone,
             participantType: person.participantType,
             projectRoleLabel: person.projectRoleLabel,
+            workType: person.workType ?? "",
+            enteredAt: person.enteredAt,
+            exitedAt: person.exitedAt,
+            expectedUpdatedAt: person.updatedAt,
+            expectedProfileUpdatedAt: person.profileUpdatedAt,
             teamId: person.teamId,
             requiresAttendance: person.requiresAttendance,
             status: person.status,
@@ -104,13 +121,15 @@ export default function PersonFormPage(): JSX.Element {
       displayName: form.displayName.trim(),
       phone: form.phone.trim(),
       projectRoleLabel: form.projectRoleLabel.trim(),
+      workType: form.workType.trim(),
     };
     if (
       !body.displayName ||
       !/^1\d{10}$/.test(body.phone) ||
-      !body.projectRoleLabel
+      !body.projectRoleLabel ||
+      !body.workType
     ) {
-      setError("请填写姓名、11 位手机号和工种或管理角色。");
+      setError("请填写姓名、11 位手机号、工作种类和项目岗位。");
       return;
     }
     if (body.projectRoleLabel === "TEAM_LEADER" && !body.teamId) {
@@ -154,21 +173,26 @@ export default function PersonFormPage(): JSX.Element {
             {!memberId ? (
               <Segmented
                 options={[
-                  { value: "WORKER", label: "工人" },
-                  { value: "MANAGER", label: "管理员" },
+                  { value: "WORKER", label: "一级 · 个人" },
+                  { value: "TEAM_LEADER", label: "二级 · 班组" },
+                  { value: "PROJECT_ADMIN", label: "三级 · 项目" },
                 ]}
-                value={form.participantType}
-                onChange={(participantType) =>
+                value={participantPermissionRole(form)}
+                onChange={(role) =>
                   setForm({
                     ...form,
-                    participantType,
-                    projectRoleLabel:
-                      participantType === "MANAGER" ? "TEAM_LEADER" : "",
-                    teamId: null,
+                    participantType:
+                      role === "PROJECT_ADMIN" ? "MANAGER" : "WORKER",
+                    projectRoleLabel: role === "WORKER" ? "" : role,
+                    teamId: role === "PROJECT_ADMIN" ? null : form.teamId,
                   })
                 }
               />
             ) : null}
+            <ListItem
+              primary="项目权限"
+              secondary={permissionLevel(participantPermissionRole(form)).label}
+            />
             <Field
               label="姓名 *"
               value={form.displayName}
@@ -184,20 +208,44 @@ export default function PersonFormPage(): JSX.Element {
               maxLength={11}
               onInput={(phone) => setForm({ ...form, phone })}
             />
-            {form.participantType === "WORKER" ? (
+            <Field
+              label="工作种类 / 工种 *"
+              value={form.workType}
+              placeholder="例如：钢筋工、木工、电工、安全管理"
+              maxLength={40}
+              onInput={(workType) => setForm({ ...form, workType })}
+            />
+            {memberId && form.participantType === "WORKER" ? (
+              <Segmented
+                options={[
+                  { value: "WORKER", label: "一级 · 普通工人" },
+                  { value: "TEAM_LEADER", label: "二级 · 班组长" },
+                ]}
+                value={participantPermissionRole(form)}
+                onChange={(role) =>
+                  setForm({
+                    ...form,
+                    projectRoleLabel:
+                      role === "TEAM_LEADER" ? role : form.workType,
+                  })
+                }
+              />
+            ) : null}
+            {form.participantType === "WORKER" &&
+            form.projectRoleLabel !== "TEAM_LEADER" ? (
               <Field
-                label="工种 / 岗位 *"
+                label="本项目岗位 *"
                 value={form.projectRoleLabel}
                 placeholder="例如：钢筋工、木工"
                 onInput={(projectRoleLabel) =>
                   setForm({ ...form, projectRoleLabel })
                 }
               />
-            ) : (
+            ) : memberId && form.participantType === "MANAGER" ? (
               <Segmented
                 options={[
-                  { value: "TEAM_LEADER", label: "班组长" },
-                  { value: "PROJECT_ADMIN", label: "项目管理员" },
+                  { value: "TEAM_LEADER", label: "二级 · 班组权限" },
+                  { value: "PROJECT_ADMIN", label: "三级 · 项目管理" },
                 ]}
                 value={form.projectRoleLabel}
                 onChange={(projectRoleLabel) =>
@@ -209,13 +257,59 @@ export default function PersonFormPage(): JSX.Element {
                   })
                 }
               />
-            )}
+            ) : null}
           </Section>
           <Section title="项目安排">
+            <Picker
+              mode="date"
+              value={formatChinaDate(form.enteredAt)}
+              end={chinaToday()}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  enteredAt: new Date(
+                    `${event.detail.value}T00:00:00+08:00`,
+                  ).toISOString(),
+                })
+              }
+            >
+              <ListItem
+                primary="进场日期"
+                secondary={formatChinaDate(form.enteredAt)}
+                chip="选择"
+              />
+            </Picker>
+            {form.status === "EXITED" && form.exitedAt !== null ? (
+              <Picker
+                mode="date"
+                value={formatChinaDate(form.exitedAt)}
+                start={formatChinaDate(form.enteredAt)}
+                end={chinaToday()}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    exitedAt: new Date(
+                      `${event.detail.value}T23:59:59+08:00`,
+                    ).toISOString(),
+                  })
+                }
+              >
+                <ListItem
+                  primary="退场日期"
+                  secondary={formatChinaDate(form.exitedAt)}
+                  chip="选择"
+                />
+              </Picker>
+            ) : null}
             {form.projectRoleLabel !== "PROJECT_ADMIN" ? (
               <Picker
                 mode="selector"
-                range={["暂不分配", ...teams.map((row) => row.name)]}
+                range={[
+                  form.participantType === "MANAGER"
+                    ? "请选择班组"
+                    : "暂不分配",
+                  ...teams.map((row) => row.name),
+                ]}
                 value={teams.findIndex((row) => row.id === form.teamId) + 1}
                 onChange={(event) =>
                   setForm({
@@ -226,11 +320,15 @@ export default function PersonFormPage(): JSX.Element {
               >
                 <ListItem
                   primary={
-                    form.participantType === "MANAGER" ? "管理班组" : "所属班组"
+                    form.participantType === "MANAGER"
+                      ? "管理班组 *"
+                      : "所属班组"
                   }
                   secondary={
                     teams.find((row) => row.id === form.teamId)?.name ??
-                    "暂不分配"
+                    (form.participantType === "MANAGER"
+                      ? "请选择班组"
+                      : "暂不分配")
                   }
                   chip="选择"
                 />
@@ -253,7 +351,14 @@ export default function PersonFormPage(): JSX.Element {
                 { value: "EXITED", label: "已退场" },
               ]}
               value={form.status}
-              onChange={(status) => setForm({ ...form, status })}
+              onChange={(status) =>
+                setForm({
+                  ...form,
+                  status,
+                  exitedAt:
+                    status === "EXITED" ? new Date().toISOString() : null,
+                })
+              }
             />
           </Section>
           <Button

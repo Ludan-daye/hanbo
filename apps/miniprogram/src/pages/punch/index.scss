@@ -1,16 +1,15 @@
 .punch-project {
-  background: #fff;
-  border-radius: 24rpx;
   display: flex;
   align-items: center;
   gap: 20rpx;
-  padding: 24rpx;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid var(--line);
 }
 .punch-project__icon {
-  background: #edf4ff;
+  background: var(--surface-sunk);
   width: 78rpx;
   height: 78rpx;
-  border-radius: 22rpx;
+  border-radius: 16rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -28,7 +27,7 @@
   font-weight: 600;
 }
 .punch-count {
-  color: #8492a6;
+  color: var(--ink-soft);
   font-size: 21rpx;
   display: flex;
   align-items: baseline;
@@ -37,7 +36,7 @@
 }
 .punch-count > view {
   font-size: 38rpx;
-  color: #2675ed;
+  color: var(--clay);
   font-weight: 650;
 }
 .punch-points {
@@ -53,33 +52,33 @@
   text-align: left;
   line-height: 1.5;
   background: #fff;
-  border: 2rpx solid #fff;
-  border-radius: 22rpx;
-  color: #172b46;
+  border: 2rpx solid var(--line);
+  border-radius: 16rpx;
+  color: var(--ink);
 }
 .punch-point--selected {
-  background: #edf4ff;
-  border-color: #75a9f5;
+  background: var(--clay-tint);
+  border-color: var(--clay);
 }
 .punch-point__top {
   font-size: 24rpx;
   display: flex;
   justify-content: space-between;
-  color: #435b78;
+  color: var(--steel);
 }
 .punch-point__top > view {
   color: #a2afbf;
   font-size: 19rpx;
 }
 .punch-point--selected .punch-point__top > view {
-  color: #2675ed;
+  color: var(--clay);
 }
 .punch-point--done {
   background: #fff !important;
-  color: #8492a6 !important;
+  color: var(--ink-soft) !important;
 }
 .punch-point--done .punch-point__top > view {
-  color: #16a085;
+  color: var(--success);
 }
 .punch-point__time {
   font-size: 42rpx;
@@ -89,51 +88,26 @@
 }
 .punch-point__sub {
   font-size: 21rpx;
-  color: #8492a6;
+  color: var(--ink-soft);
 }
 .punch-location {
-  background: #fff;
-  border-radius: 24rpx;
+  border: 1rpx solid var(--line);
+  border-radius: var(--radius-card);
   overflow: hidden;
 }
 .punch-location__map {
-  height: 150rpx;
+  height: 108rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #edf4fc;
-  background-image:
-    linear-gradient(
-      32deg,
-      transparent 46%,
-      #fff 46%,
-      #fff 50%,
-      transparent 50%
-    ),
-    linear-gradient(
-      100deg,
-      transparent 38%,
-      #fff 38%,
-      #fff 43%,
-      transparent 43%
-    ),
-    linear-gradient(
-      -30deg,
-      transparent 72%,
-      #dcecf9 72%,
-      #dcecf9 82%,
-      transparent 82%
-    );
+  background: var(--surface-sunk);
 }
 .punch-location__circle {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 94rpx;
-  height: 94rpx;
-  border-radius: 50%;
-  background: rgba(38, 117, 237, 0.13);
-  border: 2rpx solid rgba(38, 117, 237, 0.2);
+  width: 64rpx;
+  height: 64rpx;
 }
 .punch-location__circle .app-icon {
   width: 50rpx;
@@ -146,12 +120,6 @@
   font-size: 28rpx;
   font-weight: 600;
 }
-.punch-location .ui-btn {
-  margin-top: 18rpx;
-  min-height: 72rpx;
-  padding: 10rpx;
-  font-size: 25rpx;
-}
 .punch-photos {
   display: flex;
   gap: 18rpx;
@@ -161,11 +129,11 @@
   width: calc(50% - 9rpx);
   margin: 0;
   padding: 18rpx;
-  border: 2rpx dashed #d9e5f6;
+  border: 2rpx dashed #cbd1d6;
   background: #fff;
   border-radius: 24rpx;
   font-size: 24rpx;
-  color: #435b78;
+  color: var(--steel);
   line-height: 1.6;
 }
 .punch-photo-card__empty {
@@ -180,7 +148,7 @@
   opacity: 0.7;
 }
 .punch-photo-card__sub {
-  color: #99a8bb;
+  color: var(--ink-soft);
   font-size: 20rpx;
   margin: 4rpx 0 8rpx;
 }
@@ -191,23 +159,11 @@
   margin: 0 0 14rpx;
   border-radius: 14rpx;
 }
-.punch-demo {
-  margin-top: 28rpx;
-  padding: 20rpx 24rpx;
-  border: 1rpx solid #e3eaf4;
-  border-radius: 16rpx;
-}
-.punch-demo__toggle {
-  display: flex;
-  justify-content: space-between;
-  font-size: 23rpx;
-  color: #8492a6;
-}
 .punch-submit {
   margin-top: 32rpx;
 }
 .punch-submit__hint {
-  color: #99a8bb;
+  color: var(--ink-soft);
   font-size: 22rpx;
   text-align: center;
 }

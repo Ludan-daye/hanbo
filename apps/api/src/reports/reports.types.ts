@@ -17,6 +17,7 @@ export type AttendanceReportTotals = {
 };
 
 export type AttendanceReportParticipantBase = {
+  readonly projectId: string;
   readonly displayName: string | null;
   readonly memberId: string;
   readonly memberStatus: MemberStatusValue;

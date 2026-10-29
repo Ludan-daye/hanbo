@@ -4,6 +4,8 @@ import type { AccountProfile } from "../src/services/account";
 import { initialSessionState, sessionPhase, sessionReducer } from "../src/store/sessionReducer";
 
 const accountProfile: AccountProfile = {
+  realName: "张建国",
+  phone: "13800000001",
   nickname: "张师傅",
   avatarDataUrl: "data:image/png;base64,iVBORw0KGgo=",
   isBound: true,

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Inject, Post, Req, UseGuards } from "@nestjs/common";
 
+import { AllowIncompleteAccount } from "./account-onboarding.js";
 import { AccessTokenGuard } from "./access-token.guard.js";
 import { AuthService } from "./auth.service.js";
 import {
@@ -36,6 +37,7 @@ const getRequestMetadata = (request: RequestWithAuthenticatedUser): RequestMetad
   userAgent: getHeaderValue(request.headers, "user-agent") ?? null
 });
 
+@AllowIncompleteAccount()
 @Controller("auth")
 export class AuthController {
   constructor(@Inject(AuthService) private readonly authService: AuthService) {}

@@ -1,4 +1,4 @@
-import { View } from "@tarojs/components";
+import { Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import { useSessionGuard } from "../../hooks/use-session-guard";
@@ -14,17 +14,16 @@ import {
   Subtitle,
 } from "../../components/ui/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
-import { resolveTeamLeaderTeamId } from "../../routing/teamLeader";
+
 import {
   approveMakeup,
-  fetchPendingMakeups,
+  fetchMakeupInbox,
+  type InboxMakeup,
   rejectMakeup,
   type PendingMakeup,
 } from "../../services/makeups";
-import { fetchTeamParticipants } from "../../services/management";
-import type { ProjectParticipant } from "../../services/management.types";
+
 import { formatChinaHm } from "../../services/time";
-import { useSession } from "../../store/session";
 
 const POINT_LABEL: Readonly<Record<PendingMakeup["pointCode"], string>> = {
   SEGMENT_1_END: "上午下班",
@@ -38,27 +37,25 @@ type ReviewAction = (
 ) => Promise<unknown>;
 export default function TeamMakeups(): JSX.Element {
   useSessionGuard();
-  const { state } = useSession();
+
   const { revision, refresh } = usePageRefresh();
-  const teamId = resolveTeamLeaderTeamId(state.me);
-  const [items, setItems] = useState<readonly PendingMakeup[] | null>(null);
-  const [members, setMembers] = useState<readonly ProjectParticipant[]>([]);
+
+  const [items, setItems] = useState<readonly InboxMakeup[] | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [scope, setScope] = useState<string>("全部范围");
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState<string | null>(null);
   useEffect(() => {
-    if (teamId === null) return;
     let cancelled = false;
     setError(null);
-    void Promise.all([
-      fetchPendingMakeups(teamId),
-      fetchTeamParticipants(teamId),
-    ]).then(
-      ([rows, people]) => {
+    setItems(null);
+    void fetchMakeupInbox(null).then(
+      (page) => {
         if (!cancelled) {
-          setItems(rows);
-          setMembers(people);
+          setItems(page.items);
+          setNextCursor(page.nextCursor);
         }
       },
       (cause) => {
@@ -69,7 +66,7 @@ export default function TeamMakeups(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [teamId, revision]);
+  }, [revision]);
   const review = async (
     id: string,
     action: ReviewAction,
@@ -101,48 +98,76 @@ export default function TeamMakeups(): JSX.Element {
       setBusy(null);
     }
   };
+  const label = (item: InboxMakeup): string =>
+    `${item.projectName} · ${item.teamName ?? "项目直属"}`;
+  const scopes = ["全部范围", ...new Set((items ?? []).map(label))];
+  const activeScope = scopes.includes(scope) ? scope : "全部范围";
+  const loadMore = async (): Promise<void> => {
+    if (nextCursor === null || busy !== null) return;
+    setBusy("page");
+    setError(null);
+    try {
+      const page = await fetchMakeupInbox(nextCursor);
+      setItems((rows) => [...(rows ?? []), ...page.items]);
+      setNextCursor(page.nextCursor);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "读取下一页失败");
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <Screen>
       <PageHeader title="补卡审批" />
-      {teamId === null ? (
-        <StateView title="暂无班组管理权限" />
-      ) : (
-        <View>
-          <Notice>
-            请核实实际出勤情况后处理申请，审批结果将同步到工人的考勤记录。
-          </Notice>
-          <View className="report-section-title">
-            待处理申请 · {items?.length ?? 0} 条
-          </View>
-          {items === null && error === null ? (
-            <StateView title="加载中…" />
-          ) : null}
-          {error ? (
-            <StateView title="操作未完成" sub={error} onRetry={refresh} />
-          ) : null}
-          {items?.length === 0 ? (
-            <StateView title="全部处理完毕" sub="目前没有待审批的补卡申请。" />
-          ) : null}
-          {(items ?? []).map((item) => {
-            const member = members.find(
-              (person) =>
-                person.profileId === item.participantId &&
-                person.participantType === item.participantType,
-            );
-            const name =
-              member?.displayName ??
-              (member ? `成员 · ${member.phone.slice(-4)}` : "班组成员");
+      <View>
+        <Picker
+          mode="selector"
+          range={scopes}
+          value={scopes.indexOf(activeScope)}
+          onChange={(event) => setScope(scopes[Number(event.detail.value)])}
+        >
+          <ListItem
+            primary={activeScope}
+            secondary="按项目／班组筛选已加载的申请"
+            chip="选择"
+          />
+        </Picker>
+        <Notice>
+          请核实实际出勤情况后处理申请，审批结果将同步到工人的考勤记录。
+        </Notice>
+        <View className="report-section-title">
+          待处理申请 · {items?.length ?? 0} 条
+        </View>
+        {items === null && error === null ? (
+          <StateView title="加载中…" />
+        ) : null}
+        {error ? (
+          <StateView title="操作未完成" sub={error} onRetry={refresh} />
+        ) : null}
+        {items?.length === 0 && nextCursor === null ? (
+          <StateView title="全部处理完毕" sub="目前没有待审批的补卡申请。" />
+        ) : null}
+        {items?.length === 0 && nextCursor !== null ? (
+          <StateView title="当前页无待办" sub="请继续加载后续申请。" />
+        ) : null}
+        {(items ?? [])
+          .filter(
+            (item) => activeScope === "全部范围" || label(item) === activeScope,
+          )
+          .map((item) => {
+            const name = item.displayName ?? "待完善姓名";
             return (
               <View key={item.id} className="form-card">
                 <ListItem
                   primary={name}
-                  secondary={`${item.attendanceDate} · ${POINT_LABEL[item.pointCode]} · ${formatChinaHm(item.requestedOccurredAt)}`}
+                  secondary={`${item.attendanceDate} · ${item.pointLabel ?? POINT_LABEL[item.pointCode] ?? item.pointCode} · ${formatChinaHm(item.requestedOccurredAt)}`}
                   chip="待审批"
                   onClick={() => {
                     if (busy === null)
                       setOpenId(openId === item.id ? null : item.id);
                   }}
                 />
+                <Subtitle>{label(item)}</Subtitle>
                 <Subtitle>申请原因：{item.reason}</Subtitle>
                 {openId === item.id ? (
                   <View>
@@ -205,8 +230,18 @@ export default function TeamMakeups(): JSX.Element {
               </View>
             );
           })}
-        </View>
-      )}
+        {nextCursor !== null ? (
+          <Button
+            variant="outline"
+            loading={busy === "page"}
+            onClick={() => {
+              void loadMore();
+            }}
+          >
+            加载更多
+          </Button>
+        ) : null}
+      </View>
     </Screen>
   );
 }

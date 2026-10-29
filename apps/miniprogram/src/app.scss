@@ -4,8 +4,8 @@ page,
 body,
 .taro_router,
 .taro_page {
-  background: #f5f6f8;
-  color: #202c3a;
+  background: var(--bg);
+  color: var(--ink);
   font-family:
     -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   font-size: 28rpx;
@@ -43,7 +43,7 @@ textarea {
     transition: none !important;
   }
 }
- .face-capture-placeholder {
+.face-capture-placeholder {
   min-height: 320px;
   display: flex;
   align-items: center;

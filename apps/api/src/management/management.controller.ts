@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, GoneException, Get, Inject, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { GLOBAL_SCOPE_ID } from "@construction/domain/roles.js";
 
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
@@ -12,13 +12,22 @@ import {
   parseCreateProjectManagerRequest,
   parseCreateProjectRequest,
   parseCreateProjectWorkerRequest,
-  parseCreateTeamRequest
+  parseCreateTeamRequest,
+  parseUpdateProjectRequest,
+  parseUpdateTeamRequest
 } from "./management-body.parsers.js";
 import { ManagementService } from "./management.service.js";
+import { ParticipantsService } from "./participants.service.js";
+import { parseParticipantPage, parseParticipantWrite, parseReuseParticipant } from "./participants.parsers.js";
+import type { ReuseProjectResponse } from "./participants.types.js";
+import { TeamsService } from "./teams.service.js";
+import type { ManagedTeamResponse } from "./teams.types.js";
+import type { ManagedParticipantResponse, ParticipantPageResponse } from "./participants.types.js";
 import type { BindingInvitationListItem } from "./management-invitation.types.js";
 import type {
   CompanyParticipantResponse,
   CompanyResponse,
+  ManagedProjectResponse,
   ProjectManagerMemberResponse,
   ProjectParticipantResponse,
   ProjectResponse,
@@ -28,7 +37,88 @@ import type {
 
 @Controller("management")
 export class ManagementController {
-  constructor(@Inject(ManagementService) private readonly managementService: ManagementService) {}
+  constructor(
+    @Inject(ManagementService) private readonly managementService: ManagementService,
+    @Inject(ParticipantsService) private readonly participants: ParticipantsService,
+    @Inject(TeamsService) private readonly teams: TeamsService
+  ) {}
+
+  @Get("projects/:projectId/managed-teams")
+  @RequirePermission({ permissionCode: "team.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async managedTeams(@Param("projectId") projectId: string): Promise<readonly ManagedTeamResponse[]> {
+    return this.teams.list(projectId);
+  }
+
+  @Get("projects/:projectId/teams/:teamId")
+  @RequirePermission({ permissionCode: "team.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async managedTeam(@Param("projectId") projectId: string, @Param("teamId") teamId: string): Promise<ManagedTeamResponse> {
+    return this.teams.get(projectId, teamId);
+  }
+
+  @Put("projects/:projectId/teams/:teamId")
+  @RequirePermission({ permissionCode: "team.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async updateTeam(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string, @Param("teamId") teamId: string, @Body() body: unknown): Promise<ManagedTeamResponse> {
+    return this.teams.update(projectId, teamId, actor.userId, parseUpdateTeamRequest(body));
+  }
+
+  @Get("projects/:projectId/reuse-projects")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async reuseProjects(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string): Promise<readonly ReuseProjectResponse[]> {
+    return this.participants.reuseProjects(projectId, actor.userId);
+  }
+
+  @Post("projects/:projectId/reused-participants")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async reuseParticipant(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string, @Body() body: unknown): Promise<ManagedParticipantResponse> {
+    return this.participants.reuse(projectId, actor.userId, parseReuseParticipant(body));
+  }
+
+  @Get("projects/:projectId")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async managedProject(@Param("projectId") projectId: string): Promise<ManagedProjectResponse> {
+    return this.managementService.getManagedProject(projectId);
+  }
+
+  @Put("projects/:projectId")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async updateProject(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string, @Body() body: unknown): Promise<ManagedProjectResponse> {
+    return this.managementService.updateProject(projectId, actor.userId, parseUpdateProjectRequest(body));
+  }
+
+  @Get("projects/:projectId/participant-page")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async participantPage(@Param("projectId") projectId: string, @Query() query: unknown): Promise<ParticipantPageResponse> {
+    return this.participants.page(projectId, parseParticipantPage(query));
+  }
+
+  @Get("projects/:projectId/participants/:memberId")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async participant(@Param("projectId") projectId: string, @Param("memberId") memberId: string): Promise<ManagedParticipantResponse> {
+    return this.participants.get(projectId, memberId);
+  }
+
+  @Post("projects/:projectId/participants")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async createParticipant(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string, @Body() body: unknown): Promise<ManagedParticipantResponse> {
+    return this.participants.create(projectId, actor.userId, parseParticipantWrite(body));
+  }
+
+  @Put("projects/:projectId/participants/:memberId")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async updateParticipant(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string, @Param("memberId") memberId: string, @Body() body: unknown): Promise<ManagedParticipantResponse> {
+    return this.participants.update(projectId, memberId, actor.userId, parseParticipantWrite(body));
+  }
 
   @Post("companies")
   @RequirePermission({
@@ -92,7 +182,7 @@ export class ManagementController {
     @Param("projectId") projectId: string,
     @Body() body: unknown
   ): Promise<ProjectWorkerMemberResponse> {
-    return this.managementService.createProjectWorker(projectId, parseCreateProjectWorkerRequest(body));
+    throw new GoneException({ message: "请使用统一人员建档接口 /management/projects/:projectId/participants。" });
   }
 
   @Post("projects/:projectId/managers")
@@ -108,7 +198,7 @@ export class ManagementController {
     @Param("projectId") projectId: string,
     @Body() body: unknown
   ): Promise<ProjectManagerMemberResponse> {
-    return this.managementService.createProjectManager(projectId, parseCreateProjectManagerRequest(body));
+    throw new GoneException({ message: "请使用统一人员建档接口 /management/projects/:projectId/participants。" });
   }
 
   @Get("companies/:companyId/projects")

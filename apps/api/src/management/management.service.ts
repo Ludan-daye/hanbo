@@ -10,6 +10,9 @@ import type {
   WorkerProfile
 } from "@prisma/client";
 
+import { API_ENV } from "../config/env.module.js";
+import type { ApiEnv } from "../config/env.js";
+import { decryptPersonnelName } from "./personnel-name.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import type { BindingTargetTypeValue } from "../bindings/bindings.types.js";
 import type { BindingInvitationListItem } from "./management-invitation.types.js";
@@ -29,6 +32,8 @@ import type {
   ProjectResponse,
   ProjectStatusValue,
   ProjectWorkerMemberResponse,
+  ManagedProjectResponse,
+  UpdateProjectRequest,
   TeamResponse
 } from "./management.types.js";
 
@@ -135,8 +140,8 @@ const createManagerMemberResponse = (
   teamId: member.teamScopeId
 });
 
-const createWorkerParticipantResponse = (member: WorkerMemberWithProfileAndTeam): ProjectParticipantResponse => ({
-  displayName: null,
+const createWorkerParticipantResponse = (member: WorkerMemberWithProfileAndTeam, keyHex: string): ProjectParticipantResponse => ({
+  displayName: member.worker.encryptedName.startsWith("name-v1:") ? decryptPersonnelName(member.worker.encryptedName, keyHex) : null,
   memberId: member.id,
   participantType: "WORKER",
   phone: member.worker.phone,
@@ -181,7 +186,60 @@ const throwConflictForUniqueError = (
 
 @Injectable()
 export class ManagementService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(API_ENV) private readonly env: ApiEnv) {}
+
+  async getManagedProject(projectId: string): Promise<ManagedProjectResponse> {
+    const project = await this.getProjectOrThrow(projectId);
+    return { ...createProjectResponse(project), code: project.code, contactName: project.contactName, contactPhone: project.contactPhone, remark: project.remark, updatedAt: project.updatedAt.toISOString() };
+  }
+
+  async updateProject(projectId: string, actorUserId: string, body: UpdateProjectRequest): Promise<ManagedProjectResponse> {
+    try {
+      await this.prisma.$transaction(async (transaction): Promise<void> => {
+        const previous = await transaction.project.findUnique({ where: { id: projectId } });
+        if (previous === null) throw new NotFoundException({ message: "PROJECT_NOT_FOUND", projectId });
+        if (body.id !== projectId || body.companyId !== previous.companyId) {
+          throw new BadRequestException({ message: "PROJECT_COMPANY_CANNOT_CHANGE" });
+        }
+        const result = await transaction.project.updateMany({
+          where: { id: projectId, updatedAt: new Date(body.expectedUpdatedAt) },
+          data: {
+            name: body.name.trim(),
+            address: body.address.trim(),
+            code: body.code,
+            contactName: body.contactName,
+            contactPhone: body.contactPhone,
+            remark: body.remark,
+            status: body.status,
+            centerLatitude: body.centerLatitude,
+            centerLongitude: body.centerLongitude,
+            geofenceRadiusM: body.geofenceRadiusM,
+            plannedStartDate: dateOnlyToDate(body.plannedStartDate),
+            plannedEndDate: body.plannedEndDate === null ? null : dateOnlyToDate(body.plannedEndDate),
+            updatedAt: new Date(Math.max(Date.now(), previous.updatedAt.getTime() + 1))
+          }
+        });
+        if (result.count !== 1) throw new ConflictException({ message: "PROJECT_CHANGED_RELOAD_BEFORE_SAVING" });
+        await transaction.auditLog.create({
+          data: {
+            actorUserId,
+            action: "project.update",
+            entityType: "project",
+            entityId: projectId,
+            metadata: {
+              previousStatus: previous.status,
+              status: body.status,
+              previousRadiusM: previous.geofenceRadiusM,
+              radiusM: body.geofenceRadiusM
+            }
+          }
+        });
+      });
+    } catch (error: unknown) {
+      throwConflictForUniqueError(error, "PROJECT_CODE_ALREADY_EXISTS", { projectId });
+    }
+    return this.getManagedProject(projectId);
+  }
 
   async createCompany(request: CreateCompanyRequest): Promise<CompanyResponse> {
     const company = await this.prisma.company.create({
@@ -253,15 +311,18 @@ export class ManagementService {
 
   async createTeam(projectId: string, request: CreateTeamRequest): Promise<TeamResponse> {
     await this.getProjectOrThrow(projectId);
-    const team = await this.prisma.team.create({
-      data: {
-        name: request.name,
-        projectId,
-        status: request.status
-      }
-    });
-
-    return createTeamResponse(team);
+    try {
+      const team = await this.prisma.team.create({
+        data: {
+          name: request.name,
+          projectId,
+          status: request.status
+        }
+      });
+      return createTeamResponse(team);
+    } catch (error: unknown) {
+      return throwConflictForUniqueError(error, "PROJECT_TEAM_NAME_ALREADY_EXISTS", { projectId });
+    }
   }
 
   async createProjectWorker(
@@ -389,7 +450,7 @@ export class ManagementService {
       })
     ]);
     const workerRows: CompanyParticipantResponse[] = workerMembers.map((m) => ({
-      ...createWorkerParticipantResponse(m),
+      ...createWorkerParticipantResponse(m, this.env.PERSONNEL_ENCRYPTION_KEY),
       projectName: projectNamesById.get(m.projectId) ?? ""
     }));
     const managerRows: CompanyParticipantResponse[] = managerMembers.map((m) => ({
@@ -420,7 +481,7 @@ export class ManagementService {
     ]);
 
     return [
-      ...workerMembers.map(createWorkerParticipantResponse),
+      ...workerMembers.map((member) => createWorkerParticipantResponse(member, this.env.PERSONNEL_ENCRYPTION_KEY)),
       ...managerMembers.map(createManagerParticipantResponse)
     ];
   }
@@ -455,7 +516,7 @@ export class ManagementService {
     ]);
 
     return [
-      ...workerMembers.map(createWorkerParticipantResponse),
+      ...workerMembers.map((member) => createWorkerParticipantResponse(member, this.env.PERSONNEL_ENCRYPTION_KEY)),
       ...managerMembers.map(createManagerParticipantResponse)
     ];
   }

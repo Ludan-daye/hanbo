@@ -1,3 +1,7 @@
+import {
+  PERMISSION_LEVELS,
+  permissionLabel,
+} from "../../routing/permissionLevels";
 import { Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
@@ -16,8 +20,6 @@ import {
 } from "../../components/ui/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
-import { PANEL_LABELS } from "../../routing/features";
-import { roleHomePanel } from "../../routing/roleHome";
 import type { RoleCode } from "../../services/auth.types";
 import {
   fetchCompanyProjects,
@@ -44,13 +46,9 @@ import { useSession } from "../../store/session";
 
 type Tab = "COMPANIES" | "ACCOUNTS" | "SETTINGS" | "AUDIT";
 type ScopeOption = { readonly id: string; readonly name: string };
-const ROLE_OPTIONS: readonly RoleCode[] = [
-  "SYSTEM_ADMIN",
-  "COMPANY_ADMIN",
-  "PROJECT_ADMIN",
-  "TEAM_LEADER",
-  "WORKER",
-];
+const ROLE_OPTIONS: readonly RoleCode[] = PERMISSION_LEVELS.map(
+  (level) => level.roleCode,
+);
 const scopeOptions = (
   role: RoleCode,
   companies: readonly Company[],
@@ -155,7 +153,7 @@ export default function SystemManagement(): JSX.Element {
     }
     const confirmed = await Taro.showModal({
       title: "确认调整账号权限",
-      content: `${draft.name}：${PANEL_LABELS[roleHomePanel(draft.roleCode)]}。新权限将在此账号下次进入时生效。`,
+      content: `${draft.name}：${permissionLabel(draft.roleCode)}。新权限将在此账号下次进入时生效。`,
       confirmText: "确认保存",
     });
     if (confirmed.confirm) await runAction(() => saveAccount(draft));
@@ -167,7 +165,7 @@ export default function SystemManagement(): JSX.Element {
     <Screen>
       <PageHeader title="平台管理" />
       {!allowed ? (
-        <StateView title="需要系统管理员身份" />
+        <StateView title="需要五级平台管理权限" />
       ) : (
         <>
           <Segmented
@@ -268,7 +266,7 @@ export default function SystemManagement(): JSX.Element {
                   <ListItem
                     key={account.id}
                     primary={account.name}
-                    secondary={`${PANEL_LABELS[roleHomePanel(account.roleCode)]} · ${account.phone}`}
+                    secondary={`${permissionLabel(account.roleCode)} · ${account.phone}`}
                     chip={account.status === "ACTIVE" ? "正常" : "已停用"}
                     onClick={() => {
                       setDraft(account);
@@ -284,8 +282,8 @@ export default function SystemManagement(): JSX.Element {
                     <>
                       <Picker
                         mode="selector"
-                        range={ROLE_OPTIONS.map(
-                          (role) => PANEL_LABELS[roleHomePanel(role)],
+                        range={ROLE_OPTIONS.map((role) =>
+                          permissionLabel(role),
                         )}
                         value={ROLE_OPTIONS.indexOf(draft.roleCode)}
                         onChange={(event) => {
@@ -305,10 +303,8 @@ export default function SystemManagement(): JSX.Element {
                         }}
                       >
                         <ListItem
-                          primary="角色"
-                          secondary={
-                            PANEL_LABELS[roleHomePanel(draft.roleCode)]
-                          }
+                          primary="权限等级"
+                          secondary={permissionLabel(draft.roleCode)}
                           chip="选择"
                         />
                       </Picker>

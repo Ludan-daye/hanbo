@@ -1,6 +1,15 @@
-import { Controller, Inject, Post, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import {
+  Controller,
+  Inject,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 
+import { CurrentUser } from "../auth/current-user.decorator.js";
+import type { AuthenticatedUser } from "../auth/auth.types.js";
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
 
 import { UploadsService } from "./uploads.service.js";
@@ -10,12 +19,19 @@ export const maxUploadSizeBytes = 5 * 1024 * 1024;
 
 @Controller("uploads")
 export class UploadsController {
-  constructor(@Inject(UploadsService) private readonly uploadsService: UploadsService) {}
+  constructor(
+    @Inject(UploadsService) private readonly uploadsService: UploadsService,
+  ) {}
 
   @Post()
   @UseGuards(AccessTokenGuard)
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: maxUploadSizeBytes } }))
-  async upload(@UploadedFile() file: UploadedMultipartFile | undefined): Promise<UploadResponse> {
-    return this.uploadsService.storeImage(file);
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: maxUploadSizeBytes } }),
+  )
+  async upload(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file: UploadedMultipartFile | undefined,
+  ): Promise<UploadResponse> {
+    return this.uploadsService.storeImage(file, user.userId);
   }
 }

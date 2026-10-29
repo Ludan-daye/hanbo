@@ -16,6 +16,12 @@ import { UploadsModule } from "../src/uploads/uploads.module.js";
 type UserStatusValue = "ACTIVE" | "DISABLED";
 
 type UserRecord = {
+  readonly openid: string;
+  readonly isBound: boolean;
+  readonly encryptedRealName: string;
+  readonly phone: string;
+  readonly nickname: string;
+  readonly avatarObjectKey: string;
   readonly id: string;
   readonly sessionVersion: number;
   readonly status: UserStatusValue;
@@ -30,6 +36,7 @@ type SessionRecord = {
 };
 
 class UploadsPrismaTestDouble {
+  readonly storedFile = { create: async (args: { readonly data: object }): Promise<object> => args.data };
   readonly sessions = new Map<string, SessionRecord>();
 
   readonly userSession = {
@@ -76,7 +83,7 @@ const createAccessToken = async (app: INestApplication, userId: string, sessionI
 };
 
 const seedSession = (prisma: UploadsPrismaTestDouble, userId: string, sessionId: string): void => {
-  const user: UserRecord = { id: userId, sessionVersion: 1, status: "ACTIVE" };
+  const user: UserRecord = { id: userId, openid: userId, isBound: true, encryptedRealName: "test-encrypted-name", phone: "13800000000", nickname: "Test", avatarObjectKey: "test/avatar.png", sessionVersion: 1, status: "ACTIVE" };
   prisma.sessions.set(sessionId, {
     expiresAt: new Date(Date.now() + 60_000),
     id: sessionId,
@@ -109,7 +116,7 @@ describe("POST /uploads", (): void => {
     seedSession(prisma, "user-1", "session-1");
     app = await createApp(prisma);
     const token = await createAccessToken(app, "user-1", "session-1");
-    const data = Buffer.from("jpeg-bytes-for-test");
+    const data = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
 
     const response = await request(app.getHttpServer())
       .post("/uploads")
@@ -134,7 +141,7 @@ describe("POST /uploads", (): void => {
     const response = await request(app.getHttpServer())
       .post("/uploads")
       .set("Authorization", `Bearer ${token}`)
-      .attach("file", Buffer.from("png-bytes"), { contentType: "image/png", filename: "site.png" })
+      .attach("file", Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), { contentType: "image/png", filename: "site.png" })
       .expect(201);
 
     expect(response.body.objectKey).toMatch(/\.png$/);

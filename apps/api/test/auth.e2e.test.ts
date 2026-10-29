@@ -1,10 +1,11 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
+import { encryptPersonnelName } from "../src/management/personnel-name.js";
 import { AuthModule } from "../src/auth/auth.module.js";
 import type { WechatCodeSession } from "../src/infrastructure/wechat/wechat-code-session.connector.js";
 import { WechatCodeSessionConnector } from "../src/infrastructure/wechat/wechat-code-session.connector.js";
@@ -15,6 +16,9 @@ type ProfileOwnerTypeValue = "WORKER" | "MANAGER";
 type BindingInvitationStatusValue = "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
 
 type UserRecord = {
+  encryptedRealName?: string;
+  nickname?: string;
+  avatarObjectKey?: string;
   id: string;
   isBound: boolean;
   lastLoginAt: Date | null;
@@ -40,12 +44,14 @@ type UserSessionRecord = {
 };
 
 type WorkerProfileRecord = {
+  encryptedName: string;
   id: string;
   phone: string;
   userId: string | null;
 };
 
 type ManagerProfileRecord = {
+  name: string;
   id: string;
   phone: string;
   userId: string | null;
@@ -637,6 +643,7 @@ class WechatConnectorTestDouble {
 
 const applyTestEnv = (): void => {
   process.env.AUTH_REFRESH_TOKEN_TTL_SECONDS = "2592000";
+  process.env.PERSONNEL_ENCRYPTION_KEY = "ab".repeat(32);
   process.env.API_PORT = "3000";
   process.env.DATABASE_URL = "postgresql://construction:construction@localhost:5432/construction_personnel?schema=public";
   process.env.FACE_SERVICE_API_KEY = "face-service-key";
@@ -767,6 +774,7 @@ describe("AuthModule", (): void => {
     app = await createApp(prisma, new WechatConnectorTestDouble());
     prisma.workerProfiles.set("worker-1", {
       id: "worker-1",
+      encryptedName: encryptPersonnelName("测试人员", "ab".repeat(32), randomBytes(12)),
       phone: "13800000000",
       userId: null
     });
@@ -787,6 +795,8 @@ describe("AuthModule", (): void => {
       .send({ code: "login-code-1" })
       .expect(201);
 
+    const bindingUser = prisma.users.get("user-1")!;
+    prisma.users.set("user-1", { ...bindingUser, nickname: "测试", avatarObjectKey: "test/avatar.png", encryptedRealName: encryptPersonnelName("测试人员", "ab".repeat(32), randomBytes(12)), phone: "13800000000" });
     await request(app.getHttpServer())
       .post("/auth/bind")
       .set("Authorization", `Bearer ${loginResponse.body.accessToken}`)
@@ -806,6 +816,7 @@ describe("AuthModule", (): void => {
     app = await createApp(prisma, new WechatConnectorTestDouble());
     prisma.workerProfiles.set("worker-1", {
       id: "worker-1",
+      encryptedName: encryptPersonnelName("测试人员", "ab".repeat(32), randomBytes(12)),
       phone: "13800000000",
       userId: null
     });
@@ -841,11 +852,14 @@ describe("AuthModule", (): void => {
       });
       prisma.workerProfiles.set("worker-1", {
         id: "worker-1",
+        encryptedName: encryptPersonnelName("测试人员", "ab".repeat(32), randomBytes(12)),
         phone: "13800000000",
         userId: "other-user"
       });
     };
 
+    const bindingUser = prisma.users.get("user-1")!;
+    prisma.users.set("user-1", { ...bindingUser, nickname: "测试", avatarObjectKey: "test/avatar.png", encryptedRealName: encryptPersonnelName("测试人员", "ab".repeat(32), randomBytes(12)), phone: "13800000000" });
     await request(app.getHttpServer())
       .post("/auth/bind")
       .set("Authorization", `Bearer ${loginResponse.body.accessToken}`)
@@ -864,6 +878,7 @@ describe("AuthModule", (): void => {
     // seed worker profile
     prisma.workerProfiles.set("worker-1", {
       id: "worker-1",
+      encryptedName: encryptPersonnelName("测试人员", "ab".repeat(32), randomBytes(12)),
       phone: "13800000000",
       userId: null
     });
@@ -889,6 +904,8 @@ describe("AuthModule", (): void => {
       .expect(201);
 
     // bind with the invitation
+    const bindingUser = prisma.users.get("user-1")!;
+    prisma.users.set("user-1", { ...bindingUser, nickname: "测试", avatarObjectKey: "test/avatar.png", encryptedRealName: encryptPersonnelName("测试人员", "ab".repeat(32), randomBytes(12)), phone: "13800000000" });
     await request(app.getHttpServer())
       .post("/auth/bind")
       .set("Authorization", `Bearer ${loginResponse.body.accessToken}`)
@@ -913,6 +930,7 @@ describe("AuthModule", (): void => {
     // seed manager profile
     prisma.managerProfiles.set("manager-1", {
       id: "manager-1",
+      name: "测试人员",
       phone: "13800000001",
       userId: null
     });
@@ -944,6 +962,8 @@ describe("AuthModule", (): void => {
       .expect(201);
 
     // bind with the invitation
+    const bindingUser = prisma.users.get("user-1")!;
+    prisma.users.set("user-1", { ...bindingUser, nickname: "测试", avatarObjectKey: "test/avatar.png", encryptedRealName: encryptPersonnelName("测试人员", "ab".repeat(32), randomBytes(12)), phone: "13800000001" });
     await request(app.getHttpServer())
       .post("/auth/bind")
       .set("Authorization", `Bearer ${loginResponse.body.accessToken}`)

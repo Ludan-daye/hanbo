@@ -1,14 +1,22 @@
+import { demoPlanRequest, effectiveDemoPlan, demoPlanLevel } from "./plans";
 import Taro from "@tarojs/taro";
+
+import { demoMemberOn, demoMemberEligible } from "./member-history";
+import { ROLE_LEVEL } from "@construction/domain/roles.js";
+import { participantPermissionRole } from "../../routing/permissionLevels";
 
 import { ApiError, type ApiClient, type RequestOptions } from "../apiClient";
 import type { AccountProfile } from "../account";
 import type {
   DefaultScheduleBody,
   DefaultShiftBody,
-  CompanyProject,
+  ManagedProject,
+  ManagedParticipant,
   CreateProjectBody,
   ProjectParticipant,
   ProjectTeam,
+  ReusePersonForm,
+  TeamForm,
 } from "../management.types";
 import type { SubmitAttendanceRecordBody, SubmitMakeupBody } from "../me.types";
 import type {
@@ -18,26 +26,47 @@ import type {
   SystemSettings,
 } from "../workflows";
 import type { UploadResult } from "../uploads";
-import { chinaToday } from "../time";
-import { effectiveDemoConfiguration } from "./configuration";
-import { demoDaySummary, demoReport } from "./reports";
+import { chinaToday, chinaDaysAgo } from "../time";
+import { checkAttendanceGeofence } from "../geofence";
+import { managedDemoTeam } from "./teams";
+import { demoDaySummary, demoReport, dailyPerson } from "./reports";
 import {
   demoId,
   demoMe,
   initialDemoState,
   makeDemoRecord,
-  DEMO_POINT_CODES,
   type DemoState,
+  type LegacyDemoState,
+  upgradeDemoState,
+  upgradeDemoPlanning,
   type DemoFace,
   type DemoInvitation,
 } from "./state";
 
 const STORAGE_KEY = "hanbo.frontend-demo.v1";
 export const readDemoState = (): DemoState => {
-  const stored: DemoState | "" = Taro.getStorageSync(STORAGE_KEY);
+  const stored: DemoState | LegacyDemoState | "" =
+    Taro.getStorageSync(STORAGE_KEY);
   if (stored === "") return initialDemoState();
-  if (stored.version !== 1)
-    throw new Error("演示数据版本不兼容，请在“我的”重置演示数据。");
+  if (stored.version === 1) {
+    const upgraded: DemoState = upgradeDemoPlanning(
+      upgradeDemoState(stored, new Date().toISOString()),
+      chinaDaysAgo(-1),
+    );
+    Taro.setStorageSync(STORAGE_KEY, upgraded);
+    return upgraded;
+  }
+  if (
+    stored.version !== 2 ||
+    stored.people.some((person) => typeof person.enteredAt !== "string") ||
+    stored.projects.some((project) => typeof project.updatedAt !== "string")
+  )
+    throw new Error("演示资料结构已更新，请在“我的”重置演示数据后继续。");
+  if (stored.plans === undefined) {
+    const upgraded = upgradeDemoPlanning(stored, chinaDaysAgo(-1));
+    Taro.setStorageSync(STORAGE_KEY, upgraded);
+    return upgraded;
+  }
   return stored;
 };
 export const resetDemoState = (): void => {
@@ -75,6 +104,26 @@ const requirePerson = (
     });
   return person;
 };
+const canManageDemoProject = (
+  state: DemoState,
+  userId: string,
+  projectId: string,
+): boolean => {
+  const me = demoMe(state, userId);
+  const project = state.projects.find((row) => row.id === projectId);
+  return me.roles.assignments.some(
+    (assignment) =>
+      assignment.roleCode === "SYSTEM_ADMIN" ||
+      (assignment.roleCode === "PROJECT_ADMIN" &&
+        assignment.scope.scopeId === projectId) ||
+      (assignment.roleCode === "COMPANY_ADMIN" &&
+        assignment.scope.scopeId === project?.companyId &&
+        state.companies.some(
+          (company) =>
+            company.id === project.companyId && company.status === "ACTIVE",
+        )),
+  );
+};
 const assertDemoScope = (
   state: DemoState,
   userId: string,
@@ -85,6 +134,7 @@ const assertDemoScope = (
   const role = me.roles.highestRoleCode;
   const parts = path.split("?")[0].split("/").filter(Boolean);
   if (
+    (parts[0] === "attendance" && parts[1] === "planning") ||
     role === "SYSTEM_ADMIN" ||
     parts[0] === "auth" ||
     parts[0] === "account" ||
@@ -93,6 +143,7 @@ const assertDemoScope = (
     parts[0] === "app"
   )
     return;
+  if (parts[0] === "makeups" && parts[1] === "pending") return;
   const assignedScope = me.roles.assignments[0]?.scope.scopeId;
   const managedCompany = state.companies.find(
     (row) => row.id === assignedScope,
@@ -169,22 +220,42 @@ const routeDemo = (
   );
   const me = demoMe(state, userId);
   assertDemoScope(state, userId, path, method);
+  if (parts[0] === "attendance" && parts[1] === "planning")
+    return demoPlanRequest(state, userId, parts, method, options.data);
+  if (parts[0] === "me" && parts[3] === "attendance-plan")
+    return response(
+      state,
+      effectiveDemoPlan(
+        state,
+        requirePerson(state, userId, parts[2]),
+        query.date,
+      ),
+    );
   if (path === "/app/settings") return response(state, state.settings);
   if (path === "/auth/me") return response(state, me);
   if (path === "/account/profile" || path === "/account/avatar") {
     const person = state.people.find((row) => row.profileId === me.profile.id);
     const profile: AccountProfile = {
+      realName: state.accountProfiles?.[userId]?.realName ?? null,
+      phone: state.accountProfiles?.[userId]?.phone ?? null,
       nickname: state.accountProfiles?.[userId]?.nickname ?? null,
       avatarDataUrl: state.accountProfiles?.[userId]?.avatarDataUrl ?? null,
       isBound: me.user.isBound,
-      phoneMasked: person
-        ? person.phone.replace(/^(\d{3})\d+(\d{4})$/, "$1****$2")
+      phoneMasked: state.accountProfiles?.[userId]?.phone
+        ? state.accountProfiles[userId].phone!.replace(
+            /^(\d{3})\d+(\d{4})$/,
+            "$1****$2",
+          )
         : null,
     };
     if (method === "GET" && path === "/account/profile")
       return response(state, profile);
     if (method === "PUT" && path === "/account/profile") {
-      const { nickname } = options.data as { readonly nickname: string };
+      const { nickname, realName, phone } = options.data as {
+        readonly nickname: string;
+        readonly realName: string;
+        readonly phone: string;
+      };
       if (
         typeof nickname !== "string" ||
         nickname.trim().length === 0 ||
@@ -192,7 +263,34 @@ const routeDemo = (
       ) {
         throw new ApiError(400, "昵称须为 1 至 32 个字符。", { path });
       }
-      const updated: AccountProfile = { ...profile, nickname: nickname.trim() };
+      if (
+        typeof realName !== "string" ||
+        !realName.trim() ||
+        realName.trim().length > 30 ||
+        !/^[\p{L}\p{M} ·•・.'’-]+$/u.test(realName.trim())
+      )
+        throw new ApiError(400, "请填写真实姓名，长度为 1 至 30 个字符。", {
+          path,
+        });
+      if (typeof phone !== "string" || !/^1[3-9]\d{9}$/.test(phone.trim()))
+        throw new ApiError(400, "请填写有效的 11 位手机号。", { path });
+      if (
+        person &&
+        (person.displayName?.replace(/（演示）$/, "") !== realName.trim() ||
+          person.phone !== phone.trim())
+      )
+        throw new ApiError(
+          403,
+          "姓名或手机号与人员档案不一致，请核对后重试。",
+          { path },
+        );
+      const updated: AccountProfile = {
+        ...profile,
+        nickname: nickname.trim(),
+        realName: realName.trim(),
+        phone: phone.trim(),
+        phoneMasked: phone.trim().replace(/^(\d{3})\d+(\d{4})$/, "$1****$2"),
+      };
       return response(
         {
           ...state,
@@ -239,6 +337,27 @@ const routeDemo = (
         "邀请码无效、已使用或当前身份已绑定。演示邀请码：HANBO-DEMO",
         { code },
       );
+    const account = state.accountProfiles?.[userId];
+    if (
+      !account?.realName?.trim() ||
+      !/^1[3-9]\d{9}$/.test(account.phone ?? "") ||
+      !account.nickname?.trim() ||
+      !account.avatarDataUrl
+    )
+      throw new ApiError(403, "请先完善头像、昵称、真实姓名和手机号。", {
+        path,
+      });
+    const target = state.people.find(
+      (person) => person.profileId === invitation.profileId,
+    );
+    if (
+      !target ||
+      account.realName !== target.displayName?.replace(/（演示）$/, "") ||
+      account.phone !== target.phone
+    )
+      throw new ApiError(403, "姓名或手机号与人员档案不一致，请核对后重试。", {
+        path,
+      });
     return response(
       {
         ...state,
@@ -317,6 +436,40 @@ const routeDemo = (
           teamName: row.teamName,
         })),
     );
+  if (pathname === "/me/attendance-days") {
+    const dates = Array.from(
+      {
+        length: Math.min(
+          93,
+          Math.floor(
+            (Date.parse(query.to) - Date.parse(query.from)) / 86400_000,
+          ) + 1,
+        ),
+      },
+      (_, i) =>
+        new Date(Date.parse(query.from) + i * 86400_000)
+          .toISOString()
+          .slice(0, 10),
+    );
+    return response(
+      state,
+      state.people
+        .filter((person) => person.profileId === me.profile.id)
+        .flatMap((person) =>
+          dates
+            .filter(
+              (date) =>
+                date <= chinaToday() &&
+                demoMemberEligible(demoMemberOn(state, person, date), date),
+            )
+            .map((date) => ({
+              ...dailyPerson(state, person, date),
+              projectId: person.projectId,
+              attendanceDate: date,
+            })),
+        ),
+    );
+  }
   if (pathname === "/me/attendance-records")
     return response(
       state,
@@ -337,58 +490,48 @@ const routeDemo = (
     const person = requirePerson(state, userId, projectId);
     const project = state.projects.find((row) => row.id === projectId);
     if (!project) throw new ApiError(404, "项目不存在。", { projectId });
-    const configuration = effectiveDemoConfiguration(
-      state,
-      person,
-      chinaToday(),
-    );
-    const shift = configuration?.shift;
-    const schedule = configuration?.schedule;
     const date = chinaToday();
-    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
-    const isWorkday =
-      !!schedule &&
-      schedule.startsOn <= date &&
-      (schedule.endsOn === null || date <= schedule.endsOn) &&
-      schedule.workdays.some((day) => day === weekday);
+    const plan = effectiveDemoPlan(state, person, date);
+    const enabled =
+      project.status === "ACTIVE" &&
+      person.status === "ACTIVE" &&
+      demoMemberEligible(demoMemberOn(state, person, date), date);
+    const summary = demoDaySummary(state, person, date);
     return response(state, {
       attendanceDate: date,
-      configured: !!shift && !!schedule,
+      configured: true,
       geofence: {
         centerLatitude: project.centerLatitude,
         centerLongitude: project.centerLongitude,
         radiusM: project.geofenceRadiusM,
       },
-      isWorkday,
-      shiftName: shift?.name ?? null,
-      result: demoDaySummary(state, person, date),
-      points: shift
-        ? DEMO_POINT_CODES.map((pointCode, index) => ({
-            pointCode,
-            scheduledTime: [
-              shift.segments[0].startTime,
-              shift.segments[0].endTime,
-              shift.segments[1].startTime,
-              shift.segments[1].endTime,
-            ][index],
-            graceMins:
-              index === 0
-                ? shift.segments[0].lateGraceMins
-                : shift.segments[1].earlyGraceMins,
-            record:
-              state.records
-                .filter(
-                  (r) =>
-                    r.projectId === projectId &&
-                    r.participantId === person.profileId &&
-                    r.attendanceDate === date &&
-                    r.pointCode === pointCode,
-                )
-                .slice(-1)[0] ?? null,
-          }))
-        : [],
+      isWorkday: enabled && plan.isWorkday,
+      shiftName: enabled ? plan.name : "项目或成员已停用考勤",
+      result: summary,
+      points:
+        enabled && plan.isWorkday
+          ? plan.points.map((point) => ({
+              pointCode: point.code,
+              label: point.label,
+              kind: point.kind,
+              scheduledTime: point.time,
+              graceMins: point.graceMins,
+              record:
+                summary.selectedRecords[point.code] === undefined
+                  ? null
+                  : {
+                      occurredAt:
+                        summary.selectedRecords[
+                          point.code
+                        ]!.occurredAt.toISOString(),
+                      status: "VALID",
+                      abnormalReason: null,
+                    },
+            }))
+          : [],
     });
   }
+
   if (parts[0] === "management" || parts[0] === "bindings") {
     const scope = parts[1];
     const scopeId = parts[2];
@@ -400,8 +543,13 @@ const routeDemo = (
             state,
             state.projects.filter((row) => row.companyId === scopeId),
           );
-        const project: CompanyProject = {
+        const project: ManagedProject = {
           ...(options.data as CreateProjectBody),
+          code: null,
+          contactName: null,
+          contactPhone: null,
+          remark: null,
+          updatedAt: new Date().toISOString(),
           id: demoId("project"),
           companyId: scopeId,
         };
@@ -435,24 +583,183 @@ const routeDemo = (
       const project = state.projects.find((row) => row.id === scopeId);
       if (!project)
         throw new ApiError(404, "项目不存在。", { projectId: scopeId });
-      if (!resource)
-        return method === "GET"
-          ? response(state, project)
-          : response(
-              {
-                ...state,
-                projects: state.projects.map((row) =>
-                  row.id === scopeId ? (options.data as CompanyProject) : row,
-                ),
-              },
-              options.data,
-            );
+      if (resource === "reuse-projects")
+        return response(
+          state,
+          state.projects
+            .filter(
+              (row) =>
+                row.id !== scopeId &&
+                row.companyId === project.companyId &&
+                canManageDemoProject(state, userId, row.id),
+            )
+            .map((row) => ({ id: row.id, name: row.name })),
+        );
+      if (resource === "reused-participants") {
+        const body = options.data as ReusePersonForm;
+        const sourceProject = state.projects.find(
+          (row) => row.id === body.sourceProjectId,
+        );
+        if (
+          !sourceProject ||
+          sourceProject.id === scopeId ||
+          sourceProject.companyId !== project.companyId ||
+          !canManageDemoProject(state, userId, sourceProject.id)
+        )
+          throw new ApiError(403, "需要同一公司来源项目的管理权限。", {});
+        const source = state.people.find(
+          (row) =>
+            row.projectId === body.sourceProjectId &&
+            row.memberId === body.sourceMemberId &&
+            row.participantType === body.participantType,
+        );
+        if (!source) throw new ApiError(404, "来源人员不存在。", {});
+        if (
+          source.updatedAt !== body.expectedSourceUpdatedAt ||
+          source.profileUpdatedAt !== body.expectedProfileUpdatedAt
+        )
+          throw new ApiError(409, "来源资料已更新，请重新选择。", {});
+        if (
+          state.people.some(
+            (row) =>
+              row.projectId === scopeId &&
+              (row.profileId === source.profileId ||
+                row.phone === source.phone),
+          )
+        )
+          throw new ApiError(
+            409,
+            "此人员已在本项目，请在人员列表恢复或编辑。",
+            {},
+          );
+        const team =
+          body.teamId === null
+            ? null
+            : state.teams.find(
+                (row) => row.id === body.teamId && row.projectId === scopeId,
+              );
+        if (body.teamId !== null && !team)
+          throw new ApiError(400, "班组不属于目标项目。", {});
+        if (
+          source.participantType === "MANAGER" &&
+          ((body.projectRoleLabel !== "TEAM_LEADER" &&
+            body.projectRoleLabel !== "PROJECT_ADMIN") ||
+            (body.projectRoleLabel === "TEAM_LEADER" && !team) ||
+            (body.projectRoleLabel === "PROJECT_ADMIN" && team))
+        )
+          throw new ApiError(400, "请检查管理员角色与班组。", {});
+        const person: ManagedParticipant = {
+          ...source,
+          memberId: demoId("member"),
+          projectId: scopeId,
+          projectRoleLabel: body.projectRoleLabel,
+          teamId: body.teamId,
+          teamName: team?.name ?? null,
+          enteredAt: body.enteredAt,
+          exitedAt: null,
+          requiresAttendance: body.requiresAttendance,
+          status: "ACTIVE",
+          updatedAt: new Date().toISOString(),
+        };
+        return response(
+          { ...state, people: [...state.people, person] },
+          person,
+        );
+      }
+      if (resource === "managed-teams")
+        return response(
+          state,
+          state.teams
+            .filter((team) => team.projectId === scopeId)
+            .map((team) => managedDemoTeam(state, team)),
+        );
+      if (!resource) {
+        if (method === "GET") return response(state, project);
+        const body = options.data as ManagedProject & {
+          readonly expectedUpdatedAt: string;
+        };
+        if (body.expectedUpdatedAt !== project.updatedAt)
+          throw new ApiError(409, "项目资料已更新，请重新进入。", {});
+        const updated: ManagedProject = {
+          ...body,
+          updatedAt: new Date(
+            Math.max(Date.now(), new Date(project.updatedAt).getTime() + 1),
+          ).toISOString(),
+        };
+        return response(
+          {
+            ...state,
+            projects: state.projects.map((row) =>
+              row.id === scopeId ? updated : row,
+            ),
+          },
+          updated,
+        );
+      }
+      if (resource === "participant-page") {
+        const parameters = new Map<string, string>(
+          (path.split("?")[1] ?? "")
+            .split("&")
+            .map((pair): [string, string] => {
+              const separator = pair.indexOf("=");
+              return [
+                pair.slice(0, separator),
+                decodeURIComponent(pair.slice(separator + 1)),
+              ];
+            }),
+        );
+        const page = Number(parameters.get("page"));
+        const pageSize = Number(parameters.get("pageSize"));
+        const search = (parameters.get("search") ?? "").trim();
+        const participantType = parameters.get("participantType");
+        const permissionRole = parameters.get("permissionRole");
+        if (
+          permissionRole !== undefined &&
+          !["WORKER", "TEAM_LEADER", "PROJECT_ADMIN"].includes(permissionRole)
+        )
+          throw new ApiError(400, "项目人员权限筛选无效。", { path });
+        const teamId = parameters.get("teamId");
+        const status = parameters.get("status");
+        const rows = state.people.filter(
+          (person) =>
+            person.projectId === scopeId &&
+            (!participantType || person.participantType === participantType) &&
+            (!permissionRole ||
+              participantPermissionRole(person) === permissionRole) &&
+            (!teamId || person.teamId === teamId) &&
+            (!status || person.status === status) &&
+            (!search ||
+              (person.displayName ?? "").startsWith(search) ||
+              `${person.phone} ${person.workType} ${person.projectRoleLabel} ${person.teamName ?? ""}`.includes(
+                search,
+              )),
+        );
+        const ordered = [
+          ...rows.filter((person) => person.participantType === "WORKER"),
+          ...rows.filter((person) => person.participantType === "MANAGER"),
+        ];
+        return response(state, {
+          items: ordered.slice((page - 1) * pageSize, page * pageSize),
+          page,
+          pageSize,
+          total: rows.length,
+        });
+      }
       if (resource === "participants") {
-        if (method === "GET")
+        if (method === "GET") {
+          if (parts[4]) {
+            const person = state.people.find(
+              (row) => row.projectId === scopeId && row.memberId === parts[4],
+            );
+            if (!person)
+              throw new ApiError(404, "成员不存在。", { memberId: parts[4] });
+            return response(state, person);
+          }
           return response(
             state,
             state.people.filter((row) => row.projectId === scopeId),
           );
+        }
         const body = options.data as PersonForm;
         const original = state.people.find(
           (row) => row.memberId === parts[4] && row.projectId === scopeId,
@@ -472,8 +779,41 @@ const routeDemo = (
             "此项目已有相同手机号的成员，请编辑已有档案。",
             { projectId: scopeId, phone: body.phone },
           );
-        const person: ProjectParticipant = {
+        if (!body.workType || !body.enteredAt)
+          throw new ApiError(400, "请填写工种和进场日期。", {});
+        if (
+          original &&
+          (body.expectedUpdatedAt !== original.updatedAt ||
+            body.expectedProfileUpdatedAt !== original.profileUpdatedAt)
+        )
+          throw new ApiError(409, "资料已更新，请重新进入。", {});
+        const now = new Date(
+          Math.max(
+            Date.now(),
+            original ? Date.parse(original.updatedAt) + 1 : 0,
+            original ? Date.parse(original.profileUpdatedAt) + 1 : 0,
+          ),
+        ).toISOString();
+        const profileChanged: boolean =
+          !original ||
+          original.displayName !== body.displayName ||
+          original.phone !== body.phone ||
+          original.workType !== body.workType;
+        if (
+          original &&
+          profileChanged &&
+          state.people.some(
+            (row) =>
+              row.profileId === original.profileId &&
+              !canManageDemoProject(state, userId, row.projectId),
+          )
+        )
+          throw new ApiError(403, "基础资料需要所有相关项目的管理权限。", {});
+        const person: ManagedParticipant = {
           ...body,
+          updatedAt: now,
+          profileUpdatedAt: profileChanged ? now : original!.profileUpdatedAt,
+          nameStatus: "AVAILABLE",
           projectId: scopeId,
           profileId: original?.profileId ?? demoId("profile"),
           memberId: original?.memberId ?? demoId("member"),
@@ -483,15 +823,111 @@ const routeDemo = (
         return response(
           {
             ...state,
+            memberHistories: [
+              ...(state.memberHistories ?? []),
+              ...(original &&
+              !(state.memberHistories ?? []).some(
+                (h) => h.person.memberId === original.memberId,
+              )
+                ? [{ recordedAt: original.enteredAt, person: original }]
+                : []),
+              { recordedAt: now, person },
+            ],
             people: [
-              ...state.people.filter((row) => row.memberId !== person.memberId),
+              ...state.people
+                .filter((row) => row.memberId !== person.memberId)
+                .map((row) =>
+                  profileChanged && row.profileId === person.profileId
+                    ? {
+                        ...row,
+                        displayName: person.displayName,
+                        workType: person.workType,
+                        phone: person.phone,
+                        profileUpdatedAt: person.profileUpdatedAt,
+                      }
+                    : row,
+                ),
               person,
             ],
+            teams: state.teams.map((team) =>
+              team.projectId === scopeId &&
+              team.leader?.memberId === person.memberId &&
+              (person.status !== "ACTIVE" || person.teamId !== team.id)
+                ? {
+                    ...team,
+                    leader: null,
+                    updatedAt: new Date(
+                      Math.max(
+                        Date.now(),
+                        Date.parse(team.updatedAt ?? "1970-01-01") + 1,
+                      ),
+                    ).toISOString(),
+                  }
+                : team,
+            ),
           },
           person,
         );
       }
       if (resource === "teams") {
+        if (parts[4]) {
+          const original = state.teams.find(
+            (team) => team.id === parts[4] && team.projectId === scopeId,
+          );
+          if (!original) throw new ApiError(404, "班组不存在。", {});
+          if (method === "GET")
+            return response(state, managedDemoTeam(state, original));
+          const body = options.data as TeamForm;
+          if (
+            body.expectedUpdatedAt !==
+            managedDemoTeam(state, original).updatedAt
+          )
+            throw new ApiError(409, "班组资料已更新，请重新进入。", {});
+          if (
+            state.teams.some(
+              (team) =>
+                team.projectId === scopeId &&
+                team.id !== original.id &&
+                team.name === body.name,
+            )
+          )
+            throw new ApiError(409, "此项目已有同名班组。", {});
+          if (
+            body.leader &&
+            !state.people.some(
+              (person) =>
+                person.projectId === scopeId &&
+                person.teamId === original.id &&
+                person.memberId === body.leader?.memberId &&
+                person.participantType === body.leader.participantType &&
+                person.status === "ACTIVE",
+            )
+          )
+            throw new ApiError(400, "负责人必须是本班组在场成员。", {});
+          const updated = {
+            ...original,
+            name: body.name,
+            status: body.status,
+            workType: body.workType,
+            remark: body.remark,
+            leader: body.leader,
+            updatedAt: new Date(
+              Math.max(Date.now(), Date.parse(body.expectedUpdatedAt) + 1),
+            ).toISOString(),
+          };
+          const next: DemoState = {
+            ...state,
+            teams: state.teams.map((team) =>
+              team.id === original.id ? updated : team,
+            ),
+            people: state.people.map((person) =>
+              person.projectId === scopeId && person.teamId === original.id
+                ? { ...person, teamName: updated.name }
+                : person,
+            ),
+          };
+          return response(next, managedDemoTeam(next, updated));
+        }
         if (method === "GET")
           return response(
             state,
@@ -584,6 +1020,17 @@ const routeDemo = (
     const configKey = scoped
       ? `${projectId}/${parts[3]}/${parts[4]}`
       : projectId;
+    if (
+      method !== "GET" &&
+      [
+        "default-shift",
+        "default-schedule",
+        "shift",
+        "schedule",
+        "configuration",
+      ].includes(resource)
+    )
+      throw new ApiError(410, "旧排班写入接口已停用，请使用打卡安排。", {});
     if (scoped && method === "DELETE" && resource === "configuration")
       return response(
         {
@@ -639,7 +1086,61 @@ const routeDemo = (
     if (resource === "records") {
       const person = requirePerson(state, userId, projectId);
       const body = options.data as SubmitAttendanceRecordBody;
+      const project = state.projects.find((row) => row.id === projectId);
+      if (project === undefined)
+        throw new ApiError(404, "项目不存在。", { projectId });
+      if (project.status !== "ACTIVE")
+        throw new ApiError(400, "项目当前状态不能打卡。", {});
+      const location = checkAttendanceGeofence(
+        {
+          centerLatitude: project.centerLatitude,
+          centerLongitude: project.centerLongitude,
+          radiusM: project.geofenceRadiusM,
+        },
+        {
+          latitude: body.latitude,
+          longitude: body.longitude,
+          accuracyM: body.locationAccuracyM,
+        },
+      );
+      if (!location.isInside)
+        throw new ApiError(
+          400,
+          "不在考勤范围内，无法打卡。请进入项目范围后重新打卡。",
+          { message: "OUTSIDE_GEOFENCE", projectId },
+        );
+      const plan = effectiveDemoPlan(state, person, body.attendanceDate);
+      const point = plan.points.find((row) => row.code === body.pointCode);
+      if (
+        !demoMemberEligible(
+          demoMemberOn(state, person, body.attendanceDate),
+          body.attendanceDate,
+        )
+      )
+        throw new ApiError(400, "该日期不在有效考勤成员期间内。", {});
+      if (
+        state.records.some(
+          (r) =>
+            r.projectId === person.projectId &&
+            r.participantId === person.profileId &&
+            r.attendanceDate === body.attendanceDate &&
+            r.pointCode === body.pointCode &&
+            r.status === "VALID",
+        ) ||
+        state.makeups.some(
+          (r) =>
+            r.projectId === person.projectId &&
+            r.participantId === person.profileId &&
+            r.attendanceDate === body.attendanceDate &&
+            r.pointCode === body.pointCode &&
+            r.status !== "REJECTED",
+        )
+      )
+        throw new ApiError(409, "该时点已有打卡或补卡，请刷新记录。", {});
+      if (!plan.isWorkday || !point)
+        throw new ApiError(400, "该时点不属于当天排班。", {});
       const record = {
+        pointLabel: point.label,
         ...makeDemoRecord(
           person,
           body.attendanceDate,
@@ -656,6 +1157,42 @@ const routeDemo = (
     }
   }
   if (parts[0] === "makeups") {
+    if (parts[1] === "pending") {
+      const rows = state.makeups
+        .filter((row) => {
+          const person = state.people.find(
+            (p) =>
+              p.projectId === row.projectId &&
+              p.profileId === row.participantId,
+          );
+          if (
+            !person ||
+            row.requesterUserId === userId ||
+            row.status !== "PENDING"
+          )
+            return false;
+          const historical = demoMemberOn(state, person, row.attendanceDate);
+          return (
+            demoPlanLevel(state, userId, row.projectId, historical.teamId) >
+            ROLE_LEVEL[participantPermissionRole(historical)]
+          );
+        })
+        .map((row) => {
+          const person = state.people.find(
+            (p) =>
+              p.projectId === row.projectId &&
+              p.profileId === row.participantId,
+          )!;
+          return {
+            ...row,
+            displayName: person.displayName,
+            projectName: state.projects.find((p) => p.id === row.projectId)!
+              .name,
+            teamName: demoMemberOn(state, person, row.attendanceDate).teamName,
+          };
+        });
+      return response(state, { items: rows, nextCursor: null });
+    }
     if (parts[1] === "teams")
       return response(
         state,
@@ -673,8 +1210,43 @@ const routeDemo = (
     if (parts[1] === "projects") {
       const person = requirePerson(state, userId, parts[2]);
       const body = options.data as SubmitMakeupBody;
+      const plan = effectiveDemoPlan(state, person, body.attendanceDate);
+      const point = plan.points.find((row) => row.code === body.pointCode);
+      if (
+        !demoMemberEligible(
+          demoMemberOn(state, person, body.attendanceDate),
+          body.attendanceDate,
+        )
+      )
+        throw new ApiError(400, "该日期不在有效考勤成员期间内。", {});
+      if (
+        state.records.some(
+          (r) =>
+            r.projectId === person.projectId &&
+            r.participantId === person.profileId &&
+            r.attendanceDate === body.attendanceDate &&
+            r.pointCode === body.pointCode &&
+            r.status === "VALID",
+        ) ||
+        state.makeups.some(
+          (r) =>
+            r.projectId === person.projectId &&
+            r.participantId === person.profileId &&
+            r.attendanceDate === body.attendanceDate &&
+            r.pointCode === body.pointCode &&
+            r.status !== "REJECTED",
+        )
+      )
+        throw new ApiError(409, "该时点已有打卡或补卡，请刷新记录。", {});
+      if (
+        !plan.isWorkday ||
+        !point ||
+        new Date(body.requestedOccurredAt).getTime() > Date.now()
+      )
+        throw new ApiError(400, "请按当天有效排班申请已发生的补卡。", {});
       const makeup = {
         ...body,
+        pointLabel: point.label,
         id: demoId("makeup"),
         projectId: person.projectId,
         participantId: person.profileId,
@@ -699,6 +1271,18 @@ const routeDemo = (
       throw new ApiError(403, "不能审批自己的补卡申请。", {
         requestId: request.id,
       });
+    const applicant = state.people.find(
+      (p) =>
+        p.profileId === request.participantId &&
+        p.projectId === request.projectId,
+    );
+    if (!applicant) throw new ApiError(404, "申请人档案不存在。", {});
+    const historical = demoMemberOn(state, applicant, request.attendanceDate);
+    if (
+      demoPlanLevel(state, userId, request.projectId, historical.teamId) <=
+      ROLE_LEVEL[participantPermissionRole(historical)]
+    )
+      throw new ApiError(403, "只能审批授权范围内下级的申请。", {});
     const updated = {
       ...request,
       status:
@@ -708,23 +1292,26 @@ const routeDemo = (
       approverUserId: userId,
       approvedAt: new Date().toISOString(),
     };
-    return response(
-      {
-        ...state,
-        makeups: state.makeups.map((row) =>
-          row.id === updated.id ? updated : row,
-        ),
-      },
-      updated,
-    );
+    const next = {
+      ...state,
+      makeups: state.makeups.map((row) =>
+        row.id === updated.id ? updated : row,
+      ),
+    };
+    if (updated.status === "APPROVED")
+      demoDaySummary(next, historical, request.attendanceDate);
+    return response(next, updated);
   }
+
   if (parts[0] === "reports") {
     const scopeId = parts[2];
     const people = state.people.filter((row) =>
       parts[1] === "projects"
         ? row.projectId === scopeId
         : parts[1] === "teams"
-          ? row.teamId === scopeId
+          ? state.teams.some(
+              (team) => team.id === scopeId && row.projectId === team.projectId,
+            )
           : state.projects.some(
               (p) => p.id === row.projectId && p.companyId === scopeId,
             ),
@@ -744,7 +1331,15 @@ const routeDemo = (
           : start;
     return response(
       state,
-      demoReport(state, people, scopeId, parts[3], start, end),
+      demoReport(
+        state,
+        people,
+        scopeId,
+        parts[3],
+        start,
+        end,
+        parts[1] === "teams" ? scopeId : null,
+      ),
     );
   }
   if (parts[0] === "face-profiles") {

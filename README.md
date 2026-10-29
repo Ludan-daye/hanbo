@@ -1,5 +1,7 @@
 # 瀚渤智慧工地
 
+整体功能范围、当前状态、开发顺序与验收标准统一见 [功能总览与实施计划](docs/功能总览与实施计划.md)。后续需求和进度以该文档为入口。
+
 工地人员与考勤管理系统，采用 pnpm monorepo：
 
 - `apps/miniprogram`：Taro 4.2、React、TypeScript，支持微信小程序与 H5。

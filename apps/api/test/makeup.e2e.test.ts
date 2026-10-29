@@ -20,6 +20,12 @@ type MakeupStatusValue = "PENDING" | "APPROVED" | "REJECTED";
 type AttendanceRecordStatusValue = "VALID" | "INVALID";
 
 type UserRecord = {
+  readonly openid: string;
+  readonly isBound: boolean;
+  readonly encryptedRealName: string;
+  readonly phone: string;
+  readonly nickname: string;
+  readonly avatarObjectKey: string;
   readonly id: string;
   readonly sessionVersion: number;
   readonly status: UserStatusValue;
@@ -360,6 +366,11 @@ const applyTestEnv = (): void => {
 };
 
 class MakeupPrismaTestDouble {
+  async $executeRaw(): Promise<number> { return 1; }
+  async $transaction<T>(callback: (transaction: MakeupPrismaTestDouble) => Promise<T>): Promise<T> { return callback(this); }
+  readonly attendancePlan = { findMany: async (): Promise<[]> => [] };
+  readonly projectMemberHistory = { findMany: async (): Promise<[]> => [] };
+
   readonly users = new Map<string, UserRecord>();
   readonly sessions = new Map<string, SessionRecord>();
   readonly projects = new Map<string, ProjectRecord>();
@@ -426,6 +437,7 @@ class MakeupPrismaTestDouble {
   };
 
   readonly shift = {
+    findMany: async (args: { where: { projectId: { in: string[] }; isDefault: boolean } }): Promise<ShiftWithSegments[]> => Array.from(this.shifts.values()).filter((row) => args.where.projectId.in.includes(row.projectId) && row.isDefault === args.where.isDefault).map((row) => ({ ...row, segments: Array.from(this.shiftSegments.values()).filter((segment) => segment.shiftId === row.id) })),
     findFirst: async (args: ShiftFindFirstArgs): Promise<ShiftWithSegments | ShiftRecord | null> => {
       const shift = Array.from(this.shifts.values()).find(
         (shiftRecord: ShiftRecord): boolean =>
@@ -476,7 +488,7 @@ class MakeupPrismaTestDouble {
       if (args.include?.projectMemberships !== undefined) {
         return {
           ...profile,
-          projectMemberships: profile.projectMemberships.filter(
+          projectMemberships: profile.projectMemberships.map((member) => ({ enteredAt: new Date("2020-01-01"), exitedAt: null, projectRoleLabel: "WORKER", ...member })).filter(
             (member: ProjectWorkerMemberRecord): boolean =>
               member.projectId === args.include?.projectMemberships?.where.projectId
           )
@@ -500,7 +512,7 @@ class MakeupPrismaTestDouble {
       if (args.include?.projectMemberships !== undefined) {
         return {
           ...profile,
-          projectMemberships: profile.projectMemberships.filter(
+          projectMemberships: profile.projectMemberships.map((member) => ({ enteredAt: new Date("2020-01-01"), exitedAt: null, projectRoleLabel: "WORKER", ...member })).filter(
             (member: ProjectManagerMemberRecord): boolean =>
               member.projectId === args.include?.projectMemberships?.where.projectId
           )
@@ -521,8 +533,11 @@ class MakeupPrismaTestDouble {
             m.teamId === args.where.teamId
         )
         .map((m: ProjectWorkerMemberRecord) => ({ workerId: m.workerId })),
-    findUnique: async (args: ProjectWorkerMemberFindUniqueArgs): Promise<ProjectWorkerMemberRecord | null> =>
-      this.workerMembers.get(`${args.where.projectId_workerId.projectId}:${args.where.projectId_workerId.workerId}`) ?? null
+    findUnique: async (args: ProjectWorkerMemberFindUniqueArgs): Promise<(ProjectWorkerMemberRecord & { worker: WorkerProfileRecord; enteredAt: Date; exitedAt: null; projectRoleLabel: string }) | null> => {
+      const member = this.workerMembers.get(`${args.where.projectId_workerId.projectId}:${args.where.projectId_workerId.workerId}`);
+      const worker = member === undefined ? undefined : this.workerProfiles.get(member.workerId);
+      return member === undefined || worker === undefined ? null : { enteredAt: new Date("2020-01-01"), exitedAt: null, projectRoleLabel: "WORKER", ...member, worker };
+    }
   };
 
   readonly projectManagerMember = {
@@ -540,6 +555,8 @@ class MakeupPrismaTestDouble {
   };
 
   readonly makeupRequest = {
+    findFirst: async (): Promise<null> => null,
+    findUniqueOrThrow: async (args: MakeupRequestFindUniqueArgs): Promise<MakeupRequestRecord> => { const row = this.makeupRequests.get(args.where.id); if (!row) throw new Error("Missing makeup fixture"); return row; },
     create: async (args: MakeupRequestCreateArgs): Promise<MakeupRequestRecord> => {
       this.makeupSequence += 1;
       const requestRecord: MakeupRequestRecord = {
@@ -603,6 +620,7 @@ class MakeupPrismaTestDouble {
   };
 
   readonly attendanceRecord = {
+    findFirst: async (): Promise<null> => null,
     findMany: async (args: AttendanceRecordFindManyArgs): Promise<AttendanceRecordRecord[]> =>
       Array.from(this.attendanceRecords.values()).filter(
         (record: AttendanceRecordRecord): boolean =>
@@ -655,6 +673,12 @@ class MakeupPrismaTestDouble {
   seedActiveSession(userId: string, sessionId: string): void {
     const user: UserRecord = {
       id: userId,
+      openid: userId,
+      isBound: true,
+      encryptedRealName: "test-encrypted-name",
+      phone: "13800000000",
+      nickname: "Test",
+      avatarObjectKey: "test/avatar.png",
       sessionVersion: 1,
       status: "ACTIVE"
     };
@@ -1065,7 +1089,7 @@ describe("MakeupModule", (): void => {
       .expect(403);
   });
 
-  test("POST /makeups/projects/:projectId/requests returns 403 without makeup.request at the project scope", async (): Promise<void> => {
+  test("POST /makeups/projects/:projectId/requests rejects accounts without membership", async (): Promise<void> => {
     // Seed a user with TEAM_LEADER role at a different team (team-other), giving them no makeup.request
     // permission at project-1 scope.
     prisma.seedActiveSession("no-permission-user", "session-no-permission");
@@ -1085,6 +1109,6 @@ describe("MakeupModule", (): void => {
       .post("/makeups/projects/project-1/requests")
       .set("Authorization", `Bearer ${noPermissionToken}`)
       .send(createMakeupBody("2026-06-03", "SEGMENT_1_START", "2026-06-03T08:00:00.000+08:00"))
-      .expect(403);
+      .expect(400);
   });
 });

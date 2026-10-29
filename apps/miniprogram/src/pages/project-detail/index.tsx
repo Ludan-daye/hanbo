@@ -1,4 +1,4 @@
-import { View } from "@tarojs/components";
+import { Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
@@ -18,7 +18,7 @@ import { useSession } from "../../store/session";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { FEATURES } from "../../routing/features";
-import type { CompanyProject } from "../../services/management.types";
+import type { ManagedProject } from "../../services/management.types";
 import { fetchProject, updateProject } from "../../services/workflows";
 
 export default function ProjectDetail(): JSX.Element {
@@ -26,7 +26,7 @@ export default function ProjectDetail(): JSX.Element {
   const { state } = useSession();
   const projectId = useManagedProjectId(state.me);
   const { revision, refresh } = usePageRefresh();
-  const [project, setProject] = useState<CompanyProject | null>(null);
+  const [project, setProject] = useState<ManagedProject | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   useEffect(() => {
@@ -121,6 +121,62 @@ export default function ProjectDetail(): JSX.Element {
           </Section>
           <Section title="项目设置">
             <Field
+              label="项目编号"
+              value={project.code ?? ""}
+              placeholder="同一公司内唯一"
+              onInput={(code) =>
+                setProject({ ...project, code: code.trim() || null })
+              }
+            />
+            <Field
+              label="联系人"
+              value={project.contactName ?? ""}
+              placeholder="现场联系人"
+              onInput={(contactName) =>
+                setProject({
+                  ...project,
+                  contactName: contactName.trim() || null,
+                })
+              }
+            />
+            <Field
+              label="联系电话"
+              value={project.contactPhone ?? ""}
+              placeholder="11 位手机号"
+              type="number"
+              maxLength={11}
+              onInput={(contactPhone) =>
+                setProject({ ...project, contactPhone: contactPhone || null })
+              }
+            />
+            <Picker
+              mode="date"
+              value={project.plannedStartDate}
+              onChange={(event) =>
+                setProject({ ...project, plannedStartDate: event.detail.value })
+              }
+            >
+              <ListItem
+                primary="计划开工日期"
+                secondary={project.plannedStartDate}
+                chip="选择"
+              />
+            </Picker>
+            <Picker
+              mode="date"
+              value={project.plannedEndDate ?? project.plannedStartDate}
+              start={project.plannedStartDate}
+              onChange={(event) =>
+                setProject({ ...project, plannedEndDate: event.detail.value })
+              }
+            >
+              <ListItem
+                primary="计划完工日期"
+                secondary={project.plannedEndDate ?? "未设置"}
+                chip="选择"
+              />
+            </Picker>
+            <Field
               label="项目名称"
               value={project.name}
               placeholder="项目名称"
@@ -165,6 +221,15 @@ export default function ProjectDetail(): JSX.Element {
               placeholder="正整数"
               onInput={(value) =>
                 setProject({ ...project, geofenceRadiusM: Number(value) })
+              }
+            />
+            <Field
+              label="备注"
+              value={project.remark ?? ""}
+              placeholder="项目补充说明"
+              maxLength={1000}
+              onInput={(remark) =>
+                setProject({ ...project, remark: remark || null })
               }
             />
             <Notice>修改范围会影响后续打卡，请核对现场位置后保存。</Notice>

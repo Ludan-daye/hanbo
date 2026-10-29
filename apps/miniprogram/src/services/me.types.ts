@@ -1,9 +1,10 @@
-export type AttendancePointCode = "SEGMENT_1_START" | "SEGMENT_1_END" | "SEGMENT_2_START" | "SEGMENT_2_END";
+export type AttendancePointCode = string;
 export type ParticipantType = "WORKER" | "MANAGER";
 export type AttendanceRecordStatus = "VALID" | "INVALID";
 export type MakeupStatus = "PENDING" | "APPROVED" | "REJECTED";
 
 export type AttendanceRecord = {
+  readonly pointLabel?: string | null;
   readonly id: string;
   readonly projectId: string;
   readonly participantType: ParticipantType;
@@ -26,6 +27,7 @@ export type AttendanceRecord = {
 };
 
 export type Makeup = {
+  readonly pointLabel?: string | null;
   readonly id: string;
   readonly projectId: string;
   readonly participantId: string;
@@ -63,6 +65,8 @@ export type AttendanceTodayPointRecord = {
 };
 
 export type AttendanceTodayPoint = {
+  readonly label: string;
+  readonly kind: "START" | "END" | "CHECKPOINT";
   readonly graceMins: number;
   readonly pointCode: AttendancePointCode;
   readonly record: AttendanceTodayPointRecord | null;
@@ -115,3 +119,5 @@ export type SubmitAttendanceRecordResult = {
   readonly record: AttendanceRecord;
   readonly result: AttendanceResultSummary;
 };
+
+export type MyAttendanceDay = AttendanceResultSummary & { readonly approvedMakeupCount: number; readonly teamName: string | null };

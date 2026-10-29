@@ -96,7 +96,7 @@ export class FaceService {
       throw new BadRequestException({ message: "FACE_IMAGE_SIZE_INVALID" });
     if (imageType(file.buffer) !== file.mimetype)
       throw new BadRequestException({ message: "FACE_IMAGE_INVALID" });
-    const upload = await this.uploads.storeImage(file);
+    const upload = await this.uploads.storeImage(file, userId);
     const profile = await this.prisma.$transaction(async (tx) => {
       await lockOwner(tx, owner);
       const latest = await tx.faceProfile.findFirst({

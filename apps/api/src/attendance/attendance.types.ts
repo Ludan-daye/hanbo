@@ -67,6 +67,7 @@ export type SubmitAttendanceRecordRequest = {
 };
 
 export type AttendanceRecordResponse = {
+  readonly pointLabel?: string | null;
   readonly abnormalReason: string | null;
   readonly attendanceDate: string;
   readonly facePassed: boolean;
@@ -112,6 +113,8 @@ export type AttendanceTodayPointRecord = {
 };
 
 export type AttendanceTodayPoint = {
+  readonly label: string;
+  readonly kind: "START" | "END" | "CHECKPOINT";
   readonly graceMins: number;
   readonly pointCode: AttendancePointCode;
   readonly record: AttendanceTodayPointRecord | null;

@@ -7,11 +7,13 @@ import type { PanelKey } from "../../routing/roleHome";
 
 export const RolePanel = ({
   panel,
+  limit,
 }: {
   readonly panel: PanelKey;
+  readonly limit?: number;
 }): JSX.Element => (
   <View className="feature-grid">
-    {FEATURES[panel].map((feature) => (
+    {FEATURES[panel].slice(0, limit).map((feature) => (
       <View
         key={feature.url}
         className="feature-card"
@@ -24,8 +26,11 @@ export const RolePanel = ({
         >
           <AppIcon name={feature.icon} />
         </View>
-        <View className="feature-card__title">{feature.title}</View>
-        <View className="feature-card__sub">{feature.sub}</View>
+        <View className="feature-card__body">
+          <View className="feature-card__title">{feature.title}</View>
+          <View className="feature-card__sub">{feature.sub}</View>
+        </View>
+        <View className="feature-card__arrow">›</View>
       </View>
     ))}
     {panel === "none" ? (

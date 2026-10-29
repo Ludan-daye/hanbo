@@ -1,9 +1,11 @@
 import { Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useState } from "react";
-import { usePageRefresh } from "../../hooks/use-page-refresh";
-import { useSessionGuard } from "../../hooks/use-session-guard";
-
+import { useEffect, useRef, useState } from "react";
+import {
+  defaultAttendancePoints,
+  validateAttendancePoints,
+  type ScheduledAttendancePoint,
+} from "@construction/domain/attendance.js";
 import {
   Button,
   Field,
@@ -14,477 +16,407 @@ import {
   Screen,
   StateView,
 } from "../../components/ui/index";
-import { useManagedProjectId } from "../../hooks/use-management-scope";
+import { usePageRefresh } from "../../hooks/use-page-refresh";
+import { useSessionGuard } from "../../hooks/use-session-guard";
 import {
-  fetchParticipants,
-  fetchProjectTeams,
-} from "../../services/management";
-import {
-  fetchScopedConfiguration,
-  removeScopedConfiguration,
-  saveScopedSchedule,
-  saveScopedShift,
-  type ScheduleScope,
-} from "../../services/schedule-scopes";
-import type { IsoWeekday, ShiftSegment } from "../../services/management.types";
+  fetchPlanScopes,
+  fetchPlanConfiguration,
+  savePlanConfiguration,
+  inheritPlanConfiguration,
+  type PlanScope,
+  type PlanConfiguration,
+  type PlanInput,
+} from "../../services/attendance-plans";
 import { chinaToday } from "../../services/time";
-import { useSession } from "../../store/session";
 
-const WEEKDAY_LABELS: ReadonlyArray<{ value: IsoWeekday; label: string }> = [
-  { value: 1, label: "一" },
-  { value: 2, label: "二" },
-  { value: 3, label: "三" },
-  { value: 4, label: "四" },
-  { value: 5, label: "五" },
-  { value: 6, label: "六" },
-  { value: 7, label: "日" },
-];
+const tomorrow = (): string =>
+  new Date(Date.parse(`${chinaToday()}T00:00:00Z`) + 86400_000)
+    .toISOString()
+    .slice(0, 10);
+const KINDS = [
+  { value: "START", label: "上班" },
+  { value: "END", label: "下班" },
+  { value: "CHECKPOINT", label: "中途签到" },
+] as const;
+const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 
 export default function Schedules(): JSX.Element {
   useSessionGuard();
-  const { state } = useSession();
+  const requestedProject = Taro.useRouter().params.projectId;
   const { revision, refresh } = usePageRefresh();
-  const projectId = useManagedProjectId(state.me);
-
-  const [scopes, setScopes] = useState<readonly ScheduleScope[]>([]);
+  const [scopes, setScopes] = useState<readonly PlanScope[] | null>(null);
   const [scopeIndex, setScopeIndex] = useState<number>(0);
-  const target = scopes[scopeIndex] ?? null;
-  const [lateGrace, setLateGrace] = useState<string>("0");
-  const [earlyGrace, setEarlyGrace] = useState<string>("0");
+  const scope = scopes?.[scopeIndex] ?? null;
+  const [configuration, setConfiguration] = useState<PlanConfiguration | null>(
+    null,
+  );
+  const [name, setName] = useState<string>("每日两次");
+  const [points, setPoints] = useState<readonly ScheduledAttendancePoint[]>(
+    defaultAttendancePoints,
+  );
+  const [startsOn, setStartsOn] = useState<string>(tomorrow());
+  const [endsOn, setEndsOn] = useState<string | null>(null);
+  const [workdays, setWorkdays] = useState<readonly number[]>([
+    1, 2, 3, 4, 5, 6, 7,
+  ]);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [configured, setConfigured] = useState<boolean>(false);
-  const [shiftSaved, setShiftSaved] = useState<boolean>(false);
-  const [loadedSegments, setLoadedSegments] = useState<
-    readonly ShiftSegment[] | null
-  >(null);
-
-  // shift
-  const [shiftName, setShiftName] = useState<string>("默认班次");
-  const [s1Start, setS1Start] = useState<string>("08:00");
-  const [s1End, setS1End] = useState<string>("12:00");
-  const [s2Start, setS2Start] = useState<string>("13:00");
-  const [s2End, setS2End] = useState<string>("17:00");
-  const [busyShift, setBusyShift] = useState(false);
-
-  // schedule
-  const [startsOn, setStartsOn] = useState<string>(chinaToday());
-  const [endsOn, setEndsOn] = useState<string | null>(null);
-  const [workdays, setWorkdays] = useState<ReadonlyArray<IsoWeekday>>([
-    1, 2, 3, 4, 5,
-  ]);
-  const [busySchedule, setBusySchedule] = useState(false);
-
+  const [busy, setBusy] = useState<boolean>(false);
+  const operation = useRef<boolean>(false);
   useEffect(() => {
-    if (projectId === null) return;
     let cancelled = false;
-    void Promise.all([
-      fetchProjectTeams(projectId),
-      fetchParticipants(projectId),
-    ]).then(
-      ([teams, people]) => {
+    setError(null);
+    void fetchPlanScopes().then(
+      (rows) => {
         if (!cancelled)
-          setScopes([
-            { scopeType: "PROJECT", scopeId: projectId, label: "项目默认排班" },
-            ...teams.map((row) => ({
-              scopeType: "TEAM" as const,
-              scopeId: row.id,
-              label: `班组 · ${row.name}`,
-            })),
-            ...people
-              .filter((row) => row.status === "ACTIVE")
-              .map((row) => ({
-                scopeType: "MEMBER" as const,
-                scopeId: row.memberId,
-                label: `个人 · ${row.displayName ?? row.phone}`,
-              })),
-          ]);
-      },
-      (failure: unknown) => {
-        if (!cancelled) {
-          setLoadError(
-            failure instanceof Error ? failure.message : "无法读取排班对象",
+          setScopes(
+            requestedProject
+              ? rows.filter((row) => row.projectId === requestedProject)
+              : rows,
           );
-          setLoading(false);
-        }
+      },
+      (cause: unknown) => {
+        if (!cancelled)
+          setError(cause instanceof Error ? cause.message : "无法读取排班对象");
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
-
+  }, [requestedProject, revision]);
   useEffect(() => {
-    if (projectId === null || target === null) return;
+    if (scope === null) return;
     let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
-    setSaved(null);
+    setConfiguration(null);
     setError(null);
-    setConfigured(false);
-    setShiftSaved(false);
-    setShiftName("默认班次");
-    setS1Start("08:00");
-    setS1End("12:00");
-    setS2Start("13:30");
-    setS2End("17:30");
-    setLoadedSegments(null);
-    setLateGrace("0");
-    setEarlyGrace("0");
-    setStartsOn(chinaToday());
-    setEndsOn(null);
-    setWorkdays([1, 2, 3, 4, 5]);
-    void fetchScopedConfiguration(projectId, target).then(
-      (configuration) => {
+    setSaved(null);
+    void fetchPlanConfiguration(scope).then(
+      (config) => {
         if (cancelled) return;
-        if (configuration.shift !== null) {
-          const [first, second] = configuration.shift.segments;
-          setShiftName(configuration.shift.name);
-          setS1Start(first.startTime);
-          setS1End(first.endTime);
-          setS2Start(second.startTime);
-          setS2End(second.endTime);
-          setLoadedSegments(configuration.shift.segments);
-          setLateGrace(String(first.lateGraceMins));
-          setEarlyGrace(String(second.earlyGraceMins));
-          setConfigured(true);
-        }
-        if (configuration.schedule !== null) {
-          setStartsOn(configuration.schedule.startsOn);
-          setEndsOn(configuration.schedule.endsOn);
-          setWorkdays(configuration.schedule.workdays);
-        }
-        setLoading(false);
+        setConfiguration(config);
+        setName(config.name);
+        setPoints(config.points);
+        setStartsOn(
+          config.startsOn > tomorrow() ? config.startsOn : tomorrow(),
+        );
+        setEndsOn(
+          config.endsOn !== null && config.endsOn < tomorrow()
+            ? null
+            : config.endsOn,
+        );
+        setWorkdays(config.workdays);
       },
-      (cause) => {
-        if (!cancelled) {
-          setLoadError(
-            cause instanceof Error
-              ? cause.message
-              : "无法读取当前排班，请重新打开页面。",
-          );
-          setLoading(false);
-        }
+      (cause: unknown) => {
+        if (!cancelled)
+          setError(cause instanceof Error ? cause.message : "无法读取排班");
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [projectId, target, revision]);
-
-  if (projectId === null) {
-    return (
-      <Screen>
-        <PageHeader title="排班配置" />
-        <StateView title="无项目" sub="当前账号没有项目管理员身份。" />
-      </Screen>
+  }, [scope, revision]);
+  const updatePoint = (
+    code: string,
+    values: Partial<ScheduledAttendancePoint>,
+  ): void => {
+    setPoints((rows) =>
+      rows.map((row) => (row.code === code ? { ...row, ...values } : row)),
     );
-  }
-
-  const saveShift = async (): Promise<void> => {
-    if (busyShift || loading || target === null) return;
+    setSaved(null);
+  };
+  const addPoint = (): void => {
+    const before = points[points.length - 2];
+    const last = points[points.length - 1];
+    if (!before || !last) return;
+    const minutes = (value: string): number =>
+      Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+    const middle = Math.floor((minutes(before.time) + minutes(last.time)) / 2);
+    if (middle <= minutes(before.time)) {
+      setError("请先调整打卡时间，为新打卡点留出时间。");
+      return;
+    }
+    const point: ScheduledAttendancePoint = {
+      code: `POINT_${Date.now()}_${points.length}`,
+      label: "中途签到",
+      kind: "CHECKPOINT",
+      time: `${String(Math.floor(middle / 60)).padStart(2, "0")}:${String(middle % 60).padStart(2, "0")}`,
+      graceMins: 0,
+    };
+    setPoints([...points.slice(0, -1), point, last]);
+    setSaved(null);
+  };
+  const input = (): PlanInput => ({
+    expectedId: configuration?.id ?? null,
+    name: name.trim(),
+    points,
+    startsOn,
+    endsOn,
+    workdays,
+  });
+  const save = async (): Promise<void> => {
+    if (scope === null || configuration === null || operation.current) return;
+    setError(null);
+    setSaved(null);
+    try {
+      validateAttendancePoints(points);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "打卡点配置无效");
+      return;
+    }
     if (
-      shiftName.trim().length === 0 ||
-      !(s1Start < s1End && s1End <= s2Start && s2Start < s2End)
+      !name.trim() ||
+      workdays.length === 0 ||
+      startsOn < tomorrow() ||
+      (endsOn !== null && endsOn < startsOn)
     ) {
-      setError(
-        "请填写班次名称，并确保上午和下午的时间段按先后排列、互不重叠。",
+      setError("请填写名称、工作日和有效日期；调整最早从明天生效。");
+      return;
+    }
+    operation.current = true;
+    setBusy(true);
+    try {
+      setConfiguration(await savePlanConfiguration(scope, input()));
+      setSaved(
+        `已保存：从 ${startsOn} 起每天 ${points.length} 次，只对授权范围内的下级生效。`,
       );
-      return;
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "保存失败，请重试");
+    } finally {
+      operation.current = false;
+      setBusy(false);
     }
+  };
+  const inherit = async (): Promise<void> => {
     if (
-      ![lateGrace, earlyGrace].every(
-        (value) => /^\d+$/.test(value) && Number(value) <= 120,
-      )
-    ) {
-      setError("宽限分钟须为 0 到 120 的整数。");
+      scope === null ||
+      scope.scopeType === "PROJECT" ||
+      configuration === null ||
+      operation.current
+    )
       return;
-    }
+    operation.current = true;
+    setBusy(true);
     setError(null);
     setSaved(null);
-    setBusyShift(true);
     try {
-      await saveScopedShift(projectId, target, {
-        name: shiftName.trim(),
-        segments: [
-          {
-            sequence: 1,
-            startTime: s1Start,
-            endTime: s1End,
-            lateGraceMins: Number(lateGrace),
-            earlyGraceMins: loadedSegments?.[0]?.earlyGraceMins ?? 0,
-          },
-          {
-            sequence: 2,
-            startTime: s2Start,
-            endTime: s2End,
-            lateGraceMins: loadedSegments?.[1]?.lateGraceMins ?? 0,
-            earlyGraceMins: Number(earlyGrace),
-          },
-        ],
+      const confirmation = await Taro.showModal({
+        title: "恢复上级排班",
+        content: `从 ${startsOn} 起继承上级规则，历史排班保留。`,
       });
-      setConfigured(true);
-      setShiftSaved(true);
-      setSaved("班次已保存，请继续保存工作日期，将新班次应用到排班。");
-      await Taro.showToast({ icon: "success", title: "班次已保存" });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "保存未完成，请重试。");
+      if (!confirmation.confirm) return;
+      setConfiguration(
+        await inheritPlanConfiguration(scope, {
+          ...input(),
+          name: "继承上级排班",
+          points: defaultAttendancePoints,
+          endsOn: null,
+          workdays: [1, 2, 3, 4, 5, 6, 7],
+        }),
+      );
+      setSaved(`已设置从 ${startsOn} 起继承上级排班。`);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "操作失败，请重试");
     } finally {
-      setBusyShift(false);
+      operation.current = false;
+      setBusy(false);
     }
   };
-
-  const saveSchedule = async (): Promise<void> => {
-    if (busySchedule || loading || !configured || target === null) return;
-    if (workdays.length === 0) {
-      await Taro.showToast({ icon: "none", title: "至少选一个工作日" });
-      return;
-    }
-    if (endsOn !== null && endsOn < startsOn) {
-      setError("排班截止日不能早于起始日。");
-      return;
-    }
-    setError(null);
-    setSaved(null);
-    setBusySchedule(true);
-    try {
-      await saveScopedSchedule(projectId, target, {
-        startsOn,
-        endsOn,
-        workdays,
-      });
-      setShiftSaved(false);
-      setSaved("排班已保存，在生效日期内按所选工作日执行考勤。");
-      await Taro.showToast({ icon: "success", title: "排班已保存" });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "保存未完成，请重试。");
-    } finally {
-      setBusySchedule(false);
-    }
-  };
-
-  const removeOverride = async (): Promise<void> => {
-    if (!target || target.scopeType === "PROJECT" || busySchedule || busyShift)
-      return;
-    const result = await Taro.showModal({
-      title: "移除专属排班",
-      content: "移除后，将按上级班组或项目默认排班执行。",
-      confirmText: "确认移除",
-    });
-    if (!result.confirm) return;
-    setBusySchedule(true);
-    setError(null);
-    try {
-      await removeScopedConfiguration(projectId, target);
-      refresh();
-    } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "移除排班失败");
-    } finally {
-      setBusySchedule(false);
-    }
-  };
-
-  const toggleWorkday = (d: IsoWeekday): void => {
-    setWorkdays((prev) =>
-      prev.includes(d)
-        ? prev.filter((x) => x !== d)
-        : ([...prev, d].sort((a, b) => a - b) as ReadonlyArray<IsoWeekday>),
-    );
-  };
-
   return (
     <Screen>
-      <PageHeader title="排班配置" />
-
+      <PageHeader title="打卡安排" />
       <Notice>
-        先选择排班对象，再保存班次与工作日期。个人专属排班优先于班组，班组优先于项目默认。
+        默认每天上、下班两次。上级可调整下级的次数和时间，个人安排优先于班组，班组优先于项目；新规则最早次日生效。
       </Notice>
-      {target ? (
+      {error ? (
+        <StateView title="操作未完成" sub={error} onRetry={refresh} />
+      ) : null}
+      {saved ? <Notice>{saved}</Notice> : null}
+      {scopes === null && !error ? <StateView title="加载中…" /> : null}
+      {scopes?.length === 0 ? (
+        <StateView title="暂无可设置的下级" sub="自己的打卡要求由上级安排。" />
+      ) : null}
+      {scope ? (
         <Picker
           mode="selector"
-          disabled={busyShift || busySchedule}
-          range={scopes.map((scope) => scope.label)}
+          disabled={busy}
+          range={(scopes ?? []).map((row) => row.label)}
           value={scopeIndex}
           onChange={(event) => setScopeIndex(Number(event.detail.value))}
         >
-          <ListItem
-            primary="当前排班对象"
-            secondary={target.label}
-            chip="切换"
-          />
+          <ListItem primary="安排对象" secondary={scope.label} chip="切换" />
         </Picker>
       ) : null}
-      {target?.scopeType !== "PROJECT" && !configured && !loading ? (
-        <Notice>
-          尚未设置专属排班，当前按上级排班执行。完成保存后启用此专属配置。
-        </Notice>
+      {scope && configuration === null && !error ? (
+        <StateView title="读取排班中…" />
       ) : null}
-      {loading ? <StateView title="加载中…" /> : null}
-      {loadError ? (
-        <StateView title="读取排班失败" sub={loadError} onRetry={refresh} />
-      ) : null}
-      {error ? <Notice>{error}</Notice> : null}
-      {saved ? <Notice>{saved}</Notice> : null}
-      {!loading && loadError === null ? (
+      {configuration ? (
         <View>
-          <Section title="01  每日班次" sub="请按照真实作息配置两个工作时段">
-            <View className="form-card">
-              <Field
-                value={shiftName}
-                label="班次名称"
-                placeholder="例如：标准两段班"
-                onInput={setShiftName}
-              />
-              <Picker
-                mode="time"
-                value={s1Start}
-                onChange={(e) =>
-                  setS1Start(String((e.detail as { value: string }).value))
-                }
-              >
-                <ListItem
-                  primary={`上午起 · ${s1Start}`}
-                  secondary="点选时间"
+          {configuration.id === null && scope?.scopeType !== "PROJECT" ? (
+            <Notice>尚未设置专属安排，当前继承上级。以下设置保存后才生效。</Notice>
+          ) : null}
+          {configuration.inherit ? (
+            <Notice>
+              已设置继承上级排班。保存新的打卡安排可重新启用专属规则。
+            </Notice>
+          ) : null}
+          <Section
+            title={`每天 ${points.length} 次打卡`}
+            sub="上班和下班成对设置；中途签到不增加工时。"
+          >
+            <Field
+              placeholder=""
+              label="安排名称"
+              value={name}
+              onInput={setName}
+              disabled={busy}
+            />
+            {points.map((point, index) => (
+              <View className="form-card" key={point.code}>
+                <Field
+                  placeholder=""
+                  label={`第 ${index + 1} 次 · 名称`}
+                  value={point.label}
+                  disabled={busy}
+                  onInput={(label) => updatePoint(point.code, { label })}
                 />
-              </Picker>
-              <Picker
-                mode="time"
-                value={s1End}
-                onChange={(e) =>
-                  setS1End(String((e.detail as { value: string }).value))
-                }
-              >
-                <ListItem primary={`上午止 · ${s1End}`} secondary="点选时间" />
-              </Picker>
-              <Picker
-                mode="time"
-                value={s2Start}
-                onChange={(e) =>
-                  setS2Start(String((e.detail as { value: string }).value))
-                }
-              >
-                <ListItem
-                  primary={`下午起 · ${s2Start}`}
-                  secondary="点选时间"
-                />
-              </Picker>
-              <Picker
-                mode="time"
-                value={s2End}
-                onChange={(e) =>
-                  setS2End(String((e.detail as { value: string }).value))
-                }
-              >
-                <ListItem primary={`下午止 · ${s2End}`} secondary="点选时间" />
-              </Picker>
-              <Field
-                label="上午迟到宽限 / 分钟"
-                value={lateGrace}
-                type="number"
-                placeholder="0 到 120"
-                onInput={setLateGrace}
-              />
-              <Field
-                label="下午早退宽限 / 分钟"
-                value={earlyGrace}
-                type="number"
-                placeholder="0 到 120"
-                onInput={setEarlyGrace}
-              />
-              <Button
-                loading={busyShift}
-                disabled={busySchedule || loading}
-                onClick={() => {
-                  void saveShift();
-                }}
-              >
-                {busyShift ? "保存中…" : "保存班次"}
-              </Button>
-            </View>
-          </Section>
-          <Section title="02  工作日期">
-            {shiftSaved ? (
-              <Notice>新班次待应用，请保存本节配置完成更新。</Notice>
-            ) : null}
-            <View className="form-card">
-              <Picker
-                mode="date"
-                value={startsOn}
-                onChange={(e) =>
-                  setStartsOn(String((e.detail as { value: string }).value))
-                }
-              >
-                <ListItem
-                  primary={`起始日 · ${startsOn}`}
-                  secondary="点选日期"
-                />
-              </Picker>
-              {endsOn === null ? (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setEndsOn(chinaToday());
+                <Picker
+                  mode="selector"
+                  disabled={busy}
+                  range={KINDS.map((kind) => kind.label)}
+                  value={KINDS.findIndex((kind) => kind.value === point.kind)}
+                  onChange={(event) => {
+                    const kind = KINDS[Number(event.detail.value)];
+                    if (kind) updatePoint(point.code, { kind: kind.value });
                   }}
                 >
-                  添加截止日
-                </Button>
-              ) : (
-                <View>
-                  <Picker
-                    mode="date"
-                    value={endsOn}
-                    onChange={(e) =>
-                      setEndsOn(String((e.detail as { value: string }).value))
+                  <ListItem
+                    primary="类型"
+                    secondary={
+                      KINDS.find((kind) => kind.value === point.kind)?.label
                     }
-                  >
-                    <ListItem
-                      primary={`截止日 · ${endsOn}`}
-                      secondary="点选日期"
-                    />
-                  </Picker>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setEndsOn(null);
-                    }}
-                  >
-                    移除截止日
-                  </Button>
-                </View>
-              )}
-              <View className="weekday-grid">
-                {WEEKDAY_LABELS.map((wd) => (
-                  <View
-                    key={wd.value}
-                    className={`ui-segmented__item ${workdays.includes(wd.value) ? "ui-segmented__item--active" : ""}`}
-                    onClick={() => toggleWorkday(wd.value)}
-                  >
-                    周{wd.label}
-                  </View>
-                ))}
+                    chip="选择"
+                  />
+                </Picker>
+                <Picker
+                  mode="time"
+                  disabled={busy}
+                  value={point.time}
+                  onChange={(event) =>
+                    updatePoint(point.code, { time: event.detail.value })
+                  }
+                >
+                  <ListItem
+                    primary="打卡时间"
+                    secondary={point.time}
+                    chip="选择"
+                  />
+                </Picker>
+                <Field
+                  placeholder=""
+                  label={
+                    point.kind === "END" ? "早退宽限 / 分钟" : "迟到宽限 / 分钟"
+                  }
+                  value={String(point.graceMins)}
+                  type="number"
+                  disabled={busy}
+                  onInput={(value) =>
+                    updatePoint(point.code, {
+                      graceMins: value === "" ? 0 : Number(value),
+                    })
+                  }
+                />
+                <Button
+                  variant="outline"
+                  disabled={busy || points.length <= 2}
+                  onClick={() =>
+                    setPoints(points.filter((row) => row.code !== point.code))
+                  }
+                >
+                  移除本次打卡
+                </Button>
               </View>
-              <Button
-                loading={busySchedule}
-                disabled={busyShift || loading || !configured}
-                onClick={() => {
-                  void saveSchedule();
-                }}
-              >
-                {busySchedule ? "保存中…" : "保存排班"}
-              </Button>
-            </View>
-          </Section>
-          {target?.scopeType !== "PROJECT" && configured ? (
+            ))}
+            <Button variant="outline" disabled={busy} onClick={addPoint}>
+              添加打卡点
+            </Button>
             <Button
               variant="outline"
-              disabled={busyShift || busySchedule}
+              disabled={busy}
               onClick={() => {
-                void removeOverride();
+                setPoints(defaultAttendancePoints);
+                setName("每日两次");
               }}
             >
-              移除专属排班
+              使用每天两次
+            </Button>
+          </Section>
+          <Section title="生效日期和工作日">
+            <Picker
+              mode="date"
+              disabled={busy}
+              start={tomorrow()}
+              value={startsOn}
+              onChange={(event) => setStartsOn(event.detail.value)}
+            >
+              <ListItem primary="生效日期" secondary={startsOn} chip="选择" />
+            </Picker>
+            {endsOn === null ? (
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => setEndsOn(startsOn)}
+              >
+                设置截止日期
+              </Button>
+            ) : (
+              <View>
+                <Picker
+                  mode="date"
+                  disabled={busy}
+                  start={startsOn}
+                  value={endsOn}
+                  onChange={(event) => setEndsOn(event.detail.value)}
+                >
+                  <ListItem primary="截止日期" secondary={endsOn} />
+                </Picker>
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => setEndsOn(null)}
+                >
+                  长期有效
+                </Button>
+              </View>
+            )}
+            <View className="weekday-grid">
+              {weekdays.map((label, index) => (
+                <View
+                  key={label}
+                  className={`ui-segmented__item ${workdays.includes(index + 1) ? "ui-segmented__item--active" : ""}`}
+                  onClick={() => {
+                    if (!busy)
+                      setWorkdays(
+                        workdays.includes(index + 1)
+                          ? workdays.filter((day) => day !== index + 1)
+                          : [...workdays, index + 1].sort(),
+                      );
+                  }}
+                >
+                  周{label}
+                </View>
+              ))}
+            </View>
+          </Section>
+          <Button loading={busy} onClick={() => void save()}>
+            保存打卡安排
+          </Button>
+          {scope?.scopeType !== "PROJECT" && configuration.id !== null ? (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => void inherit()}
+            >
+              恢复继承上级排班
             </Button>
           ) : null}
         </View>

@@ -14,19 +14,32 @@ export type SessionAction =
   | { type: "SET_ME"; me: MeResponse; accountProfile: AccountProfile }
   | { type: "CLEAR" };
 
-export type SessionPhase = "anonymous" | "loading" | "profile-required" | "unbound" | "norole" | "ready";
+export type SessionPhase =
+  | "anonymous"
+  | "loading"
+  | "profile-required"
+  | "unbound"
+  | "norole"
+  | "ready";
 
 export const initialSessionState: SessionState = {
   accessToken: null,
   me: null,
   accountProfile: null,
-  refreshToken: null
+  refreshToken: null,
 };
 
-export const sessionReducer = (state: SessionState, action: SessionAction): SessionState => {
+export const sessionReducer = (
+  state: SessionState,
+  action: SessionAction,
+): SessionState => {
   switch (action.type) {
     case "SET_TOKENS":
-      return { ...state, accessToken: action.accessToken, refreshToken: action.refreshToken };
+      return {
+        ...state,
+        accessToken: action.accessToken,
+        refreshToken: action.refreshToken,
+      };
     case "SET_ACCESS_TOKEN":
       return { ...state, accessToken: action.accessToken };
     case "SET_ME":
@@ -45,7 +58,12 @@ export const sessionPhase = (state: SessionState): SessionPhase => {
   if (state.me === null || state.accountProfile === null) {
     return "loading";
   }
-  if (!state.accountProfile.nickname?.trim() || !state.accountProfile.avatarDataUrl) {
+  if (
+    !state.accountProfile.nickname?.trim() ||
+    !state.accountProfile.avatarDataUrl ||
+    !state.accountProfile.realName?.trim() ||
+    !/^1[3-9]\d{9}$/.test(state.accountProfile.phone ?? "")
+  ) {
     return "profile-required";
   }
   if (!state.me.user.isBound) {

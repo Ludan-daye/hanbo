@@ -18,6 +18,12 @@ type AttendanceRecordStatusValue = "VALID" | "INVALID";
 
 // ─── Record types ────────────────────────────────────────────────────────────
 type UserRecord = {
+  readonly openid: string;
+  readonly isBound: boolean;
+  readonly encryptedRealName: string;
+  readonly phone: string;
+  readonly nickname: string;
+  readonly avatarObjectKey: string;
   readonly id: string;
   readonly sessionVersion: number;
   readonly status: UserStatusValue;
@@ -281,6 +287,12 @@ const seedUser = (
 ): void => {
   const user: UserRecord = {
     id: params.userId,
+    openid: params.userId,
+    isBound: true,
+    encryptedRealName: "test-encrypted-name",
+    phone: "13800000000",
+    nickname: "Test",
+    avatarObjectKey: "test/avatar.png",
     sessionVersion: 1,
     status: "ACTIVE",
     workerProfile: params.workerProfile,

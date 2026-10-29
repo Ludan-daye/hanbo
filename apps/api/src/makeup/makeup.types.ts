@@ -1,6 +1,9 @@
 import type { AttendancePointCode } from "@construction/domain/attendance.js";
 
-import type { AttendanceResultResponse, ProfileOwnerTypeValue } from "../attendance/attendance.types.js";
+import type {
+  AttendanceResultResponse,
+  ProfileOwnerTypeValue,
+} from "../attendance/attendance.types.js";
 
 export type MakeupStatusValue = "APPROVED" | "PENDING" | "REJECTED";
 
@@ -16,6 +19,7 @@ export type ReviewMakeupRequestBody = {
 };
 
 export type MakeupRequestResponse = {
+  readonly pointLabel?: string | null;
   readonly approvalReason: string | null;
   readonly approvedAt: string | null;
   readonly approverUserId: string | null;
@@ -34,4 +38,14 @@ export type MakeupRequestResponse = {
 export type ReviewMakeupResponse = {
   readonly request: MakeupRequestResponse;
   readonly result: AttendanceResultResponse | null;
+};
+
+export type MakeupInboxItem = MakeupRequestResponse & {
+  readonly displayName: string | null;
+  readonly projectName: string;
+  readonly teamName: string | null;
+};
+export type MakeupInboxResponse = {
+  readonly items: readonly MakeupInboxItem[];
+  readonly nextCursor: string | null;
 };

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Inject, Param, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, GoneException, Get, Header, Inject, Param, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
@@ -10,8 +10,6 @@ import { PermissionsGuard } from "../authorization/permissions.guard.js";
 import { RequirePermission } from "../authorization/require-permission.decorator.js";
 
 import {
-  parseConfigureDefaultScheduleRequest,
-  parseConfigureDefaultShiftRequest,
   parseFaceVerificationPoint,
   parseSubmitAttendanceRecordRequest
 } from "./attendance-body.parsers.js";
@@ -23,15 +21,13 @@ export class AttendanceController {
   constructor(@Inject(AttendanceService) private readonly attendanceService: AttendanceService) {}
 
   @Post("projects/:projectId/face-verifications/video")
-  @RequirePermission({ permissionCode: "attendance.submit", target: { paramName: "projectId", source: "projectParam" } })
-  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  @UseGuards(AccessTokenGuard)
   async createVideoSession(@CurrentUser() user: AuthenticatedUser, @Param("projectId") projectId: string, @Body() body: unknown): Promise<IssuedVideoFaceSession> {
     return this.attendanceService.createVideoFaceSession(projectId, user.userId, parseFaceVerificationPoint(body));
   }
 
   @Post("projects/:projectId/face-verifications/:sessionId/video")
-  @RequirePermission({ permissionCode: "attendance.submit", target: { paramName: "projectId", source: "projectParam" } })
-  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  @UseGuards(AccessTokenGuard)
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024 } }))
   async verifyVideo(@CurrentUser() user: AuthenticatedUser, @Param("projectId") projectId: string, @Param("sessionId") sessionId: string, @UploadedFile() file: UploadedMultipartFile | undefined, @Body() body: unknown): Promise<CompletedFaceSession> {
     return this.attendanceService.verifyVideoFaceSession(projectId, user.userId, parseFaceVerificationPoint(body), sessionId, file);
@@ -39,22 +35,19 @@ export class AttendanceController {
 
   @Get("projects/:projectId/face-verifications/:sessionId/video-result")
   @Header("Cache-Control", "no-store")
-  @RequirePermission({ permissionCode: "attendance.submit", target: { paramName: "projectId", source: "projectParam" } })
-  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  @UseGuards(AccessTokenGuard)
   async videoResult(@CurrentUser() user: AuthenticatedUser, @Param("projectId") projectId: string, @Param("sessionId") sessionId: string, @Query() query: unknown): Promise<CompletedFaceSession> {
     return this.attendanceService.videoFaceResult(projectId, user.userId, parseFaceVerificationPoint(query), sessionId);
   }
 
   @Post("projects/:projectId/face-verifications")
-  @RequirePermission({ permissionCode: "attendance.submit", target: { paramName: "projectId", source: "projectParam" } })
-  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  @UseGuards(AccessTokenGuard)
   async createFaceSession(@CurrentUser() user: AuthenticatedUser, @Param("projectId") projectId: string, @Body() body: unknown): Promise<IssuedFaceSession> {
     return this.attendanceService.createNativeFaceSession(projectId, user.userId, parseFaceVerificationPoint(body));
   }
 
   @Post("projects/:projectId/face-verifications/:sessionId/complete")
-  @RequirePermission({ permissionCode: "attendance.submit", target: { paramName: "projectId", source: "projectParam" } })
-  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  @UseGuards(AccessTokenGuard)
   async completeFaceSession(@CurrentUser() user: AuthenticatedUser, @Param("projectId") projectId: string, @Param("sessionId") sessionId: string, @Body() body: unknown): Promise<CompletedFaceSession> {
     return this.attendanceService.completeNativeFaceSession(projectId, user.userId, parseFaceVerificationPoint(body), sessionId);
   }
@@ -79,7 +72,7 @@ export class AttendanceController {
     @Param("projectId") projectId: string,
     @Body() body: unknown
   ): Promise<DefaultShiftResponse> {
-    return this.attendanceService.configureDefaultShift(projectId, parseConfigureDefaultShiftRequest(body));
+    throw new GoneException({ message: "旧排班写入接口已停用，请使用打卡安排并指定未来生效日期。" });
   }
 
   @Put("projects/:projectId/default-schedule")
@@ -95,18 +88,11 @@ export class AttendanceController {
     @Param("projectId") projectId: string,
     @Body() body: unknown
   ): Promise<DefaultScheduleResponse> {
-    return this.attendanceService.configureDefaultSchedule(projectId, parseConfigureDefaultScheduleRequest(body));
+    throw new GoneException({ message: "旧排班写入接口已停用，请使用打卡安排并指定未来生效日期。" });
   }
 
   @Post("projects/:projectId/records")
-  @RequirePermission({
-    permissionCode: "attendance.submit",
-    target: {
-      paramName: "projectId",
-      source: "projectParam"
-    }
-  })
-  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  @UseGuards(AccessTokenGuard)
   async submitAttendanceRecord(
     @CurrentUser() currentUser: AuthenticatedUser,
     @Param("projectId") projectId: string,

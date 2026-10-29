@@ -17,14 +17,13 @@ import {
 import { useManagedProjectId } from "../../hooks/use-management-scope";
 import {
   fetchProjectInvitations,
-  fetchProjectTeams,
   revokeProjectInvitation,
 } from "../../services/management";
 import type {
   ProjectInvitation,
-  ProjectTeam,
+  ManagedTeam,
 } from "../../services/management.types";
-import { createTeam } from "../../services/workflows";
+import { createTeam, fetchManagedTeams } from "../../services/workflows";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSession } from "../../store/session";
 
@@ -50,7 +49,7 @@ export default function ProjectManagement(): JSX.Element {
   const [teamName, setTeamName] = useState<string>("");
   const [creating, setCreating] = useState<boolean>(false);
   const [tab, setTab] = useState<Tab>("TEAMS");
-  const [teams, setTeams] = useState<ReadonlyArray<ProjectTeam> | null>(null);
+  const [teams, setTeams] = useState<ReadonlyArray<ManagedTeam> | null>(null);
   const [invitations, setInvitations] =
     useState<ReadonlyArray<ProjectInvitation> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +64,7 @@ export default function ProjectManagement(): JSX.Element {
     void (async () => {
       try {
         if (tab === "TEAMS") {
-          const rows = await fetchProjectTeams(projectId);
+          const rows = await fetchManagedTeams(projectId);
           if (!cancelled) {
             setTeams(rows);
           }
@@ -145,16 +144,16 @@ export default function ProjectManagement(): JSX.Element {
           {teams !== null && teams.length === 0 ? (
             <StateView title="尚无班组" />
           ) : null}
-          <Notice>点击班组可管理成员，人员建档时可分配所属班组或班组长。</Notice>
+          <Notice>点击班组可编辑资料、指定负责人或查看成员。</Notice>
           {(teams ?? []).map((t) => (
             <ListItem
               key={t.id}
               primary={t.name}
               secondary={
-                t.status === "ACTIVE" ? "班组正常使用中" : "班组已暂停"
+                `${t.workType ?? "工种未设置"} · 在场 ${t.memberCount} 人 · 负责人：${t.leader?.displayName ?? (t.leader ? "姓名待补录" : "未指定")}`
               }
-              chip="查看成员"
-              onClick={() => { void Taro.navigateTo({ url: `/pages/participants/index?projectId=${projectId}&teamId=${t.id}` }); }}
+              chip={t.status === "ACTIVE" ? "管理" : "已暂停"}
+              onClick={() => { void Taro.navigateTo({ url: `/pages/team-detail/index?projectId=${projectId}&teamId=${t.id}` }); }}
             />
           ))}
           <Section title="新增班组">

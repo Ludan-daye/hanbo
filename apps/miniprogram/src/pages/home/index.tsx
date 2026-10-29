@@ -1,3 +1,4 @@
+import { permissionLabel } from "../../routing/permissionLevels";
 import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
@@ -7,7 +8,6 @@ import {
   AppIcon,
   BottomNav,
   Button,
-  Label,
   ListItem,
   Notice,
   Screen,
@@ -19,7 +19,6 @@ import { AccountAvatar } from "../../components/account-avatar";
 import { useAccountProfile } from "../../hooks/use-account-profile";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
-import { PANEL_LABELS } from "../../routing/features";
 import { roleHomePanel } from "../../routing/roleHome";
 import { resolveAdminProjectId } from "../../routing/projectAdmin";
 import { resolveCompanyAdminCompanyId } from "../../routing/companyAdmin";
@@ -119,14 +118,11 @@ export default function Home(): JSX.Element {
   const nextPoint = today?.points.find((point) => point.record === null);
   return (
     <Screen>
-      <AppHeader title="瀚渤 · 智慧工地" />
+      <AppHeader title="瀚渤" />
       <View className="home-greeting">
         <View>
-          <Label>HELLO, HANBO</Label>
           <View className="home-greeting__title">
-            {account?.nickname
-              ? `你好，${account.nickname}`
-              : "工作顺利，平安每一天"}
+            {account?.nickname ? `你好，${account.nickname}` : "你好，欢迎回来"}
           </View>
           <View className="home-greeting__date">{chinaDateLabel()}</View>
           <View
@@ -135,8 +131,9 @@ export default function Home(): JSX.Element {
               void Taro.navigateTo({ url: "/pages/profile/index" });
             }}
           >
-            {FRONTEND_DEMO ? "演示账号" : "微信已关联"} ·{" "}
-            {account?.nickname ? PANEL_LABELS[panel] : "完善头像和昵称"} ›
+            {account?.nickname
+              ? permissionLabel(state.me?.roles.highestRoleCode ?? null)
+              : "完善本人资料"}
           </View>
         </View>
         <View
@@ -152,25 +149,23 @@ export default function Home(): JSX.Element {
       <View className="home-hero">
         <View className="home-hero__top">
           <View className="home-hero__label">
-            {panel === "worker" ? "我的工作现场" : "今日工作概览"}
+            {panel === "worker"
+              ? "今日打卡"
+              : panel === "systemAdmin" || panel === "none"
+                ? "账号状态"
+                : "今日出勤"}
           </View>
-          <View className="home-role">{PANEL_LABELS[panel]}</View>
         </View>
-        <View className="home-hero__title">
-          {panel === "worker"
-            ? (projects[0]?.projectName ?? "我的考勤")
-            : "每一份付出，都有记录"}
-        </View>
-        <View className="home-hero__sub">
-          {panel === "worker"
-            ? (projects[0]?.teamName ?? "查看今日排班与打卡进度")
-            : "人员、考勤与项目，尽在掌握"}
-        </View>
-        <View className="home-hero__building">
-          <View />
-          <View />
-          <View />
-        </View>
+        {panel === "worker" ? (
+          <>
+            <View className="home-hero__title">
+              {projects[0]?.projectName ?? "我的考勤"}
+            </View>
+            <View className="home-hero__sub">
+              {projects[0]?.teamName ?? "查看今日排班与打卡进度"}
+            </View>
+          </>
+        ) : null}
         <View className="home-hero__bottom">
           <View>
             <View className="home-hero__number">
@@ -193,12 +188,16 @@ export default function Home(): JSX.Element {
             </View>
             <View className="home-hero__caption">
               {panel === "worker"
-                ? "今日已打卡"
+                ? "已完成"
                 : panel === "systemAdmin"
                   ? "平台身份已连接"
                   : panel === "none"
                     ? "请联系管理员分配角色"
-                    : "今日出勤"}
+                    : panel === "companyAdmin"
+                      ? "全部项目"
+                      : panel === "teamLeader"
+                        ? "当前班组"
+                        : "当前项目"}
             </View>
           </View>
           <View
@@ -221,7 +220,7 @@ export default function Home(): JSX.Element {
             }}
           >
             {panel === "worker" ? "去打卡" : "查看详情"}
-            <View>↗</View>
+            <View>→</View>
           </View>
         </View>
       </View>
@@ -288,12 +287,14 @@ export default function Home(): JSX.Element {
       {panel === "worker" && nextPoint && today?.isWorkday ? (
         <View className="home-tip">
           <AppIcon name="shield" />
-          <View>进入打卡页后，完成定位与拍照即可提交考勤。</View>
+          <View>打卡需定位、活体核验与现场照片。</View>
         </View>
       ) : null}
       {settings?.announcement ? <Notice>{settings.announcement}</Notice> : null}
-      <Section title="常用应用" sub="把日常工作，变得简单">
-        <RolePanel panel={panel} />
+      <Section title="常用功能">
+        <View className="home-shortcuts">
+          <RolePanel panel={panel} limit={4} />
+        </View>
       </Section>
       {panel === "none" ? (
         <Button
@@ -311,7 +312,6 @@ export default function Home(): JSX.Element {
           刷新角色信息
         </Button>
       ) : null}
-      <View className="page-footnote">HANBO · 建造有序，工作安心</View>
       <BottomNav active="home" />
     </Screen>
   );

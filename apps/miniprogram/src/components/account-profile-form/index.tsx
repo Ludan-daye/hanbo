@@ -5,10 +5,10 @@ import { useEffect, useState } from "react";
 import { FRONTEND_DEMO } from "../../config/env";
 import {
   saveAccountAvatar,
-  saveAccountNickname,
+  saveAccountProfile,
   type AccountProfile,
 } from "../../services/account";
-import { Button, Notice } from "../ui/index";
+import { Button, Field, Notice } from "../ui/index";
 import { AccountAvatar } from "../account-avatar";
 
 import "./index.scss";
@@ -26,6 +26,8 @@ export const AccountProfileForm = ({
   submitLabel,
   onSaved,
 }: AccountProfileFormProps): JSX.Element => {
+  const [realName, setRealName] = useState<string>(profile.realName ?? "");
+  const [phone, setPhone] = useState<string>(profile.phone ?? "");
   const [nickname, setNickname] = useState<string>(profile.nickname ?? "");
   const [avatarPath, setAvatarPath] = useState<string | null>(null);
   const [nicknameRejected, setNicknameRejected] = useState<boolean>(false);
@@ -35,6 +37,8 @@ export const AccountProfileForm = ({
 
   useEffect(() => {
     setNickname(profile.nickname ?? "");
+    setRealName(profile.realName ?? "");
+    setPhone(profile.phone ?? "");
     setAvatarPath(null);
   }, [profile]);
 
@@ -85,19 +89,43 @@ export const AccountProfileForm = ({
       return;
     }
     const trimmedNickname: string = nickname.trim();
-    if (nicknameRejected || trimmedNickname.length === 0 || trimmedNickname.length > 32) {
+    if (
+      nicknameRejected ||
+      trimmedNickname.length === 0 ||
+      trimmedNickname.length > 32
+    ) {
       setError("请填写可用昵称，长度为 1 至 32 个字符。");
+      return;
+    }
+    const trimmedName: string = realName.trim();
+    const trimmedPhone: string = phone.trim();
+    if (
+      trimmedName.length < 1 ||
+      trimmedName.length > 30 ||
+      !/^[\p{L}\p{M} ·•・.'’-]+$/u.test(trimmedName)
+    ) {
+      setError("请填写真实姓名，长度为 1 至 30 个字符。");
+      return;
+    }
+    if (!/^1[3-9]\d{9}$/.test(trimmedPhone)) {
+      setError("请填写有效的 11 位手机号。");
       return;
     }
     setBusy(true);
     setError(null);
     try {
       if (avatarPath !== null) await saveAccountAvatar(avatarPath);
-      const updated: AccountProfile = await saveAccountNickname(trimmedNickname);
+      const updated: AccountProfile = await saveAccountProfile({
+        nickname: trimmedNickname,
+        realName: trimmedName,
+        phone: trimmedPhone,
+      });
       await onSaved(updated);
-      setSavedMessage("头像和昵称已保存");
+      setSavedMessage("账号资料已保存");
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "资料保存失败，请重试。");
+      setError(
+        cause instanceof Error ? cause.message : "资料保存失败，请重试。",
+      );
     } finally {
       setBusy(false);
     }
@@ -122,7 +150,9 @@ export const AccountProfileForm = ({
             {FRONTEND_DEMO ? "选择演示头像" : "选择微信头像"}
           </View>
           <View className="account-avatar-button__sub">
-            {avatarPath !== null ? "已选择，保存后生效" : "必填 · 点击选择或更换头像"}
+            {avatarPath !== null
+              ? "已选择，保存后生效"
+              : "必填 · 点击选择或更换头像"}
           </View>
         </View>
         <View className="account-avatar-button__arrow">›</View>
@@ -157,11 +187,45 @@ export const AccountProfileForm = ({
           }}
         />
       </View>
+      <Field
+        label="真实姓名（必填）"
+        value={realName}
+        maxLength={30}
+        placeholder="请填写与人员档案一致的姓名"
+        onInput={(value: string): void => {
+          setRealName(value);
+          setError(null);
+          setSavedMessage(null);
+        }}
+      />
+      <Field
+        label="手机号（必填）"
+        value={phone}
+        maxLength={11}
+        type="number"
+        placeholder="请填写本人 11 位手机号"
+        onInput={(value: string): void => {
+          setPhone(value);
+          setError(null);
+          setSavedMessage(null);
+        }}
+      />
+      <View className="account-identity-note">
+        姓名和手机号须与管理员登记的本人档案一致。
+      </View>
       {error ? <Notice>{error}</Notice> : null}
-      <Button loading={busy} disabled={nicknameRejected} onClick={() => { void submit(); }}>
+      <Button
+        loading={busy}
+        disabled={nicknameRejected}
+        onClick={() => {
+          void submit();
+        }}
+      >
         {submitLabel}
       </Button>
-      {savedMessage ? <View className="account-saved">{savedMessage}</View> : null}
+      {savedMessage ? (
+        <View className="account-saved">{savedMessage}</View>
+      ) : null}
     </>
   );
 };

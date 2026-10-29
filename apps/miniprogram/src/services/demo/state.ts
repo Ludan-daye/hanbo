@@ -1,12 +1,18 @@
+import type { DemoMemberHistory } from "./member-history";
+import { defaultAttendancePoints } from "@construction/domain/attendance.js";
+import type { DemoPlan } from "./plans";
 import type { MeResponse, RoleCode } from "../auth.types";
 import type { AccountProfile } from "../account";
 import type { FaceProfile } from "../face";
 import type {
   CompanyProject,
+  ManagedProject,
+  ManagedParticipant,
   DefaultAttendanceConfiguration,
   ProjectInvitation,
   ProjectParticipant,
   ProjectTeam,
+  TeamLeaderReference,
 } from "../management.types";
 import type {
   AttendancePointCode,
@@ -23,12 +29,20 @@ import type {
 
 export type DemoFace = FaceProfile & { readonly photo: string };
 export type DemoInvitation = ProjectInvitation & { readonly code: string };
+export type DemoTeam = ProjectTeam & {
+  readonly workType?: string | null;
+  readonly remark?: string | null;
+  readonly updatedAt?: string;
+  readonly leader?: TeamLeaderReference | null;
+};
 export type DemoState = {
-  readonly version: 1;
+  readonly memberHistories?: readonly DemoMemberHistory[];
+  readonly plans?: readonly DemoPlan[];
+  readonly version: 2;
   readonly companies: readonly Company[];
-  readonly projects: readonly CompanyProject[];
-  readonly teams: readonly ProjectTeam[];
-  readonly people: readonly ProjectParticipant[];
+  readonly projects: readonly ManagedProject[];
+  readonly teams: readonly DemoTeam[];
+  readonly people: readonly ManagedParticipant[];
   readonly accounts: readonly Account[];
   readonly invitations: readonly DemoInvitation[];
   readonly configurations: Readonly<
@@ -42,6 +56,74 @@ export type DemoState = {
   readonly boundProfileId: string | null;
   readonly accountProfiles?: Readonly<Record<string, AccountProfile>>;
 };
+
+export type LegacyDemoState = Omit<
+  DemoState,
+  "version" | "people" | "projects"
+> & {
+  readonly version: 1;
+  readonly people: readonly (ProjectParticipant &
+    Partial<ManagedParticipant>)[];
+  readonly projects: readonly (CompanyProject & Partial<ManagedProject>)[];
+};
+
+/** Preserve saved demo identities while adding a new baseline for previously absent fields. */
+export const upgradeDemoState = (
+  state: LegacyDemoState,
+  baseline: string,
+): DemoState => ({
+  ...state,
+  version: 2,
+  projects: state.projects.map(
+    (project): ManagedProject => ({
+      ...project,
+      code: project.code ?? null,
+      contactName: project.contactName ?? null,
+      contactPhone: project.contactPhone ?? null,
+      remark: project.remark ?? null,
+      updatedAt: project.updatedAt ?? baseline,
+    }),
+  ),
+  people: state.people.map(
+    (person): ManagedParticipant => ({
+      ...person,
+      workType:
+        person.workType ??
+        (person.participantType === "WORKER"
+          ? person.projectRoleLabel
+          : "施工管理"),
+      enteredAt: person.enteredAt ?? baseline,
+      exitedAt:
+        person.exitedAt ?? (person.status === "EXITED" ? baseline : null),
+      updatedAt: person.updatedAt ?? baseline,
+      profileUpdatedAt: person.profileUpdatedAt ?? baseline,
+      nameStatus: person.nameStatus ?? "AVAILABLE",
+    }),
+  ),
+});
+export const upgradeDemoPlanning = (
+  state: DemoState,
+  startsOn: string,
+): DemoState => ({
+  ...state,
+  plans: state.projects.map(
+    (project): DemoPlan => ({
+      id: `baseline-two-${project.id}`,
+      projectId: project.id,
+      scopeType: "PROJECT",
+      scopeId: project.id,
+      label: "默认安排",
+      name: "每日两次",
+      startsOn,
+      endsOn: null,
+      inherit: false,
+      points: defaultAttendancePoints,
+      workdays: [1, 2, 3, 4, 5, 6, 7],
+      authorUserId: null,
+      authorLevel: 6,
+    }),
+  ),
+});
 export const DEMO_POINT_CODES: readonly AttendancePointCode[] = [
   "SEGMENT_1_START",
   "SEGMENT_1_END",
@@ -206,23 +288,45 @@ export const initialDemoState = (): DemoState => {
           (_point, index) =>
             (days !== 0 || index === 0) &&
             !(days === 1 && person.memberId === "member-worker" && index === 0),
-        ).map((point, index) =>
+        ).map((point) =>
           makeDemoRecord(
             person,
             chinaDaysAgo(days),
             point,
-            `${chinaDaysAgo(days)}T${["08:00", "12:00", "13:30", "17:30"][index]}:00+08:00`,
+            `${chinaDaysAgo(days)}T${["08:00", "12:00", "13:30", "17:30"][DEMO_POINT_CODES.indexOf(point)]}:00+08:00`,
           ),
         ),
       ),
     );
   return {
-    version: 1,
+    version: 2,
     companies: [
       { id: "demo-company", name: "瀚渤建设（演示）", status: "ACTIVE" },
     ],
-    projects,
-    people,
+    projects: projects.map(
+      (project): ManagedProject => ({
+        ...project,
+        code: null,
+        contactName: null,
+        contactPhone: null,
+        remark: null,
+        updatedAt: new Date().toISOString(),
+      }),
+    ),
+    people: people.map(
+      (person): ManagedParticipant => ({
+        ...person,
+        workType:
+          person.participantType === "WORKER"
+            ? person.projectRoleLabel
+            : "施工管理",
+        enteredAt: new Date(`${chinaDaysAgo(90)}T00:00:00+08:00`).toISOString(),
+        exitedAt: null,
+        updatedAt: new Date().toISOString(),
+        profileUpdatedAt: new Date().toISOString(),
+        nameStatus: "AVAILABLE",
+      }),
+    ),
     records,
     teams: [
       {
@@ -281,6 +385,23 @@ export const initialDemoState = (): DemoState => {
       },
     ],
     configurations: { "demo-project": initialConfiguration() },
+    plans: [
+      {
+        id: "demo-baseline-two",
+        projectId: "demo-project",
+        scopeType: "PROJECT",
+        scopeId: "demo-project",
+        label: "默认安排",
+        name: "每日两次",
+        startsOn: chinaToday(),
+        endsOn: null,
+        inherit: false,
+        points: defaultAttendancePoints,
+        workdays: [1, 2, 3, 4, 5, 6, 7],
+        authorUserId: null,
+        authorLevel: 6,
+      },
+    ],
     invitations: [
       {
         id: "invite-initial",
@@ -343,11 +464,14 @@ export const demoMe = (state: DemoState, userId: string): MeResponse => {
     !boundPerson || boundPerson.status !== "ACTIVE"
       ? null
       : boundPerson.participantType === "WORKER"
-        ? "WORKER"
+        ? boundPerson.projectRoleLabel === "TEAM_LEADER"
+          ? "TEAM_LEADER"
+          : "WORKER"
         : boundPerson.projectRoleLabel === "TEAM_LEADER"
           ? "TEAM_LEADER"
           : "PROJECT_ADMIN";
-  const roleCode: RoleCode | null = account?.roleCode ?? boundRole;
+  const roleCode: RoleCode | null =
+    boundPerson === undefined ? (account?.roleCode ?? null) : boundRole;
   const scopeType: string =
     roleCode === "SYSTEM_ADMIN"
       ? "GLOBAL"
@@ -374,7 +498,7 @@ export const demoMe = (state: DemoState, userId: string): MeResponse => {
                 scope: {
                   scopeType,
                   scopeId:
-                    account?.scopeId ??
+                    (boundPerson === undefined ? account?.scopeId : null) ??
                     (roleCode === "TEAM_LEADER"
                       ? boundPerson?.teamId
                       : boundPerson?.projectId) ??

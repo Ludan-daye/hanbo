@@ -1,6 +1,11 @@
 import Taro from "@tarojs/taro";
 import { View } from "@tarojs/components";
 import { useEffect, useMemo, useState } from "react";
+import {
+  participantPermissionRole,
+  permissionLevel,
+  type PermissionCategory,
+} from "../../routing/permissionLevels";
 import { displayProjectRole } from "../../routing/features";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 
@@ -15,18 +20,15 @@ import {
 } from "../../components/ui/index";
 import { useManagedCompanyId } from "../../hooks/use-management-scope";
 import { fetchCompanyParticipants } from "../../services/management";
-import type {
-  CompanyParticipant,
-  ParticipantType,
-} from "../../services/management.types";
+import type { CompanyParticipant } from "../../services/management.types";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSession } from "../../store/session";
 
-type Filter = "ALL" | ParticipantType;
+type Filter = "ALL" | PermissionCategory;
 const FILTER_OPTIONS = [
   { label: "全部", value: "ALL" as const },
-  { label: "工人", value: "WORKER" as const },
-  { label: "管理员", value: "MANAGER" as const },
+  { label: "工人权限", value: "WORKER" as const },
+  { label: "管理权限", value: "MANAGEMENT" as const },
 ];
 
 export default function CompanyPeople(): JSX.Element {
@@ -70,7 +72,8 @@ export default function CompanyPeople(): JSX.Element {
     }
     return items.filter(
       (p) =>
-        (filter === "ALL" || p.participantType === filter) &&
+        (filter === "ALL" ||
+          permissionLevel(participantPermissionRole(p)).category === filter) &&
         `${p.displayName ?? ""} ${p.phone} ${p.teamName ?? ""} ${displayProjectRole(p.projectRoleLabel)}`.includes(
           search.trim(),
         ),
@@ -108,15 +111,21 @@ export default function CompanyPeople(): JSX.Element {
       {items !== null && visible.length === 0 ? (
         <StateView title="尚无人员" />
       ) : null}
-      {items !== null ? <Subtitle>共 {visible.length} 名成员 · 点击查看或编辑资料</Subtitle> : null}
+      {items !== null ? (
+        <Subtitle>共 {visible.length} 名成员 · 点击查看或编辑资料</Subtitle>
+      ) : null}
       <View>
         {visible.map((p) => (
           <ListItem
             key={p.memberId}
             primary={p.displayName ?? `成员 · ${p.phone.slice(-4)}`}
-            secondary={`${displayProjectRole(p.projectRoleLabel)} · ${p.teamName ?? "无班组"} · ${p.phone}`}
+            secondary={`${permissionLevel(participantPermissionRole(p)).label} · ${displayProjectRole(p.projectRoleLabel)} · ${p.teamName ?? "无班组"} · ${p.phone}`}
             chip={p.projectName}
-            onClick={() => { void Taro.navigateTo({ url: `/pages/person-form/index?projectId=${p.projectId}&memberId=${p.memberId}` }); }}
+            onClick={() => {
+              void Taro.navigateTo({
+                url: `/pages/person-form/index?projectId=${p.projectId}&memberId=${p.memberId}`,
+              });
+            }}
           />
         ))}
       </View>

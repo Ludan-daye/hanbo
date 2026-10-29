@@ -1,12 +1,14 @@
 import { BadRequestException } from "@nestjs/common";
 import { z } from "zod";
+import type { TeamWriteRequest } from "./teams.types.js";
 
 import type {
   CreateCompanyRequest,
   CreateProjectManagerRequest,
   CreateProjectRequest,
   CreateProjectWorkerRequest,
-  CreateTeamRequest
+  CreateTeamRequest,
+  UpdateProjectRequest
 } from "./management.types.js";
 
 const projectStatusValues = ["ACTIVE", "COMPLETED", "PREPARING", "SUSPENDED"] as const;
@@ -60,8 +62,8 @@ const createProjectRequestSchema = z.object({
 });
 
 const createTeamRequestSchema = z.object({
-  name: nonEmptyStringSchema,
-  status: nonEmptyStringSchema
+  name: z.string().trim().min(1).max(30),
+  status: z.enum(["ACTIVE", "SUSPENDED"])
 });
 
 const createProjectWorkerRequestSchema = z.object({
@@ -118,3 +120,22 @@ export const parseCreateProjectWorkerRequest = (body: unknown): CreateProjectWor
 
 export const parseCreateProjectManagerRequest = (body: unknown): CreateProjectManagerRequest =>
   parseBody(body, createProjectManagerRequestSchema, "INVALID_CREATE_PROJECT_MANAGER_REQUEST");
+
+export const parseUpdateProjectRequest = (body: unknown): UpdateProjectRequest =>
+  parseBody(body, createProjectRequestSchema.extend({
+    id: nonEmptyStringSchema,
+    companyId: nonEmptyStringSchema,
+    code: z.string().trim().min(1).max(60).nullable(),
+    contactName: z.string().trim().min(1).max(60).nullable(),
+    contactPhone: z.string().regex(/^1\d{10}$/).nullable(),
+    remark: z.string().trim().max(1000).nullable(),
+    expectedUpdatedAt: dateTimeSchema
+  }).refine((value): boolean => value.plannedEndDate === null || value.plannedEndDate >= value.plannedStartDate, { path: ["plannedEndDate"], message: "Project end date must follow the start date." }), "INVALID_UPDATE_PROJECT_REQUEST");
+
+export const parseUpdateTeamRequest = (body: unknown): TeamWriteRequest =>
+  parseBody(body, z.object({
+    name: z.string().trim().min(1).max(30), status: z.enum(["ACTIVE", "SUSPENDED"]),
+    workType: z.string().trim().min(1).max(40).nullable(), remark: z.string().trim().max(1000).nullable(),
+    leader: z.object({ memberId: z.string().min(1), participantType: z.enum(["WORKER", "MANAGER"]) }).strict().nullable(),
+    expectedUpdatedAt: dateTimeSchema
+  }).strict(), "INVALID_UPDATE_TEAM_REQUEST");

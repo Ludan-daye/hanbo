@@ -120,16 +120,16 @@ export const ReportParticipants = ({
       <Subtitle>筛选只影响下方明细；点击人员查看出勤情况。</Subtitle>
       {rows.length === 0 ? <StateView title="没有符合条件的人员" /> : null}
       {rows.map((row) => (
-        <View key={row.memberId}>
+        <View key={`${row.memberId}:${row.teamId}`}>
           <ListItem
             primary={row.displayName ?? `成员 · ${row.phone.slice(-4)}`}
             secondary={`${displayProjectRole(row.projectRoleLabel)} · ${row.teamName ?? "无班组"}`}
             chip={`${(row.workedMinutes / 60).toFixed(1)}h`}
             onClick={() =>
-              setOpenId(openId === row.memberId ? null : row.memberId)
+              setOpenId(openId === `${row.memberId}:${row.teamId}` ? null : `${row.memberId}:${row.teamId}`)
             }
           />
-          {openId === row.memberId ? (
+          {openId === `${row.memberId}:${row.teamId}` ? (
             <Notice>
               {row.requiresAttendance
                 ? rowSummary(row)

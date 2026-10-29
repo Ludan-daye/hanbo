@@ -7,7 +7,7 @@ import { useSessionGuard } from "../../hooks/use-session-guard";
 import {
   AppIcon,
   Button,
-  Field,
+  Segmented,
   ListItem,
   Notice,
   PageHeader,
@@ -24,6 +24,11 @@ import {
   submitAttendanceRecord,
 } from "../../services/me";
 import { formatChinaHm } from "../../services/time";
+import {
+  checkAttendanceGeofence,
+  type AttendanceLocation,
+  type GeofenceCheck,
+} from "../../services/geofence";
 import { uploadImage } from "../../services/uploads";
 import {
   completeFaceSession,
@@ -48,12 +53,6 @@ import { VideoFaceCapture } from "../../components/video-face-capture/index";
 
 import "./index.scss";
 
-const POINT_LABEL: Readonly<Record<AttendancePointCode, string>> = {
-  SEGMENT_1_END: "上午下班",
-  SEGMENT_1_START: "上午上班",
-  SEGMENT_2_END: "下午下班",
-  SEGMENT_2_START: "下午上班",
-};
 const REASON_LABEL: Readonly<Record<string, string>> = {
   FACE_NOT_PASSED: "人脸核验未通过",
   OUTSIDE_GEOFENCE: "超出考勤范围",
@@ -70,22 +69,6 @@ const errorText = (reason: unknown): string => {
   )
     return reason.errMsg;
   return "操作未完成，请重试";
-};
-const toRadians = (value: number): number => (value * Math.PI) / 180;
-const distanceMeters = (
-  fromLat: number,
-  fromLng: number,
-  toLat: number,
-  toLng: number,
-): number => {
-  const lat = toRadians(toLat - fromLat);
-  const lng = toRadians(toLng - fromLng);
-  const value =
-    Math.sin(lat / 2) ** 2 +
-    Math.cos(toRadians(fromLat)) *
-      Math.cos(toRadians(toLat)) *
-      Math.sin(lng / 2) ** 2;
-  return 6371000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 };
 const nextOpenPoint = (today: AttendanceToday): AttendancePointCode | null => {
   const points = today.points.filter((point) => point.record === null);
@@ -106,6 +89,14 @@ type PunchFaceProof = {
   readonly expiresAt: string;
 };
 
+type PunchLocationCheck = GeofenceCheck & {
+  readonly projectId: string;
+  readonly pointCode: AttendancePointCode;
+  readonly attendanceDate: string;
+  readonly position: AttendanceLocation;
+};
+type DemoPosition = "INSIDE" | "OUTSIDE" | "DENIED";
+
 export default function Punch(): JSX.Element {
   useSessionGuard();
   const { revision, refresh } = usePageRefresh();
@@ -116,20 +107,21 @@ export default function Punch(): JSX.Element {
   const [today, setToday] = useState<AttendanceToday | null>(null);
   const [selectedPoint, setSelectedPoint] =
     useState<AttendancePointCode | null>(null);
-  const [latitude, setLatitude] = useState<string>("");
-  const [longitude, setLongitude] = useState<string>("");
-  const [accuracy, setAccuracy] = useState<string | null>(null);
+  const [locationCheck, setLocationCheck] = useState<PunchLocationCheck | null>(
+    null,
+  );
+  const [demoPosition, setDemoPosition] = useState<DemoPosition>("INSIDE");
+  const [demoOpen, setDemoOpen] = useState<boolean>(false);
   const [selfiePath, setSelfiePath] = useState<string | null>(null);
   const [sitePhotoPath, setSitePhotoPath] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const [locating, setLocating] = useState<boolean>(false);
-  const [demoOpen, setDemoOpen] = useState<boolean>(FRONTEND_DEMO && process.env.TARO_ENV === "h5");
-  const [locationError, setLocationError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<PunchSuccess | null>(null);
   const [faceInfo, setFaceInfo] = useState<MyFace | null>(null);
   const [faceProof, setFaceProof] = useState<PunchFaceProof | null>(null);
-  const [pendingFaceSession, setPendingFaceSession] = useState<PunchFaceProof | null>(null);
+  const [pendingFaceSession, setPendingFaceSession] =
+    useState<PunchFaceProof | null>(null);
   const [videoCaptureActive, setVideoCaptureActive] = useState<boolean>(false);
   const [verifying, setVerifying] = useState<boolean>(false);
   useEffect(() => {
@@ -148,11 +140,29 @@ export default function Punch(): JSX.Element {
     if (pendingFaceSession === null) return;
     const timer = setTimeout(
       () => setPendingFaceSession(null),
-      Math.max(0, new Date(pendingFaceSession.expiresAt).getTime() - Date.now()),
+      Math.max(
+        0,
+        new Date(pendingFaceSession.expiresAt).getTime() - Date.now(),
+      ),
     );
     return () => clearTimeout(timer);
   }, [pendingFaceSession]);
   const loadSeq = useRef<number>(0);
+  const operationInProgress = useRef<boolean>(false);
+  const locationMatches: boolean =
+    locationCheck !== null &&
+    locationCheck.projectId === projectId &&
+    locationCheck.pointCode === selectedPoint &&
+    locationCheck.attendanceDate === today?.attendanceDate;
+  const punchStarted: boolean =
+    locationMatches && locationCheck?.isInside === true;
+  const resetPunchEvidence = (): void => {
+    setLocationCheck(null);
+    setFaceProof(null);
+    setPendingFaceSession(null);
+    setSelfiePath(null);
+    setSitePhotoPath(null);
+  };
   useEffect(() => {
     let cancelled = false;
     void fetchMyFace().then(
@@ -211,26 +221,95 @@ export default function Punch(): JSX.Element {
   useEffect(() => {
     if (projectId !== null) void loadToday(projectId);
   }, [projectId, revision, loadToday]);
-  const locate = async (): Promise<void> => {
-    if (locating || busy) return;
+  const confirmPunchLocation = async (
+    pid: string,
+    point: AttendancePointCode,
+    data: AttendanceToday,
+  ): Promise<AttendanceLocation> => {
     setLocating(true);
-    setLocationError(null);
-    setLatitude("");
-    setLongitude("");
-    setAccuracy(null);
+    setLocationCheck(null);
     try {
-      const position = await Taro.getLocation({ type: "gcj02" });
-      setLatitude(position.latitude.toFixed(7));
-      setLongitude(position.longitude.toFixed(7));
-      setAccuracy(
-        position.accuracy === undefined ? null : String(position.accuracy),
-      );
-    } catch (reason) {
-      setLocationError(
-        `定位未完成，请检查定位权限后重试。(${errorText(reason)})`,
-      );
+      let position: AttendanceLocation;
+      if (FRONTEND_DEMO) {
+        if (demoPosition === "DENIED")
+          throw new Error("演示：定位失败，无法打卡。请允许定位后重新打卡。");
+        position = {
+          latitude:
+            demoPosition === "OUTSIDE"
+              ? String(Number(data.geofence.centerLatitude) + 1)
+              : data.geofence.centerLatitude,
+          longitude: data.geofence.centerLongitude,
+          accuracyM: "10",
+        };
+      } else {
+        try {
+          const devicePosition = await Taro.getLocation({
+            type: "gcj02",
+            isHighAccuracy: true,
+          });
+          position = {
+            latitude: devicePosition.latitude.toFixed(7),
+            longitude: devicePosition.longitude.toFixed(7),
+            accuracyM:
+              devicePosition.accuracy === undefined
+                ? null
+                : String(devicePosition.accuracy),
+          };
+        } catch (reason: unknown) {
+          throw new Error(
+            `无法获取位置，不能打卡。请检查定位权限后重新打卡。(${errorText(reason)})`,
+          );
+        }
+      }
+      const check = checkAttendanceGeofence(data.geofence, position);
+      setLocationCheck({
+        ...check,
+        projectId: pid,
+        pointCode: point,
+        attendanceDate: data.attendanceDate,
+        position,
+      });
+      if (!check.isInside)
+        throw new Error(
+          `不在考勤范围内，无法打卡。距项目中心 ${Math.round(check.distanceM)} 米，允许范围 ${data.geofence.radiusM} 米。请进入范围后重新打卡。`,
+        );
+      return position;
     } finally {
       setLocating(false);
+    }
+  };
+  const startPunch = async (): Promise<void> => {
+    if (
+      operationInProgress.current ||
+      busy ||
+      verifying ||
+      projectId === null ||
+      selectedPoint === null
+    )
+      return;
+    operationInProgress.current = true;
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const fresh = await fetchAttendanceToday(projectId);
+      setToday(fresh);
+      if (!fresh.configured || !fresh.isWorkday)
+        throw new Error("当前没有可打卡的排班，请联系管理员。");
+      if (
+        !fresh.points.some(
+          (point) => point.pointCode === selectedPoint && point.record === null,
+        )
+      ) {
+        await loadToday(projectId);
+        throw new Error("该考勤点已完成或不可打卡，请选择其他待打卡时段。");
+      }
+      await confirmPunchLocation(projectId, selectedPoint, fresh);
+    } catch (reason: unknown) {
+      setError(errorText(reason));
+    } finally {
+      operationInProgress.current = false;
+      setBusy(false);
     }
   };
   const choosePhoto = async (): Promise<string | null> => {
@@ -246,7 +325,7 @@ export default function Punch(): JSX.Element {
     return result.tempFilePaths[0] ?? null;
   };
   const pickSelfie = async (): Promise<void> => {
-    if (busy) return;
+    if (busy || verifying || !punchStarted) return;
     try {
       const path = await choosePhoto();
       if (path !== null) setSelfiePath(path);
@@ -256,7 +335,7 @@ export default function Punch(): JSX.Element {
     }
   };
   const pickSitePhoto = async (): Promise<void> => {
-    if (busy) return;
+    if (busy || verifying || !punchStarted) return;
     try {
       const path = await choosePhoto();
       if (path !== null) setSitePhotoPath(path);
@@ -267,6 +346,7 @@ export default function Punch(): JSX.Element {
   };
   const verifyFace = async (): Promise<void> => {
     if (
+      !punchStarted ||
       busy ||
       verifying ||
       projectId === null ||
@@ -277,7 +357,10 @@ export default function Punch(): JSX.Element {
     setError(null);
     setFaceProof(null);
     setVerifying(true);
-    if (faceInfo?.mode === "VIDEO_ACTION") { setVideoCaptureActive(true); return; }
+    if (faceInfo?.mode === "VIDEO_ACTION") {
+      setVideoCaptureActive(true);
+      return;
+    }
     try {
       if (!nativeFaceSdkAvailable())
         throw new Error(
@@ -342,36 +425,21 @@ export default function Punch(): JSX.Element {
     pendingFaceSession.attendanceDate === today?.attendanceDate &&
     new Date(pendingFaceSession.expiresAt).getTime() > Date.now();
   const isDemoFace = FRONTEND_DEMO && faceInfo?.mode === "DEVELOPMENT";
-  const hasLocation =
-    latitude.trim() !== "" &&
-    longitude.trim() !== "" &&
-    Number.isFinite(Number(latitude)) &&
-    Number.isFinite(Number(longitude)) &&
-    Math.abs(Number(latitude)) <= 90 &&
-    Math.abs(Number(longitude)) <= 180;
-  const distance =
-    today !== null && hasLocation
-      ? distanceMeters(
-          Number(today.geofence.centerLatitude),
-          Number(today.geofence.centerLongitude),
-          Number(latitude),
-          Number(longitude),
-        )
-      : null;
-  const inside =
-    today !== null && distance !== null && distance <= today.geofence.radiusM;
   const canSubmit =
     !busy &&
     !verifying &&
     !locating &&
     selectedPoint !== null &&
-    hasLocation &&
+    punchStarted &&
     (isDemoFace
       ? selfiePath !== null
-      : (faceInfo?.mode === "WECHAT_NATIVE" || faceInfo?.mode === "VIDEO_ACTION") && hasFaceProof) &&
+      : (faceInfo?.mode === "WECHAT_NATIVE" ||
+          faceInfo?.mode === "VIDEO_ACTION") &&
+        hasFaceProof) &&
     sitePhotoPath !== null;
   const submit = async (): Promise<void> => {
     if (
+      operationInProgress.current ||
       !canSubmit ||
       projectId === null ||
       today === null ||
@@ -379,14 +447,14 @@ export default function Punch(): JSX.Element {
       sitePhotoPath === null
     )
       return;
+    operationInProgress.current = true;
     setBusy(true);
     setError(null);
     setSuccess(null);
     try {
       const fresh = await fetchAttendanceToday(projectId);
       if (fresh.attendanceDate !== today.attendanceDate) {
-        setSelfiePath(null);
-        setSitePhotoPath(null);
+        resetPunchEvidence();
         await loadToday(projectId);
         throw new Error("日期已变化，今日排班已更新，请重新拍照打卡。");
       }
@@ -403,11 +471,16 @@ export default function Punch(): JSX.Element {
         isDemoFace && selfiePath !== null
           ? await uploadImage(selfiePath)
           : null;
+      const position = await confirmPunchLocation(
+        projectId,
+        selectedPoint,
+        fresh,
+      );
       const response = await submitAttendanceRecord(projectId, {
         attendanceDate: fresh.attendanceDate,
-        latitude: latitude.trim(),
-        longitude: longitude.trim(),
-        locationAccuracyM: accuracy,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        locationAccuracyM: position.accuracyM,
         occurredAt: new Date().toISOString(),
         pointCode: selectedPoint,
         ...(selfie !== null
@@ -417,17 +490,16 @@ export default function Punch(): JSX.Element {
         sitePhotoObjectKey: sitePhoto.objectKey,
       });
       setSuccess({
-        label: POINT_LABEL[selectedPoint],
+        label: (today?.points.find((point) => point.pointCode === selectedPoint)?.label ?? selectedPoint),
         time: formatChinaHm(response.record.occurredAt),
         reason: response.record.abnormalReason,
       });
-      setSelfiePath(null);
-      setFaceProof(null);
-      setSitePhotoPath(null);
+      resetPunchEvidence();
       await loadToday(projectId);
     } catch (reason) {
       setError(errorText(reason));
     } finally {
+      operationInProgress.current = false;
       setBusy(false);
     }
   };
@@ -438,18 +510,37 @@ export default function Punch(): JSX.Element {
     today?.points.filter((point) => point.record !== null).length ?? 0;
   return (
     <Screen>
-      {videoCaptureActive && projectId !== null && selectedPoint !== null && today !== null ? (
-        <VideoFaceCapture flow={{
-          createSession: () => createVideoFaceSession(projectId,selectedPoint),
-          fetchResult: (id) => fetchVideoFaceResult(projectId,selectedPoint,id),
-          uploadVideo: (id,path) => uploadFaceVideo(projectId,selectedPoint,id,path),
-        }} referenceDescription="与审核过的员工登记照比对，无需身份证照片。"
-          onCancel={() => { setVideoCaptureActive(false); setVerifying(false); }}
+      {videoCaptureActive &&
+      projectId !== null &&
+      selectedPoint !== null &&
+      today !== null ? (
+        <VideoFaceCapture
+          flow={{
+            createSession: () =>
+              createVideoFaceSession(projectId, selectedPoint),
+            fetchResult: (id) =>
+              fetchVideoFaceResult(projectId, selectedPoint, id),
+            uploadVideo: (id, path) =>
+              uploadFaceVideo(projectId, selectedPoint, id, path),
+          }}
+          referenceDescription="与审核过的员工登记照比对，无需身份证照片。"
+          onCancel={() => {
+            setVideoCaptureActive(false);
+            setVerifying(false);
+          }}
           onResult={(result) => {
             if (result.status !== "VERIFIED") return;
-            setFaceProof({ id: result.id, projectId, pointCode: selectedPoint, attendanceDate: today.attendanceDate, expiresAt: result.expiresAt });
-            setVideoCaptureActive(false); setVerifying(false);
-          }} />
+            setFaceProof({
+              id: result.id,
+              projectId,
+              pointCode: selectedPoint,
+              attendanceDate: today.attendanceDate,
+              expiresAt: result.expiresAt,
+            });
+            setVideoCaptureActive(false);
+            setVerifying(false);
+          }}
+        />
       ) : null}
       <PageHeader title="考勤打卡" />
       {projects === null && error === null ? (
@@ -487,11 +578,7 @@ export default function Punch(): JSX.Element {
               onClick={() => {
                 if (!busy && !verifying) {
                   setProjectId(project.projectId);
-                  setSelfiePath(null);
-                  setSitePhotoPath(null);
-                  setLatitude("");
-                  setLongitude("");
-                  setAccuracy(null);
+                  resetPunchEvidence();
                   setSuccess(null);
                 }
               }}
@@ -545,15 +632,19 @@ export default function Punch(): JSX.Element {
             {today.points.map((point) => (
               <NativeButton
                 key={point.pointCode}
-                disabled={busy || verifying || point.record !== null ? true : undefined}
+                disabled={
+                  busy || verifying || point.record !== null ? true : undefined
+                }
                 className={`punch-point ${point.pointCode === selectedPoint ? "punch-point--selected" : ""} ${point.record ? "punch-point--done" : ""}`}
                 onClick={() => {
+                  if (point.pointCode !== selectedPoint) resetPunchEvidence();
                   setSelectedPoint(point.pointCode);
+                  setError(null);
                   setSuccess(null);
                 }}
               >
                 <View className="punch-point__top">
-                  {POINT_LABEL[point.pointCode]}
+                  {point.label}
                   <View>
                     {point.record
                       ? point.record.status === "VALID"
@@ -575,7 +666,7 @@ export default function Punch(): JSX.Element {
           </View>
           {selectedPoint !== null ? (
             <View>
-              <Section title="01  确认考勤位置">
+              <Section title="考勤范围">
                 <View className="punch-location">
                   <View className="punch-location__map">
                     <View className="punch-location__circle">
@@ -584,231 +675,213 @@ export default function Punch(): JSX.Element {
                   </View>
                   <View className="punch-location__body">
                     <View className="punch-location__title">
-                      {distance === null
-                        ? "等待获取当前位置"
-                        : inside
-                          ? "已在考勤范围内"
-                          : "当前位置在考勤范围外"}
+                      {locating
+                        ? "正在自动确认位置…"
+                        : !locationMatches
+                          ? "打卡时自动确认位置"
+                          : punchStarted
+                            ? "已在考勤范围内"
+                            : "不在考勤范围内，无法打卡"}
                     </View>
                     <Subtitle>
-                      {distance === null
-                        ? `项目考勤范围 ${today.geofence.radiusM} 米`
-                        : `距工地中心 ${Math.round(distance)} 米 · 范围 ${today.geofence.radiusM} 米`}
+                      {locationMatches && locationCheck !== null
+                        ? `距项目中心 ${Math.round(locationCheck.distanceM)} 米 · 范围 ${today.geofence.radiusM} 米`
+                        : `仅限项目 ${today.geofence.radiusM} 米范围内打卡`}
                     </Subtitle>
-                    {accuracy !== null ? (
-                      <Subtitle>定位精度约 {Math.round(Number(accuracy))} 米</Subtitle>
-                    ) : null}
-                    <Button
-                      variant="outline"
-                      loading={locating}
-                      disabled={busy ? true : undefined}
-                      onClick={() => {
-                        void locate();
-                      }}
-                    >
-                      {hasLocation ? "重新定位" : "获取当前位置"}
-                    </Button>
                   </View>
                 </View>
-                {locationError ? <Notice>{locationError}</Notice> : null}
-                {distance !== null && !inside ? (
-                  <Notice>
-                    超出考勤范围也可提交，系统会标记为异常记录，请确认当前位置。
-                  </Notice>
-                ) : null}
               </Section>
-              <Section
-                title={
-                  isDemoFace ? "02  拍摄打卡照片" : "02  本人核验与现场照片"
-                }
-                sub={
-                  isDemoFace
-                    ? "当前为开发模拟，请拍摄本人和现场照片"
-                    : "完成人脸核验，并拍摄真实工作现场"
-                }
-              >
-                {!isDemoFace && faceInfo !== null && faceInfo.mode !== "WECHAT_NATIVE" && faceInfo.mode !== "VIDEO_ACTION" ? (
-                  <Notice>活体核验暂未启用，请联系管理员开通后再打卡。</Notice>
-                ) : null}
-                {!isDemoFace && faceInfo?.profile?.status !== "APPROVED" ? (
-                  <Notice>
-                    请先在“我的 → 人脸档案”录入底照，等待管理员审核。
-                  </Notice>
-                ) : null}
-                {!isDemoFace ? (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      void Taro.navigateTo({
-                        url: "/pages/face-profile/index",
-                      });
-                    }}
-                  >
-                    查看人脸档案
-                  </Button>
-                ) : null}
-                <View className="punch-photos">
-                  {isDemoFace ? (
+              {punchStarted ? (
+                <Section
+                  title={isDemoFace ? "拍摄打卡照片" : "本人核验与现场照片"}
+                  sub={
+                    isDemoFace
+                      ? "当前为开发模拟，请拍摄本人和现场照片"
+                      : "完成人脸核验，并拍摄真实工作现场"
+                  }
+                >
+                  {!isDemoFace &&
+                  faceInfo !== null &&
+                  faceInfo.mode !== "WECHAT_NATIVE" &&
+                  faceInfo.mode !== "VIDEO_ACTION" ? (
+                    <Notice>
+                      活体核验暂未启用，请联系管理员开通后再打卡。
+                    </Notice>
+                  ) : null}
+                  {!isDemoFace && faceInfo?.profile?.status !== "APPROVED" ? (
+                    <Notice>
+                      请先在“我的 → 人脸档案”录入底照，等待管理员审核。
+                    </Notice>
+                  ) : null}
+                  {!isDemoFace ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        void Taro.navigateTo({
+                          url: "/pages/face-profile/index",
+                        });
+                      }}
+                    >
+                      查看人脸档案
+                    </Button>
+                  ) : null}
+                  <View className="punch-photos">
+                    {isDemoFace ? (
+                      <NativeButton
+                        className="punch-photo-card"
+                        disabled={busy ? true : undefined}
+                        onClick={() => {
+                          void pickSelfie();
+                        }}
+                      >
+                        {selfiePath ? (
+                          <Image
+                            className="punch-photo"
+                            src={selfiePath}
+                            mode="aspectFill"
+                          />
+                        ) : (
+                          <View className="punch-photo-card__empty">
+                            <AppIcon name="user" />
+                          </View>
+                        )}
+                        <View>
+                          {selfiePath ? "重新拍摄本人照片" : "拍摄本人照片"}
+                        </View>
+                        <View className="punch-photo-card__sub">
+                          {selfiePath ? "已就绪 · 点击更换" : "正脸清晰无遮挡"}
+                        </View>
+                      </NativeButton>
+                    ) : (
+                      <NativeButton
+                        className="punch-photo-card"
+                        disabled={
+                          busy ||
+                          verifying ||
+                          (faceInfo?.mode !== "WECHAT_NATIVE" &&
+                            faceInfo?.mode !== "VIDEO_ACTION") ||
+                          faceInfo?.profile?.status !== "APPROVED" ||
+                          (faceInfo?.mode === "VIDEO_ACTION"
+                            ? process.env.TARO_ENV !== "weapp"
+                            : !nativeFaceSdkAvailable())
+                            ? true
+                            : undefined
+                        }
+                        onClick={() => {
+                          void verifyFace();
+                        }}
+                      >
+                        <View className="punch-photo-card__empty">
+                          <AppIcon name="shield" />
+                        </View>
+                        <View>
+                          {verifying
+                            ? "正在核验…"
+                            : hasFaceProof
+                              ? "本人核验已完成"
+                              : hasPendingFaceResult
+                                ? "重试确认核验结果"
+                                : "开始活体人脸核验"}
+                        </View>
+                        <View className="punch-photo-card__sub">
+                          {hasFaceProof
+                            ? "仅用于本次打卡"
+                            : hasPendingFaceResult
+                              ? "采集已完成，点击继续查询本次结果"
+                              : faceInfo?.mode !== "WECHAT_NATIVE" &&
+                                  faceInfo?.mode !== "VIDEO_ACTION"
+                                ? "服务尚未开通"
+                                : faceInfo?.mode === "VIDEO_ACTION"
+                                  ? process.env.TARO_ENV === "weapp"
+                                    ? "按提示录制动作视频"
+                                    : "请在微信小程序中核验"
+                                  : !nativeFaceSdkAvailable()
+                                    ? "请使用已开通服务的微信小程序"
+                                    : "正对镜头，按提示完成核验"}
+                        </View>
+                      </NativeButton>
+                    )}
                     <NativeButton
                       className="punch-photo-card"
                       disabled={busy ? true : undefined}
                       onClick={() => {
-                        void pickSelfie();
+                        void pickSitePhoto();
                       }}
                     >
-                      {selfiePath ? (
+                      {sitePhotoPath ? (
                         <Image
                           className="punch-photo"
-                          src={selfiePath}
+                          src={sitePhotoPath}
                           mode="aspectFill"
                         />
                       ) : (
                         <View className="punch-photo-card__empty">
-                          <AppIcon name="user" />
+                          <AppIcon name="camera" />
                         </View>
                       )}
                       <View>
-                        {selfiePath ? "重新拍摄本人照片" : "拍摄本人照片"}
+                        {sitePhotoPath ? "重新拍摄现场照片" : "拍摄现场照片"}
                       </View>
                       <View className="punch-photo-card__sub">
-                        {selfiePath ? "已就绪 · 点击更换" : "正脸清晰无遮挡"}
+                        {sitePhotoPath
+                          ? "已就绪 · 点击更换"
+                          : "记录真实工作场景"}
                       </View>
                     </NativeButton>
-                  ) : (
-                    <NativeButton
-                      className="punch-photo-card"
-                      disabled={
-                        busy ||
-                        verifying ||
-                        (faceInfo?.mode !== "WECHAT_NATIVE" && faceInfo?.mode !== "VIDEO_ACTION") ||
-                        faceInfo?.profile?.status !== "APPROVED" ||
-                        (faceInfo?.mode === "VIDEO_ACTION" ? process.env.TARO_ENV !== "weapp" : !nativeFaceSdkAvailable())
-                          ? true
-                          : undefined
-                      }
-                      onClick={() => {
-                        void verifyFace();
-                      }}
-                    >
-                      <View className="punch-photo-card__empty">
-                        <AppIcon name="shield" />
-                      </View>
-                      <View>
-                        {verifying
-                          ? "正在核验…"
-                          : hasFaceProof
-                            ? "本人核验已完成"
-                            : hasPendingFaceResult
-                              ? "重试确认核验结果"
-                              : "开始活体人脸核验"}
-                      </View>
-                      <View className="punch-photo-card__sub">
-                        {hasFaceProof
-                          ? "仅用于本次打卡"
-                          : hasPendingFaceResult
-                            ? "采集已完成，点击继续查询本次结果"
-                            : faceInfo?.mode !== "WECHAT_NATIVE" && faceInfo?.mode !== "VIDEO_ACTION"
-                            ? "服务尚未开通"
-                            : faceInfo?.mode === "VIDEO_ACTION"
-                              ? process.env.TARO_ENV === "weapp" ? "按提示录制动作视频" : "请在微信小程序中核验"
-                              : !nativeFaceSdkAvailable()
-                              ? "请使用已开通服务的微信小程序"
-                              : "正对镜头，按提示完成核验"}
-                      </View>
-                    </NativeButton>
-                  )}
-                  <NativeButton
-                    className="punch-photo-card"
-                    disabled={busy ? true : undefined}
-                    onClick={() => {
-                      void pickSitePhoto();
-                    }}
-                  >
-                    {sitePhotoPath ? (
-                      <Image
-                        className="punch-photo"
-                        src={sitePhotoPath}
-                        mode="aspectFill"
-                      />
-                    ) : (
-                      <View className="punch-photo-card__empty">
-                        <AppIcon name="camera" />
-                      </View>
-                    )}
-                    <View>
-                      {sitePhotoPath ? "重新拍摄现场照片" : "拍摄现场照片"}
-                    </View>
-                    <View className="punch-photo-card__sub">
-                      {sitePhotoPath ? "已就绪 · 点击更换" : "记录真实工作场景"}
-                    </View>
-                  </NativeButton>
-                </View>
-              </Section>
-              {(FRONTEND_DEMO || process.env.TARO_ENV === "h5") && isDemoFace ? (
-                <View className="punch-demo">
-                  <View
-                    className="punch-demo__toggle"
-                    onClick={() => {
-                      if (!busy) setDemoOpen(!demoOpen);
-                    }}
-                  >
-                    演示坐标工具 <View>{demoOpen ? "收起 −" : "展开 +"}</View>
                   </View>
+                </Section>
+              ) : null}
+              {FRONTEND_DEMO ? (
+                <View>
+                  <ListItem
+                    primary="演示场景"
+                    secondary="仅模拟位置，不读取设备定位"
+                    chip={demoOpen ? "收起" : "展开"}
+                    onClick={() => {
+                      if (!busy && !verifying) setDemoOpen(!demoOpen);
+                    }}
+                  />
                   {demoOpen ? (
-                    <View>
-                      <Subtitle>
-                        手动坐标仅用于演示。真实定位请点击“获取当前位置”；人脸核验仍为开发模拟。
-                      </Subtitle>
-                      <Field
-                        value={latitude}
-                        placeholder="演示纬度"
-                        onInput={(value) => {
-                          setLatitude(value);
-                          setAccuracy(null);
-                        }}
-                      />
-                      <Field
-                        value={longitude}
-                        placeholder="演示经度"
-                        onInput={(value) => {
-                          setLongitude(value);
-                          setAccuracy(null);
-                        }}
-                      />
-                      <Button
-                        variant="outline"
-                        disabled={busy ? true : undefined}
-                        onClick={() => {
-                          setLatitude(today.geofence.centerLatitude);
-                          setLongitude(today.geofence.centerLongitude);
-                          setAccuracy(null);
-                          setLocationError(null);
-                        }}
-                      >
-                        使用演示工地坐标
-                      </Button>
-                    </View>
+                    <Segmented
+                      options={[
+                        { value: "INSIDE", label: "范围内" },
+                        { value: "OUTSIDE", label: "范围外" },
+                        { value: "DENIED", label: "定位失败" },
+                      ]}
+                      value={demoPosition}
+                      onChange={(value) => {
+                        if (busy || verifying) return;
+                        setDemoPosition(value);
+                        resetPunchEvidence();
+                        setError(null);
+                      }}
+                    />
                   ) : null}
                 </View>
               ) : null}
               <View className="punch-submit">
                 <View className="punch-submit__hint">
-                  {canSubmit
-                    ? "信息已齐全，可以提交打卡"
-                    : !hasLocation
-                      ? "请先获取当前位置"
+                  {!punchStarted
+                    ? "点击打卡，自动确认位置后继续本人核验"
+                    : canSubmit
+                      ? "提交时会再次确认位置，请保持在考勤范围内"
                       : isDemoFace
                         ? "请完成本人照片和现场照片"
                         : "请完成人脸核验和现场照片"}
                 </View>
                 <Button
                   loading={busy}
-                  disabled={!canSubmit}
+                  disabled={busy || verifying || (punchStarted && !canSubmit)}
                   onClick={() => {
-                    void submit();
+                    if (punchStarted) void submit();
+                    else void startPunch();
                   }}
                 >
-                  {busy ? "正在提交…" : `确认${POINT_LABEL[selectedPoint]}打卡`}
+                  {locating
+                    ? "正在确认位置…"
+                    : busy
+                      ? "正在处理…"
+                      : `${punchStarted ? "确认" : "开始"}${(today?.points.find((point) => point.pointCode === selectedPoint)?.label ?? selectedPoint)}打卡`}
                 </Button>
               </View>
             </View>

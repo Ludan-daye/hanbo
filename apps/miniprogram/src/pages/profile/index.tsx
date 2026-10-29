@@ -1,3 +1,4 @@
+import { permissionLabel } from "../../routing/permissionLevels";
 import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
@@ -43,6 +44,7 @@ export default function Profile(): JSX.Element {
   >(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
+  const [editingProfile, setEditingProfile] = useState<boolean>(false);
   const panel = roleHomePanel(state.me?.roles.highestRoleCode ?? null);
   useEffect(() => {
     if (state.me === null) return;
@@ -106,23 +108,29 @@ export default function Profile(): JSX.Element {
           onRetry={refreshAccount}
         />
       ) : null}
-      <Section
-        title="头像与昵称"
-        sub={
-          FRONTEND_DEMO
-            ? "演示资料仅保存在本机"
-            : "由本人主动设置，保存后再次登录仍可查看"
-        }
-      >
-        {account !== null ? (
+      <Section title="个人资料">
+        {!editingProfile ? (
+          <ListItem
+            primary="头像与本人资料"
+            chip="编辑"
+            onClick={() => setEditingProfile(true)}
+          />
+        ) : null}
+        {editingProfile && account !== null ? (
           <AccountProfileForm
             profile={account}
             submitLabel="保存资料"
             onSaved={async (): Promise<void> => {
               await refreshMe();
               refreshAccount();
+              setEditingProfile(false);
             }}
           />
+        ) : null}
+        {editingProfile ? (
+          <Button variant="outline" onClick={() => setEditingProfile(false)}>
+            取消编辑
+          </Button>
         ) : null}
       </Section>
       <Section title="账号绑定">
@@ -130,6 +138,9 @@ export default function Profile(): JSX.Element {
           primary="登录方式"
           secondary={FRONTEND_DEMO ? "本机演示账号" : "微信登录 · 已关联"}
         />
+        {account?.realName ? (
+          <ListItem primary="真实姓名" secondary={account.realName} />
+        ) : null}
         {account?.phoneMasked ? (
           <ListItem primary="档案手机号" secondary={account.phoneMasked} />
         ) : null}
@@ -169,10 +180,17 @@ export default function Profile(): JSX.Element {
         ) : null}
       </Section>
       <Section title="账号权限">
+        <ListItem
+          primary="权限等级与功能"
+          secondary="工人一至二级 · 管理人员三至五级"
+          onClick={() => {
+            void Taro.navigateTo({ url: "/pages/permission-levels/index" });
+          }}
+        />
         {state.me?.roles.assignments.map((role) => (
           <ListItem
             key={`${role.roleCode}-${role.scope.scopeId}`}
-            primary={PANEL_LABELS[roleHomePanel(role.roleCode)]}
+            primary={permissionLabel(role.roleCode)}
             secondary={
               {
                 GLOBAL: "全平台范围",

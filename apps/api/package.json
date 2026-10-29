@@ -9,6 +9,7 @@
     "start:local": "node --env-file=.env dist/main.js",
     "start:dev": "nest start --watch",
     "test": "vitest run",
+    "test:database": "tsx --env-file=.env scripts/test-database.ts",
     "test:face": "node --env-file=.env scripts/test-native-face.mjs",
     "test:face:video": "FACE_TEST_MODE=VIDEO_ACTION node --env-file=.env scripts/test-native-face.mjs",
     "face:check": "node --env-file=.env scripts/check-video-face.mjs",

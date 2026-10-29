@@ -15,6 +15,32 @@ export type ProjectParticipant = {
   readonly teamName: string | null;
 };
 
+export type ManagedParticipant = ProjectParticipant & {
+  readonly workType: string | null;
+  readonly enteredAt: string;
+  readonly exitedAt: string | null;
+  readonly updatedAt: string;
+  readonly profileUpdatedAt: string;
+  readonly nameStatus: "AVAILABLE" | "REQUIRES_UPDATE";
+};
+
+export type ParticipantPage = {
+  readonly items: readonly ManagedParticipant[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+};
+
+export type ParticipantPageOptions = {
+  readonly permissionRole?: "WORKER" | "TEAM_LEADER" | "PROJECT_ADMIN" | null;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly search: string;
+  readonly participantType: ParticipantType | null;
+  readonly teamId: string | null;
+  readonly status: MemberStatus | null;
+};
+
 export type ReportTotals = {
   readonly abnormalRecordCount: number;
   readonly absenceCount: number;
@@ -88,6 +114,14 @@ export type CompanyProject = {
   readonly plannedEndDate: string | null;
 };
 
+export type ManagedProject = CompanyProject & {
+  readonly code: string | null;
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+  readonly remark: string | null;
+  readonly updatedAt: string;
+};
+
 export type CompanyParticipant = ProjectParticipant & {
   readonly projectName: string;
 };
@@ -97,6 +131,43 @@ export type ProjectTeam = {
   readonly projectId: string;
   readonly name: string;
   readonly status: string;
+};
+
+export type TeamLeaderReference = {
+  readonly memberId: string;
+  readonly participantType: ParticipantType;
+};
+export type ManagedTeam = ProjectTeam & {
+  readonly workType: string | null;
+  readonly remark: string | null;
+  readonly updatedAt: string;
+  readonly memberCount: number;
+  readonly leader:
+    | (TeamLeaderReference & {
+        readonly displayName: string | null;
+        readonly phone: string;
+      })
+    | null;
+};
+export type TeamForm = {
+  readonly name: string;
+  readonly status: "ACTIVE" | "SUSPENDED";
+  readonly workType: string | null;
+  readonly remark: string | null;
+  readonly leader: TeamLeaderReference | null;
+  readonly expectedUpdatedAt: string;
+};
+export type ReuseProject = { readonly id: string; readonly name: string };
+export type ReusePersonForm = {
+  readonly sourceProjectId: string;
+  readonly sourceMemberId: string;
+  readonly participantType: ParticipantType;
+  readonly expectedSourceUpdatedAt: string;
+  readonly expectedProfileUpdatedAt: string;
+  readonly projectRoleLabel: string;
+  readonly teamId: string | null;
+  readonly requiresAttendance: boolean;
+  readonly enteredAt: string;
 };
 
 export type BindingInvitationStatus =

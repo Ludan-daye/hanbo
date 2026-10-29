@@ -1,15 +1,9 @@
+import { permissionLabel } from "../../routing/permissionLevels";
+import Taro from "@tarojs/taro";
 import { View } from "@tarojs/components";
 
-import {
-  AppHeader,
-  BottomNav,
-  Label,
-  Screen,
-  Subtitle,
-  Title,
-} from "../../components/ui/index";
+import { AppHeader, BottomNav, Screen, Title } from "../../components/ui/index";
 import { RolePanel } from "../../components/role-panels/index";
-import { PANEL_LABELS } from "../../routing/features";
 import { roleHomePanel } from "../../routing/roleHome";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { useSession } from "../../store/session";
@@ -22,12 +16,20 @@ export default function Workspace(): JSX.Element {
     <Screen>
       <AppHeader title="工作台" />
       <View className="page-intro">
-        <Label>HANBO WORKSPACE</Label>
-        <Title>让工作，更有序</Title>
-        <Subtitle>为{PANEL_LABELS[panel]}提供的全部工作应用</Subtitle>
+        <Title>全部功能</Title>
+        <View className="ui-subtitle">
+          {permissionLabel(state.me?.roles.highestRoleCode ?? null)}
+        </View>
+      </View>
+      <View
+        className="management-link"
+        onClick={() => {
+          void Taro.navigateTo({ url: "/pages/permission-levels/index" });
+        }}
+      >
+        权限等级与功能 ›
       </View>
       <RolePanel panel={panel} />
-      <View className="page-footnote">瀚渤智慧工地 · 每一份付出，都有记录</View>
       <BottomNav active="workspace" />
     </Screen>
   );

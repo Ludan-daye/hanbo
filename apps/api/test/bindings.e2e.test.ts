@@ -18,6 +18,12 @@ type BindingInvitationStatusValue = "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKE
 type MemberStatusValue = "ACTIVE" | "EXITED" | "SUSPENDED";
 
 type UserRecord = {
+  readonly openid: string;
+  readonly isBound: boolean;
+  readonly encryptedRealName: string;
+  readonly phone: string;
+  readonly nickname: string;
+  readonly avatarObjectKey: string;
   readonly id: string;
   readonly sessionVersion: number;
   readonly status: UserStatusValue;
@@ -257,6 +263,12 @@ class BindingsPrismaTestDouble {
   seedActiveSession(userId: string, sessionId: string): void {
     const user: UserRecord = {
       id: userId,
+      openid: userId,
+      isBound: true,
+      encryptedRealName: "test-encrypted-name",
+      phone: "13800000000",
+      nickname: "Test",
+      avatarObjectKey: "test/avatar.png",
       sessionVersion: 1,
       status: "ACTIVE"
     };

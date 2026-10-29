@@ -1,5 +1,5 @@
+import type { AttendancePointCode } from "@construction/domain/attendance.js";
 import type {
-  AttendancePointCode,
   FaceProfile,
   ProfileOwnerType,
 } from "@prisma/client";

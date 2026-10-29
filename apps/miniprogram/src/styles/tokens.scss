@@ -1,19 +1,23 @@
-page {
-  --bg: #f4f7fb;
+page,
+body,
+.taro_page {
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-sunk: #edf2f8;
-  --ink: #172b46;
-  --ink-soft: #8492a6;
-  --line: #eaf0f6;
-  --clay: #2675ed;
-  --clay-pressed: #145bd0;
-  --clay-tint: #eaf2ff;
-  --steel: #435b78;
+  --surface-sunk: #f5f6f7;
+  --ink: #101820;
+  --ink-soft: #626d78;
+  --line: #e5e8eb;
+  --clay: #0066d6;
+  --clay-pressed: #004fa8;
+  --clay-tint: #edf5ff;
+  --steel: #3c4856;
+  --primary: #101820;
+  --primary-pressed: #303b45;
   --gold: #d79134;
-  --success: #16a085;
-  --danger: #dd5c63;
-  --radius-card: 28rpx;
+  --success: #14805e;
+  --danger: #c33845;
+  --radius-card: 20rpx;
   --radius-pill: 999rpx;
-  --shadow-soft: 0 8rpx 36rpx rgba(35, 74, 126, 0.045);
+  --shadow-soft: none;
   --tap-min: 88rpx;
 }

@@ -1,3 +1,4 @@
+import { workerRole } from "../attendance/member-history.js";
 import { createHash, randomBytes } from "node:crypto";
 
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
@@ -6,6 +7,8 @@ import type { BindingInvitation, ManagerProfile, User, WorkerProfile } from "@pr
 import { Prisma } from "@prisma/client";
 import { getHighestRoleCode } from "@construction/domain/roles.js";
 
+import { assertAccountProfileComplete, assertIdentityMatches } from "./account-onboarding.js";
+import { decryptPersonnelName } from "../management/personnel-name.js";
 import { AuthorizationContextService } from "../authorization/authorization-context.service.js";
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
@@ -62,10 +65,10 @@ const getRequiredManagerProfileId = (invitation: BindingInvitation): string => {
   return invitation.managerProfileId;
 };
 
-const getBindableProfile = (
-  profile: WorkerProfile | ManagerProfile | null,
+const getBindableProfile = <T extends WorkerProfile | ManagerProfile>(
+  profile: T | null,
   profileId: string
-): WorkerProfile | ManagerProfile => {
+): T => {
   if (profile === null) {
     throw new BadRequestException({
       message: "BINDING_TARGET_PROFILE_NOT_FOUND",
@@ -302,10 +305,10 @@ export class AuthService {
     }
 
     if (invitation.targetType === "WORKER") {
-      return this.bindWorkerProfile(currentUser.userId, invitation, now);
+      return this.bindWorkerProfile(currentUserRecord, invitation, now);
     }
 
-    return this.bindManagerProfile(currentUser.userId, invitation, now);
+    return this.bindManagerProfile(currentUserRecord, invitation, now);
   }
 
   async getMe(userId: string): Promise<MeResponse> {
@@ -349,10 +352,12 @@ export class AuthService {
   }
 
   private async bindWorkerProfile(
-    userId: string,
+    user: User,
     invitation: BindingInvitation,
     now: Date
   ): Promise<BindByInvitationResponse> {
+    const userId: string = user.id;
+    assertAccountProfileComplete(user);
     const workerProfileId = getRequiredWorkerProfileId(invitation);
     const profile = getBindableProfile(
       await this.prisma.workerProfile.findUnique({
@@ -362,7 +367,10 @@ export class AuthService {
       }),
       workerProfileId
     );
-    const workerPhone = profile.phone;
+    assertIdentityMatches(
+      { realName: decryptPersonnelName(user.encryptedRealName!, this.env.PERSONNEL_ENCRYPTION_KEY), phone: user.phone! },
+      { realName: decryptPersonnelName(profile.encryptedName, this.env.PERSONNEL_ENCRYPTION_KEY), phone: profile.phone },
+    );
 
     return this.prisma.$transaction(async (transaction): Promise<BindByInvitationResponse> => {
       const invitationUpdate = await transaction.bindingInvitation.updateMany({
@@ -391,6 +399,8 @@ export class AuthService {
         },
         where: {
           id: workerProfileId,
+          encryptedName: profile.encryptedName,
+          phone: profile.phone,
           userId: null
         }
       });
@@ -400,11 +410,12 @@ export class AuthService {
 
       const userUpdate = await transaction.user.updateMany({
         data: {
-          isBound: true,
-          phone: workerPhone
+          isBound: true
         },
         where: {
           id: userId,
+          encryptedRealName: user.encryptedRealName,
+          phone: user.phone,
           isBound: false
         }
       });
@@ -434,10 +445,12 @@ export class AuthService {
   }
 
   private async bindManagerProfile(
-    userId: string,
+    user: User,
     invitation: BindingInvitation,
     now: Date
   ): Promise<BindByInvitationResponse> {
+    const userId: string = user.id;
+    assertAccountProfileComplete(user);
     const managerProfileId = getRequiredManagerProfileId(invitation);
     const profile = getBindableProfile(
       await this.prisma.managerProfile.findUnique({
@@ -447,7 +460,10 @@ export class AuthService {
       }),
       managerProfileId
     );
-    const managerPhone = profile.phone;
+    assertIdentityMatches(
+      { realName: decryptPersonnelName(user.encryptedRealName!, this.env.PERSONNEL_ENCRYPTION_KEY), phone: user.phone! },
+      { realName: profile.name, phone: profile.phone },
+    );
 
     return this.prisma.$transaction(async (transaction): Promise<BindByInvitationResponse> => {
       const invitationUpdate = await transaction.bindingInvitation.updateMany({
@@ -476,6 +492,8 @@ export class AuthService {
         },
         where: {
           id: managerProfileId,
+          name: profile.name,
+          phone: profile.phone,
           userId: null
         }
       });
@@ -485,11 +503,12 @@ export class AuthService {
 
       const userUpdate = await transaction.user.updateMany({
         data: {
-          isBound: true,
-          phone: managerPhone
+          isBound: true
         },
         where: {
           id: userId,
+          encryptedRealName: user.encryptedRealName,
+          phone: user.phone,
           isBound: false
         }
       });
@@ -529,23 +548,13 @@ export class AuthService {
     if (memberships.length === 0) {
       return;
     }
-    const role = await transaction.role.findUnique({ where: { code: "WORKER" } });
-    if (role === null) {
-      throw new ConflictException({ message: "WORKER_ROLE_NOT_FOUND" });
-    }
     for (const membership of memberships) {
-      await transaction.userRole.upsert({
-        create: { roleId: role.id, scopeId: membership.projectId, scopeType: "PROJECT", userId },
-        update: {},
-        where: {
-          userId_roleId_scopeType_scopeId: {
-            roleId: role.id,
-            scopeId: membership.projectId,
-            scopeType: "PROJECT",
-            userId
-          }
-        }
-      });
+      const code = workerRole(membership.projectRoleLabel);
+      const role = await transaction.role.findUnique({ where: { code } });
+      if (role === null) throw new ConflictException({ message: "MEMBERSHIP_ROLE_NOT_FOUND", code });
+      const assignment = { roleId: role.id, userId, scopeType: code === "TEAM_LEADER" ? "TEAM" as const : "PROJECT" as const,
+        scopeId: code === "TEAM_LEADER" ? membership.teamId! : membership.projectId };
+      await transaction.userRole.upsert({ create: assignment, update: {}, where: { userId_roleId_scopeType_scopeId: assignment } });
     }
   }
 

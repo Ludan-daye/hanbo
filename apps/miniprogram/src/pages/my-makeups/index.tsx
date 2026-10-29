@@ -90,7 +90,7 @@ export default function MyMakeups(): JSX.Element {
       {visible.map((item) => (
         <View key={item.id} className="makeup-card">
           <ListItem
-            primary={`${POINT_LABEL[item.pointCode]} · ${item.attendanceDate}`}
+            primary={`${(item.pointLabel ?? POINT_LABEL[item.pointCode] ?? item.pointCode)} · ${item.attendanceDate}`}
             secondary={`申请打卡时间 ${formatChinaHm(item.requestedOccurredAt)} · ${item.reason}`}
             chip={STATUS_LABEL[item.status]}
           />

@@ -14,21 +14,13 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { fetchMyProjects, submitMakeup } from "../../services/me";
+import { fetchMyAttendancePlan, type EffectivePlan } from "../../services/attendance-plans";
 import { chinaToday } from "../../services/time";
 import type {
   AttendancePointCode,
   MyProjectMembership,
 } from "../../services/me.types";
 
-const POINT_OPTIONS: readonly {
-  readonly label: string;
-  readonly value: AttendancePointCode;
-}[] = [
-  { label: "上午上班", value: "SEGMENT_1_START" },
-  { label: "上午下班", value: "SEGMENT_1_END" },
-  { label: "下午上班", value: "SEGMENT_2_START" },
-  { label: "下午下班", value: "SEGMENT_2_END" },
-];
 export default function SubmitMakeup(): JSX.Element {
   useSessionGuard();
   const [projects, setProjects] = useState<
@@ -37,7 +29,8 @@ export default function SubmitMakeup(): JSX.Element {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [date, setDate] = useState<string>(chinaToday());
   const [time, setTime] = useState<string>("08:00");
-  const [point, setPoint] = useState<AttendancePointCode>("SEGMENT_1_START");
+  const [point, setPoint] = useState<AttendancePointCode>("");
+  const [plan, setPlan] = useState<EffectivePlan | null>(null);
   const [reason, setReason] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,19 +52,22 @@ export default function SubmitMakeup(): JSX.Element {
       cancelled = true;
     };
   }, []);
+  useEffect(() => {
+    if (projectId === null) return;
+    let cancelled = false;
+    setPlan(null); setPoint(""); setError(null);
+    void fetchMyAttendancePlan(projectId, date).then((value) => {
+      if (cancelled) return;
+      setPlan(value); setPoint(value.isWorkday ? value.points[0]?.code ?? "" : "");
+      setTime(value.points[0]?.time ?? "08:00");
+    }, (cause: unknown) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "无法读取当天排班"); });
+    return () => { cancelled = true; };
+  }, [projectId, date]);
   const selectPoint = (value: AttendancePointCode): void => {
-    setPoint(value);
-    setTime(
-      {
-        SEGMENT_1_START: "08:00",
-        SEGMENT_1_END: "12:00",
-        SEGMENT_2_START: "13:30",
-        SEGMENT_2_END: "17:30",
-      }[value],
-    );
+    setPoint(value); setTime(plan?.points.find((row) => row.code === value)?.time ?? "08:00");
   };
   const submit = async (): Promise<void> => {
-    if (projectId === null || reason.trim().length === 0 || busy) return;
+    if (projectId === null || !plan?.isWorkday || !point || reason.trim().length === 0 || busy) return;
     const requestedOccurredAt = `${date}T${time}:00+08:00`;
     if (new Date(requestedOccurredAt).getTime() > Date.now()) {
       setError("不能申请未来时间的补卡，请检查日期和时间。");
@@ -118,9 +114,10 @@ export default function SubmitMakeup(): JSX.Element {
       ))}
       {projectId ? (
         <View>
+          {plan && !plan.isWorkday ? <Notice>当天没有安排打卡，不能申请补卡。</Notice> : null}
           <Section title="补卡时段">
             <Segmented
-              options={POINT_OPTIONS}
+              options={(plan?.points ?? []).map((row) => ({ label: row.label, value: row.code }))}
               value={point}
               onChange={selectPoint}
             />
@@ -166,7 +163,7 @@ export default function SubmitMakeup(): JSX.Element {
           </Section>
           <Button
             loading={busy}
-            disabled={reason.trim().length === 0}
+            disabled={!plan?.isWorkday || !point || reason.trim().length === 0}
             onClick={() => {
               void submit();
             }}

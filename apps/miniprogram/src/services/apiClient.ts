@@ -11,6 +11,14 @@ export type ApiClient = {
 };
 
 type ApiResponse = { readonly statusCode: number; readonly data: unknown };
+type RequestSession = {
+  readonly accessToken: string;
+  readonly refreshToken: string;
+};
+type PendingRefresh = {
+  readonly refreshToken: string;
+  readonly promise: Promise<string | null>;
+};
 
 export class ApiError extends Error {
   readonly statusCode: number;
@@ -34,6 +42,8 @@ const clearTokens = (): void => {
 };
 
 export const createApiClient = (baseUrl: string): ApiClient => {
+  let pendingRefresh: PendingRefresh | null = null;
+
   const send = async (
     path: string,
     options: RequestOptions,
@@ -51,29 +61,76 @@ export const createApiClient = (baseUrl: string): ApiClient => {
       throw new ApiError(0, "网络连接未完成，请检查网络后重试。", cause);
     });
 
-  const refresh = async (): Promise<string | null> => {
-    const refreshToken = getRefreshToken();
-    if (refreshToken.length === 0) {
-      return null;
-    }
+  const assertCurrentSession = (session: RequestSession): void => {
+    if (getRefreshToken() !== session.refreshToken)
+      throw new ApiError(401, "登录状态已变更，请重新打开当前页面。", {
+        message: "REQUEST_SESSION_CHANGED",
+      });
+  };
+
+  const refresh = async (session: RequestSession): Promise<string | null> => {
     const res = await send(
       "/auth/refresh",
       {
         method: "POST",
-        data: { refreshToken },
+        data: { refreshToken: session.refreshToken },
       },
       "",
     );
+    assertCurrentSession(session);
+    if (res.statusCode === 401) return null;
+    if (res.statusCode !== 200)
+      throw new ApiError(
+        res.statusCode,
+        "登录状态刷新失败，请稍后重试。",
+        res.data,
+      );
     if (
-      res.statusCode === 200 &&
-      res.data &&
-      typeof (res.data as { accessToken?: string }).accessToken === "string"
-    ) {
-      const next = (res.data as { accessToken: string }).accessToken;
-      Taro.setStorageSync("accessToken", next);
-      return next;
+      typeof res.data !== "object" ||
+      res.data === null ||
+      !("accessToken" in res.data) ||
+      typeof res.data.accessToken !== "string" ||
+      res.data.accessToken.length === 0
+    )
+      throw new ApiError(502, "登录服务返回异常，请稍后重试。", res.data);
+    const next: string = res.data.accessToken;
+    Taro.setStorageSync("accessToken", next);
+    return next;
+  };
+
+  const refreshedToken = async (
+    session: RequestSession,
+  ): Promise<string | null> => {
+    assertCurrentSession(session);
+    const currentToken: string = getAccessToken();
+    if (currentToken !== session.accessToken && currentToken.length > 0)
+      return currentToken;
+    if (session.refreshToken.length === 0) return null;
+    if (pendingRefresh?.refreshToken === session.refreshToken)
+      return pendingRefresh.promise;
+    const pending: PendingRefresh = {
+      refreshToken: session.refreshToken,
+      promise: refresh(session),
+    };
+    pendingRefresh = pending;
+    try {
+      return await pending.promise;
+    } finally {
+      if (pendingRefresh === pending) pendingRefresh = null;
     }
-    return null;
+  };
+
+  const expireSession = async (
+    session: RequestSession,
+    accessToken: string,
+  ): Promise<void> => {
+    if (
+      getRefreshToken() === session.refreshToken &&
+      getAccessToken() === accessToken
+    ) {
+      clearTokens();
+      await Taro.reLaunch({ url: "/pages/login/index" });
+    }
   };
 
   const request = async <T>(
@@ -81,24 +138,28 @@ export const createApiClient = (baseUrl: string): ApiClient => {
     options: RequestOptions = {},
   ): Promise<T> => {
     const useAuth = options.auth !== false;
-    let res = await send(path, options, useAuth ? getAccessToken() : "");
+    const session: RequestSession = {
+      accessToken: getAccessToken(),
+      refreshToken: getRefreshToken(),
+    };
+    let accessToken: string = useAuth ? session.accessToken : "";
+    let res = await send(path, options, accessToken);
 
     if (res.statusCode === 401 && useAuth) {
-      const next = await refresh();
+      const next = await refreshedToken(session);
       if (next === null) {
-        clearTokens();
-        await Taro.reLaunch({ url: "/pages/login/index" });
+        await expireSession(session, accessToken);
         throw new ApiError(401, "登录已过期，请重新登录。", res.data);
       }
-      res = await send(path, options, next);
+      accessToken = next;
+      res = await send(path, options, accessToken);
     }
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return res.data as T;
     }
     if (res.statusCode === 401 && useAuth) {
-      clearTokens();
-      await Taro.reLaunch({ url: "/pages/login/index" });
+      await expireSession(session, accessToken);
     }
     const code =
       typeof res.data === "object" &&
@@ -108,6 +169,48 @@ export const createApiClient = (baseUrl: string): ApiClient => {
         ? res.data.message
         : "";
     const messages: Readonly<Record<string, string>> = {
+      INVALID_UPDATE_TEAM_REQUEST: "请核对班组名称、状态、工种和负责人。",
+      PROJECT_TEAM_NAME_ALREADY_EXISTS: "此项目已有同名班组，请更换名称。",
+      PROJECT_TEAM_NOT_FOUND: "班组不存在或已变更，请返回列表刷新。",
+      TEAM_CHANGED_RELOAD_BEFORE_SAVING:
+        "班组资料已被更新，请重新进入后再保存。",
+      TEAM_LEADER_MUST_BE_ACTIVE_TEAM_MEMBER:
+        "负责人必须是本班组的在场成员，请重新选择。",
+      PERSONNEL_REUSE_SOURCE_NOT_ALLOWED:
+        "需要同一公司内来源项目的管理权限，才能复用人员。",
+      INVALID_REUSE_PARTICIPANT_REQUEST:
+        "请核对来源人员、目标岗位、班组及进场日期。",
+      REUSE_PROFILE_NOT_ACTIVE: "该人员的基础档案已停用，请先由管理员核实。",
+      PROJECT_MEMBER_ALREADY_EXISTS:
+        "此人员已在本项目，请在人员列表恢复或编辑已有任职。",
+      INVALID_PARTICIPANT_REQUEST:
+        "请核对姓名、手机号、工种、岗位及进退场日期。",
+      INVALID_UPDATE_PROJECT_REQUEST:
+        "请核对项目资料、联系电话、定位及计划日期。",
+      PROJECT_MEMBER_PHONE_ALREADY_EXISTS:
+        "此项目已有相同手机号的成员，请编辑已有档案。",
+      MEMBER_CHANGED_RELOAD_BEFORE_SAVING:
+        "成员资料已被更新，请返回列表后重新进入编辑。",
+      PROJECT_CHANGED_RELOAD_BEFORE_SAVING:
+        "项目资料已被更新，请重新加载后再保存。",
+      TEAM_DOES_NOT_BELONG_TO_PROJECT: "所选班组不属于当前项目，请重新选择。",
+      PARTICIPANT_TYPE_CANNOT_CHANGE:
+        "已建档成员不能直接切换工人或管理人员身份。",
+      CANNOT_CHANGE_OWN_MANAGEMENT_ASSIGNMENT:
+        "请由其他管理员调整你本人的角色、班组或在场状态。",
+      SHARED_PROFILE_REQUIRES_ALL_PROJECT_PERMISSIONS:
+        "该人员同时属于其他项目，基础资料请由有相应权限的管理员修改。",
+      PERSONNEL_ENCRYPTION_KEY_NOT_CONFIGURED:
+        "人员资料服务尚未配置，请联系系统管理员。",
+      PROJECT_COMPANY_CANNOT_CHANGE: "不能通过项目设置变更所属公司。",
+      PROJECT_CODE_ALREADY_EXISTS:
+        "该项目编号已被同一公司其他项目使用，请更换编号。",
+      ACCOUNT_PROFILE_REQUIRED: "请先完善头像、昵称、真实姓名和手机号。",
+      OUTSIDE_GEOFENCE: "不在考勤范围内，无法打卡。请进入项目范围后重新打卡。",
+      ACCOUNT_BINDING_REQUIRED: "请先使用邀请码绑定本人档案。",
+      ACCOUNT_PROFILE_INVALID: "请填写有效昵称、真实姓名和 11 位手机号。",
+      ACCOUNT_IDENTITY_MISMATCH:
+        "姓名或手机号与人员档案不一致，请核对填写内容或联系管理员。",
       ACCOUNT_NICKNAME_INVALID: "昵称须为 1 至 32 个字符，请修改后重试。",
       ACCOUNT_AVATAR_SIZE_INVALID: "头像不能为空且不能超过 2MB。",
       ACCOUNT_AVATAR_IMAGE_INVALID: "头像格式无效，请选择 JPG 或 PNG 图片。",
@@ -117,12 +220,15 @@ export const createApiClient = (baseUrl: string): ApiClient => {
       FACE_BOUND_PROFILE_REQUIRED: "请先绑定工人或管理员档案，再录入人脸。",
       FACE_APPROVED_PROFILE_REQUIRED:
         "请先录入人脸底照，并等待管理员审核通过。",
-      FACE_VIDEO_PROVIDER_NOT_CONFIGURED: "视频活体服务尚未配置，请联系管理员。",
-      FACE_NATIVE_PROVIDER_NOT_CONFIGURED: "当前未配置原生人脸核验渠道，请刷新后重试。",
+      FACE_VIDEO_PROVIDER_NOT_CONFIGURED:
+        "视频活体服务尚未配置，请联系管理员。",
+      FACE_NATIVE_PROVIDER_NOT_CONFIGURED:
+        "当前未配置原生人脸核验渠道，请刷新后重试。",
       FACE_SESSION_PROVIDER_MISMATCH: "本次核验渠道不匹配，请重新开始。",
       FACE_SESSION_VIDEO_CHANGED: "本次会话的录像已固定，请重新开始核验。",
       FACE_PROVIDER_ACTION_SEQUENCE_INVALID: "核验动作配置异常，请联系管理员。",
-      FACE_PROVIDER_ACTION_SEQUENCE_MISSING: "云服务未返回核验动作，请稍后重试。",
+      FACE_PROVIDER_ACTION_SEQUENCE_MISSING:
+        "云服务未返回核验动作，请稍后重试。",
       FACE_PROVIDER_NOT_CONFIGURED: "人脸核验服务尚未开通，请联系管理员。",
       FACE_PROVIDER_REQUEST_FAILED: "人脸核验服务暂时不可用，请稍后重试。",
       FACE_PROVIDER_RESULT_NOT_READY: "核验结果还未返回，请稍后重试。",

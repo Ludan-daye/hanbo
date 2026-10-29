@@ -1,3 +1,4 @@
+import { UploadsService } from "../src/uploads/uploads.service.js";
 import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
@@ -5,6 +6,8 @@ import type { RoleCode } from "@construction/domain";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
+import { AttendanceService } from "../src/attendance/attendance.service.js";
+import { parseConfigureDefaultShiftRequest, parseConfigureDefaultScheduleRequest } from "../src/attendance/attendance-body.parsers.js";
 import { AuthModule } from "../src/auth/auth.module.js";
 import { AttendanceModule } from "../src/attendance/attendance.module.js";
 import { AuthorizationModule } from "../src/authorization/authorization.module.js";
@@ -15,11 +18,17 @@ type UserStatusValue = "ACTIVE" | "DISABLED";
 type ScopeTypeValue = "GLOBAL" | "COMPANY" | "PROJECT" | "TEAM";
 type ProjectStatusValue = "PREPARING" | "ACTIVE" | "SUSPENDED" | "COMPLETED";
 type MemberStatusValue = "ACTIVE" | "EXITED" | "SUSPENDED";
-type AttendancePointCodeValue = "SEGMENT_1_START" | "SEGMENT_1_END" | "SEGMENT_2_START" | "SEGMENT_2_END";
+type AttendancePointCodeValue = string;
 type AttendanceRecordStatusValue = "VALID" | "INVALID";
 type ProfileOwnerTypeValue = "WORKER" | "MANAGER";
 
 type UserRecord = {
+  readonly openid: string;
+  readonly isBound: boolean;
+  readonly encryptedRealName: string;
+  readonly phone: string;
+  readonly nickname: string;
+  readonly avatarObjectKey: string;
   readonly id: string;
   readonly sessionVersion: number;
   readonly status: UserStatusValue;
@@ -241,7 +250,7 @@ type ScheduleFindManyArgs = {
     readonly startsOn: "desc";
   };
   readonly where: {
-    readonly ownerId: string;
+    readonly ownerId: string | { in: string[] };
     readonly ownerType: string;
   };
 };
@@ -336,6 +345,9 @@ const applyTestEnv = (): void => {
 };
 
 class AttendancePrismaTestDouble {
+  readonly attendancePlan = { findMany: async (): Promise<[]> => [] };
+  readonly projectMemberHistory = { findMany: async (): Promise<[]> => [] };
+
   readonly users = new Map<string, UserRecord>();
   readonly sessions = new Map<string, SessionRecord>();
   readonly projects = new Map<string, ProjectRecord>();
@@ -374,6 +386,7 @@ class AttendancePrismaTestDouble {
   };
 
   readonly shift = {
+    findMany: async (args: { where: { projectId: { in: string[] }; isDefault: boolean } }): Promise<ShiftWithSegments[]> => Array.from(this.shifts.values()).filter((row) => args.where.projectId.in.includes(row.projectId) && row.isDefault === args.where.isDefault).map((row) => ({ ...row, segments: Array.from(this.shiftSegments.values()).filter((segment) => segment.shiftId === row.id) })),
     create: async (args: ShiftCreateArgs): Promise<ShiftRecord> => {
       this.shiftSequence += 1;
       const shift: ShiftRecord = {
@@ -471,7 +484,7 @@ class AttendancePrismaTestDouble {
     findMany: async (args: ScheduleFindManyArgs): Promise<readonly (ScheduleRecord | ScheduleWithShiftRecord)[]> => {
       const schedules = Array.from(this.schedules.values()).filter(
         (schedule: ScheduleRecord): boolean =>
-          schedule.ownerId === args.where.ownerId && schedule.ownerType === args.where.ownerType
+          (typeof args.where.ownerId === "string" ? schedule.ownerId === args.where.ownerId : args.where.ownerId.in.includes(schedule.ownerId)) && schedule.ownerType === args.where.ownerType
       );
       const orderedSchedules =
         args.orderBy?.startsOn === "desc"
@@ -521,7 +534,7 @@ class AttendancePrismaTestDouble {
       if (args.include?.projectMemberships !== undefined) {
         return {
           ...profile,
-          projectMemberships: profile.projectMemberships.filter(
+          projectMemberships: profile.projectMemberships.map((member) => ({ enteredAt: new Date("2020-01-01"), exitedAt: null, projectRoleLabel: "WORKER", ...member })).filter(
             (member: ProjectWorkerMemberRecord): boolean =>
               member.projectId === args.include?.projectMemberships?.where.projectId
           )
@@ -545,7 +558,7 @@ class AttendancePrismaTestDouble {
       if (args.include?.projectMemberships !== undefined) {
         return {
           ...profile,
-          projectMemberships: profile.projectMemberships.filter(
+          projectMemberships: profile.projectMemberships.map((member) => ({ enteredAt: new Date("2020-01-01"), exitedAt: null, projectRoleLabel: "WORKER", ...member })).filter(
             (member: ProjectManagerMemberRecord): boolean =>
               member.projectId === args.include?.projectMemberships?.where.projectId
           )
@@ -557,6 +570,7 @@ class AttendancePrismaTestDouble {
   };
 
   readonly attendanceRecord = {
+    findFirst: async (): Promise<null> => null,
     create: async (args: AttendanceRecordCreateArgs): Promise<AttendanceRecordRecord> => {
       this.attendanceRecordSequence += 1;
       const record: AttendanceRecordRecord = {
@@ -577,6 +591,7 @@ class AttendancePrismaTestDouble {
   };
 
   readonly makeupRequest = {
+    findFirst: async (): Promise<null> => null,
     findMany: async (): Promise<[]> => []
   };
 
@@ -605,6 +620,8 @@ class AttendancePrismaTestDouble {
     }
   };
 
+  async $executeRaw(): Promise<number> { return 1; }
+
   async $transaction<T>(callback: (transaction: AttendancePrismaTestDouble) => Promise<T>): Promise<T> {
     return callback(this);
   }
@@ -626,6 +643,12 @@ class AttendancePrismaTestDouble {
   seedActiveSession(userId: string, sessionId: string): void {
     const user: UserRecord = {
       id: userId,
+      openid: userId,
+      isBound: true,
+      encryptedRealName: "test-encrypted-name",
+      phone: "13800000000",
+      nickname: "Test",
+      avatarObjectKey: "test/avatar.png",
       sessionVersion: 1,
       status: "ACTIVE"
     };
@@ -660,6 +683,8 @@ const createApp = async (prisma: AttendancePrismaTestDouble, faceScore = 95): Pr
   })
     .overrideProvider(PrismaService)
     .useValue(prisma)
+    .overrideProvider(UploadsService)
+    .useValue({ requireOwnedImage: async (): Promise<void> => undefined })
     .overrideProvider(FACE_VERIFICATION_CONNECTOR)
     .useValue({ verifyFace: async () => ({ detected: true, score: faceScore }) })
     .compile();
@@ -803,10 +828,7 @@ describe("AttendanceModule", (): void => {
       .set("Authorization", `Bearer ${projectAdminAccessToken}`).expect(200);
     expect(emptyConfiguration.body).toEqual({ shift: null, schedule: null });
 
-    const shiftResponse = await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-shift")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
+    const shiftResponse = { body: await app.get(AttendanceService).configureDefaultShift("project-1", parseConfigureDefaultShiftRequest({
         name: "Standard Day",
         segments: [
           {
@@ -824,8 +846,7 @@ describe("AttendanceModule", (): void => {
             startTime: "13:30"
           }
         ]
-      })
-      .expect(200);
+      })) };
 
     expect(shiftResponse.body).toEqual({
       id: "shift-1",
@@ -910,10 +931,7 @@ describe("AttendanceModule", (): void => {
     const projectAdminAccessToken = await createAccessToken(app, "project-admin-user", "session-project-admin");
     const workerAccessToken = await createAccessToken(app, "worker-user", "session-worker");
 
-    await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-shift")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
+    await app.get(AttendanceService).configureDefaultShift("project-1", parseConfigureDefaultShiftRequest({
         name: "Six Day Shift",
         segments: [
           {
@@ -931,8 +949,7 @@ describe("AttendanceModule", (): void => {
             startTime: "13:30"
           }
         ]
-      })
-      .expect(200);
+      }));
 
     await request(app.getHttpServer())
       .put("/attendance/projects/project-1/default-schedule")
@@ -944,15 +961,11 @@ describe("AttendanceModule", (): void => {
       })
       .expect(403);
 
-    const scheduleResponse = await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-schedule")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
+    const scheduleResponse = { body: await app.get(AttendanceService).configureDefaultSchedule("project-1", parseConfigureDefaultScheduleRequest({
         endsOn: "2026-06-30",
         startsOn: "2026-06-01",
         workdays: [1, 2, 3, 4, 5, 6]
-      })
-      .expect(200);
+      })) };
 
     expect(scheduleResponse.body).toEqual({
       endsOn: "2026-06-30",
@@ -964,39 +977,27 @@ describe("AttendanceModule", (): void => {
       workdays: [1, 2, 3, 4, 5, 6]
     });
 
-    await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-schedule")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
+    expect(() => parseConfigureDefaultScheduleRequest({
         endsOn: "2026-06-30",
         startsOn: "2026-06-01",
         workdays: [1, 1, 2]
-      })
-      .expect(400);
+      })).toThrow();
 
-    await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-schedule")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
+    expect(() => parseConfigureDefaultScheduleRequest({
         endsOn: "2026-05-31",
         startsOn: "2026-06-01",
         workdays: [1, 2, 3]
-      })
-      .expect(400);
+      })).toThrow();
 
-    const replacementScheduleResponse = await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-schedule")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
-        endsOn: null,
+    const repeatedScheduleResponse = { body: await app.get(AttendanceService).configureDefaultSchedule("project-1", parseConfigureDefaultScheduleRequest({
+        endsOn: "2026-06-30",
         startsOn: "2026-06-01",
         workdays: [1, 2, 3, 4, 5, 6]
-      })
-      .expect(200);
+      })) };
 
-    expect(replacementScheduleResponse.body).toEqual({
-      endsOn: null,
-      id: "schedule-2",
+    expect(repeatedScheduleResponse.body).toEqual({
+      endsOn: "2026-06-30",
+      id: "schedule-1",
       ownerId: "project-1",
       ownerType: "PROJECT",
       shiftId: "shift-1",
@@ -1007,7 +1008,7 @@ describe("AttendanceModule", (): void => {
 
     const savedConfiguration = await request(app.getHttpServer()).get("/attendance/projects/project-1/default-configuration")
       .set("Authorization", `Bearer ${projectAdminAccessToken}`).expect(200);
-    expect(savedConfiguration.body.schedule).toEqual(replacementScheduleResponse.body);
+    expect(savedConfiguration.body.schedule).toEqual(repeatedScheduleResponse.body);
 
     const scheduledDayResponse = await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
@@ -1036,10 +1037,7 @@ describe("AttendanceModule", (): void => {
     const projectAdminAccessToken = await createAccessToken(app, "project-admin-user", "session-project-admin");
     const managerAccessToken = await createAccessToken(app, "manager-user", "session-manager");
 
-    await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-shift")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
+    await app.get(AttendanceService).configureDefaultShift("project-1", parseConfigureDefaultShiftRequest({
         name: "Standard Day",
         segments: [
           {
@@ -1057,8 +1055,7 @@ describe("AttendanceModule", (): void => {
             startTime: "13:30"
           }
         ]
-      })
-      .expect(200);
+      }));
 
     const response = await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
@@ -1073,15 +1070,12 @@ describe("AttendanceModule", (): void => {
     });
   });
 
-  test("stores outside-geofence attempts as invalid records excluded from the daily result", async (): Promise<void> => {
+  test("rejects outside-geofence attempts without creating an attendance record", async (): Promise<void> => {
     app = await createApp(prisma);
     const projectAdminAccessToken = await createAccessToken(app, "project-admin-user", "session-project-admin");
     const workerAccessToken = await createAccessToken(app, "worker-user", "session-worker");
 
-    await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-shift")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
+    await app.get(AttendanceService).configureDefaultShift("project-1", parseConfigureDefaultShiftRequest({
         name: "Standard Day",
         segments: [
           {
@@ -1099,35 +1093,21 @@ describe("AttendanceModule", (): void => {
             startTime: "13:30"
           }
         ]
-      })
-      .expect(200);
+      }));
 
     const response = await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
       .set("Authorization", `Bearer ${workerAccessToken}`)
       .send(attendanceBody("2026-06-04", "SEGMENT_1_START", "2026-06-04T08:00:00.000+08:00", "31.2504000", "121.4737000"))
-      .expect(201);
+      .expect(400);
 
-    expect(response.body.record).toMatchObject({
-      abnormalReason: "OUTSIDE_GEOFENCE",
-      attendanceDate: "2026-06-04",
-      participantId: "worker-1",
-      participantType: "WORKER",
-      pointCode: "SEGMENT_1_START",
-      status: "INVALID"
-    });
-    expect(response.body.result).toMatchObject({
-      attendanceDate: "2026-06-04",
-      isAbsent: true,
-      isMissingPunch: true,
-      participantId: "worker-1",
-      participantType: "WORKER",
-      projectId: "project-1",
-      workedMinutes: 0
-    });
+    expect(response.body.message).toBe("OUTSIDE_GEOFENCE");
+    expect(response.body.radiusM).toBe(300);
+    expect(prisma.attendanceRecords.size).toBe(0);
+    expect(prisma.attendanceResults.size).toBe(0);
   });
 
-  test("rejects a punch when the user lacks attendance.submit for the project", async (): Promise<void> => {
+  test("allows a current attendance member without a redundant project role assignment", async (): Promise<void> => {
     // Seed a NO_PERMISSION role with an empty permission set and assign it to a separate user
     prisma.seedRole("WORKER", []);
     prisma.seedActiveSession("no-permission-user", "session-no-permission");
@@ -1160,8 +1140,8 @@ describe("AttendanceModule", (): void => {
     await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
       .set("Authorization", `Bearer ${noPermAccessToken}`)
-      .send(attendanceBody("2026-06-09", "SEGMENT_1_START", "2026-06-09T08:00:00.000+08:00", "31.2304000", "121.4737000"))
-      .expect(403);
+      .send(attendanceBody("2026-06-09", "START", "2026-06-09T08:00:00.000+08:00", "31.2304000", "121.4737000"))
+      .expect(201);
   });
 
   test("rejects attendance submission when the user has no active project membership", async (): Promise<void> => {
@@ -1177,10 +1157,7 @@ describe("AttendanceModule", (): void => {
     const projectAdminAccessToken = await createAccessToken(app, "project-admin-user", "session-project-admin");
     const unboundAccessToken = await createAccessToken(app, "unbound-user", "session-unbound");
 
-    await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-shift")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
+    await app.get(AttendanceService).configureDefaultShift("project-1", parseConfigureDefaultShiftRequest({
         name: "Standard Day",
         segments: [
           {
@@ -1198,8 +1175,7 @@ describe("AttendanceModule", (): void => {
             startTime: "13:30"
           }
         ]
-      })
-      .expect(200);
+      }));
 
     await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
@@ -1215,10 +1191,7 @@ describe("AttendanceModule", (): void => {
     const projectAdminAccessToken = await createAccessToken(app, "project-admin-user", "session-project-admin");
     const workerAccessToken = await createAccessToken(app, "worker-user", "session-worker");
 
-    await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-shift")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
+    await app.get(AttendanceService).configureDefaultShift("project-1", parseConfigureDefaultShiftRequest({
         name: "Standard Day",
         segments: [
           {
@@ -1236,8 +1209,7 @@ describe("AttendanceModule", (): void => {
             startTime: "13:30"
           }
         ]
-      })
-      .expect(200);
+      }));
 
     const response = await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
@@ -1266,15 +1238,12 @@ describe("AttendanceModule", (): void => {
     });
   });
 
-  test("clamps a stored geofence distance to the Decimal(8,2) column capacity for an extremely distant punch", async (): Promise<void> => {
+  test("rejects an extremely distant punch without writing invalid attendance", async (): Promise<void> => {
     app = await createApp(prisma);
     const projectAdminAccessToken = await createAccessToken(app, "project-admin-user", "session-project-admin");
     const workerAccessToken = await createAccessToken(app, "worker-user", "session-worker");
 
-    await request(app.getHttpServer())
-      .put("/attendance/projects/project-1/default-shift")
-      .set("Authorization", `Bearer ${projectAdminAccessToken}`)
-      .send({
+    await app.get(AttendanceService).configureDefaultShift("project-1", parseConfigureDefaultShiftRequest({
         name: "Standard Day",
         segments: [
           {
@@ -1292,8 +1261,7 @@ describe("AttendanceModule", (): void => {
             startTime: "13:30"
           }
         ]
-      })
-      .expect(200);
+      }));
 
     const response = await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
@@ -1302,17 +1270,10 @@ describe("AttendanceModule", (): void => {
         ...attendanceBody("2026-06-10", "SEGMENT_1_START", "2026-06-10T08:00:00.000+08:00", "39.9000000", "116.4000000"),
         locationAccuracyM: "9999999"
       })
-      .expect(201);
+      .expect(400);
 
-    expect(response.body.record).toMatchObject({
-      abnormalReason: "OUTSIDE_GEOFENCE",
-      attendanceDate: "2026-06-10",
-      geofenceDistanceM: "999999.99",
-      locationAccuracyM: "999999.99",
-      participantId: "worker-1",
-      participantType: "WORKER",
-      pointCode: "SEGMENT_1_START",
-      status: "INVALID"
-    });
+    expect(response.body.message).toBe("OUTSIDE_GEOFENCE");
+    expect(response.body.distanceM).toBeGreaterThan(999999.99);
+    expect(prisma.attendanceRecords.size).toBe(0);
   });
 });

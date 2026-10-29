@@ -53,7 +53,7 @@ const dateOnlySchema = z.string().refine(isValidDateOnly);
 const createMakeupRequestBodySchema = z
   .object({
     attendanceDate: dateOnlySchema,
-    pointCode: z.enum(attendancePointCodes),
+    pointCode: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
     reason: nonEmptyStringSchema,
     requestedOccurredAt: z.string().datetime({ offset: true })
   })

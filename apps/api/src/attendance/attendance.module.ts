@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 
+import { UploadsModule } from "../uploads/uploads.module.js";
 import { AuthModule } from "../auth/auth.module.js";
 import { AuthorizationModule } from "../authorization/authorization.module.js";
 import { FaceModule } from "../face/face.module.js";
@@ -10,12 +11,13 @@ import { FailClosedFaceVerificationConnector } from "../infrastructure/face/fail
 import { StubFaceVerificationConnector } from "../infrastructure/face/stub-face-verification.connector.js";
 import { PrismaModule } from "../infrastructure/database/prisma.module.js";
 
+import { AttendancePlansController } from "./attendance-plans.controller.js";
 import { AttendanceController } from "./attendance.controller.js";
 import { AttendanceService } from "./attendance.service.js";
 
 @Module({
-  imports: [AuthModule, AuthorizationModule, PrismaModule, FaceModule],
-  controllers: [AttendanceController],
+  imports: [AuthModule, AuthorizationModule, PrismaModule, FaceModule, UploadsModule],
+  controllers: [AttendanceController, AttendancePlansController],
   providers: [
     AttendanceService,
     {

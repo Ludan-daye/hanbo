@@ -191,7 +191,7 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
       const workerRole = await prisma.role.create({
         data: {
           code: "WORKER",
-          level: 5,
+          level: 1,
           name: "Worker",
           permissions: { create: { permissionId: attendancePermission.id } },
         },
@@ -212,7 +212,7 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
       projectAdminRoleId = adminRole.id;
       const createLogin = async (code: string): Promise<Login> => {
         const user = await prisma.user.create({
-          data: { openid: code, isBound: true },
+          data: { openid: code, isBound: true, nickname: "Test", phone: "13800000000", encryptedRealName: "test-encrypted-name", avatarObjectKey: "test/avatar.png" },
         });
         const session = await prisma.userSession.create({
           data: {
@@ -493,6 +493,7 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
       expect(Number(response.body.record.faceScore)).toBe(100);
       await punch(issued.id).expect(400);
       expect(await prisma.attendanceRecord.count()).toBe(1);
+      expect((await prisma.attendanceRecord.findFirstOrThrow()).faceVerificationSessionId).toBe(issued.id);
     });
 
     test.skipIf(videoMode)(

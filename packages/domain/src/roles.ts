@@ -1,9 +1,9 @@
 export const ROLE_LEVEL = {
-  SYSTEM_ADMIN: 1,
-  COMPANY_ADMIN: 2,
+  WORKER: 1,
+  TEAM_LEADER: 2,
   PROJECT_ADMIN: 3,
-  TEAM_LEADER: 4,
-  WORKER: 5
+  COMPANY_ADMIN: 4,
+  SYSTEM_ADMIN: 5
 } as const;
 
 export type RoleCode = keyof typeof ROLE_LEVEL;
@@ -92,7 +92,7 @@ export type MakeupApprovalInput = Omit<AuthorizePermissionInput, "requiredPermis
 };
 
 export const roleIncludes = (ownerRole: RoleCode, requiredRole: RoleCode): boolean =>
-  ROLE_LEVEL[ownerRole] <= ROLE_LEVEL[requiredRole];
+  ROLE_LEVEL[ownerRole] >= ROLE_LEVEL[requiredRole];
 
 export const hasRoleAtLeast = (
   assignments: readonly RoleAssignment[],
@@ -242,7 +242,7 @@ export const getHighestRoleCode = (assignments: readonly RoleAssignment[]): Role
   let highest: RoleCode | null = null;
 
   for (const assignment of assignments) {
-    if (highest === null || ROLE_LEVEL[assignment.roleCode] < ROLE_LEVEL[highest]) {
+    if (highest === null || ROLE_LEVEL[assignment.roleCode] > ROLE_LEVEL[highest]) {
       highest = assignment.roleCode;
     }
   }

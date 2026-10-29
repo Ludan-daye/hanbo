@@ -1,1 +1,1 @@
-export default definePageConfig({ navigationBarTitleText: "排班配置" });
+export default definePageConfig({ navigationBarTitleText: "打卡安排" });

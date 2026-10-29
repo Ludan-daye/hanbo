@@ -75,67 +75,101 @@ enum UserRoleScopeType {
   TEAM
 }
 
+enum MemberHistoryEvent {
+  BASELINE
+  CREATED
+  UPDATED
+}
+
+enum ReportExportScope {
+  COMPANY
+  PROJECT
+  TEAM
+}
+
+enum ReportExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model User {
-  id                         String              @id @default(uuid())
-  openid                     String              @unique
-  unionid                    String?             @unique
+  authoredAttendancePlans    AttendancePlan[]
+  id                         String                    @id @default(uuid())
+  openid                     String                    @unique
+  unionid                    String?                   @unique
   phone                      String?
+  encryptedRealName          String?
   nickname                   String?
   avatarObjectKey            String?
   avatarContentType          String?
-  status                     UserStatus          @default(ACTIVE)
-  sessionVersion             Int                 @default(1)
-  isBound                    Boolean             @default(false)
-  createdAt                  DateTime            @default(now())
-  updatedAt                  DateTime            @updatedAt
+  status                     UserStatus                @default(ACTIVE)
+  sessionVersion             Int                       @default(1)
+  isBound                    Boolean                   @default(false)
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
   lastLoginAt                DateTime?
   roles                      UserRole[]
   sessions                   UserSession[]
   workerProfile              WorkerProfile?
   managerProfile             ManagerProfile?
-  requestedMakeups           MakeupRequest[]     @relation("requester")
-  approvedMakeups            MakeupRequest[]     @relation("approver")
-  createdBindingInvitations  BindingInvitation[] @relation("bindingInvitationCreator")
-  acceptedBindingInvitations BindingInvitation[] @relation("bindingInvitationAcceptor")
+  requestedMakeups           MakeupRequest[]           @relation("requester")
+  approvedMakeups            MakeupRequest[]           @relation("approver")
+  createdBindingInvitations  BindingInvitation[]       @relation("bindingInvitationCreator")
+  acceptedBindingInvitations BindingInvitation[]       @relation("bindingInvitationAcceptor")
   auditLogs                  AuditLog[]
   faceLivenessTests          FaceLivenessTestSession[]
+  faceVerificationSessions   FaceVerificationSession[]
+  uploadedFiles              StoredFile[]
+  reportExports              ReportExport[]
+  projectEvaluations         ProjectMemberEvaluation[]
 
   @@map("users")
 }
 
 model WorkerProfile {
-  id                 String                @id @default(uuid())
-  userId             String?               @unique
-  encryptedName      String
-  encryptedIdNumber  String
-  idNumberHash       String                @unique
-  phone              String
-  workType           String
-  realNameStatus     String
-  faceProfileStatus  String
-  employmentStatus   String
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
-  user               User?                 @relation(fields: [userId], references: [id])
-  projectMemberships ProjectWorkerMember[]
-  bindingInvitations BindingInvitation[]   @relation("workerBindingInvitations")
+  id                    String                @id @default(uuid())
+  userId                String?               @unique
+  encryptedName         String
+  nameSearchHashes      String[]              @default([])
+  encryptedIdNumber     String?
+  idNumberHash          String?               @unique
+  phone                 String
+  workType              String
+  realNameStatus        String
+  faceProfileStatus     String
+  employmentStatus      String
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  remark                String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  user                  User?                 @relation(fields: [userId], references: [id])
+  projectMemberships    ProjectWorkerMember[]
+  bindingInvitations    BindingInvitation[]   @relation("workerBindingInvitations")
 
   @@index([phone])
+  @@index([nameSearchHashes], type: Gin)
   @@index([employmentStatus])
   @@map("worker_profiles")
 }
 
 model ManagerProfile {
-  id                 String                 @id @default(uuid())
-  userId             String?                @unique
-  name               String
-  phone              String
-  status             String
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
-  user               User?                  @relation(fields: [userId], references: [id])
-  projectMemberships ProjectManagerMember[]
-  bindingInvitations BindingInvitation[]    @relation("managerBindingInvitations")
+  id                    String                 @id @default(uuid())
+  userId                String?                @unique
+  name                  String
+  phone                 String
+  status                String
+  workType              String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  remark                String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  user                  User?                  @relation(fields: [userId], references: [id])
+  projectMemberships    ProjectManagerMember[]
+  bindingInvitations    BindingInvitation[]    @relation("managerBindingInvitations")
 
   @@index([phone])
   @@index([status])
@@ -235,98 +269,139 @@ model BindingInvitation {
 }
 
 model Company {
-  id        String    @id @default(uuid())
-  name      String
-  status    String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  projects  Project[]
+  id            String         @id @default(uuid())
+  name          String
+  status        String
+  shortName     String?
+  creditCode    String?        @unique
+  contactName   String?
+  contactPhone  String?
+  address       String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  projects      Project[]
+  reportExports ReportExport[]
 
   @@map("companies")
 }
 
 model Project {
-  id                String                 @id @default(uuid())
-  companyId         String
-  name              String
-  address           String
-  centerLatitude    Decimal                @db.Decimal(10, 7)
-  centerLongitude   Decimal                @db.Decimal(10, 7)
-  geofenceRadiusM   Int
-  status            ProjectStatus
-  plannedStartDate  DateTime               @db.Date
-  plannedEndDate    DateTime?              @db.Date
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  company           Company                @relation(fields: [companyId], references: [id])
-  teams             Team[]
-  workerMembers     ProjectWorkerMember[]
-  managerMembers    ProjectManagerMember[]
-  shifts            Shift[]
-  attendanceRecords AttendanceRecord[]
-  attendanceResults AttendanceResult[]
-  makeupRequests    MakeupRequest[]
+  attendancePlans          AttendancePlan[]
+  id                       String                    @id @default(uuid())
+  companyId                String
+  name                     String
+  code                     String?
+  address                  String
+  contactName              String?
+  contactPhone             String?
+  remark                   String?
+  centerLatitude           Decimal                   @db.Decimal(10, 7)
+  centerLongitude          Decimal                   @db.Decimal(10, 7)
+  geofenceRadiusM          Int
+  locationAccuracyLimitM   Int?
+  status                   ProjectStatus
+  plannedStartDate         DateTime                  @db.Date
+  plannedEndDate           DateTime?                 @db.Date
+  actualStartDate          DateTime?                 @db.Date
+  actualEndDate            DateTime?                 @db.Date
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  company                  Company                   @relation(fields: [companyId], references: [id])
+  teams                    Team[]
+  workerMembers            ProjectWorkerMember[]
+  managerMembers           ProjectManagerMember[]
+  shifts                   Shift[]
+  attendanceRecords        AttendanceRecord[]
+  attendanceResults        AttendanceResult[]
+  makeupRequests           MakeupRequest[]
+  memberHistories          ProjectMemberHistory[]
+  memberEvaluations        ProjectMemberEvaluation[]
+  reportExports            ReportExport[]
+  faceVerificationSessions FaceVerificationSession[]
 
+  @@unique([id, companyId])
+  @@unique([companyId, code])
   @@index([companyId, status])
   @@map("projects")
 }
 
 model Team {
-  id                   String                 @id @default(uuid())
-  projectId            String
-  name                 String
-  status               String
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  project              Project                @relation(fields: [projectId], references: [id])
-  workers              ProjectWorkerMember[]  @relation("TeamWorkerMembers")
-  managerScopedMembers ProjectManagerMember[] @relation("TeamManagerScopeMembers")
+  id                    String                 @id @default(uuid())
+  projectId             String
+  name                  String
+  status                String
+  workType              String?
+  remark                String?
+  leaderWorkerMemberId  String?
+  leaderManagerMemberId String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  project               Project                @relation(fields: [projectId], references: [id])
+  workers               ProjectWorkerMember[]  @relation("TeamWorkerMembers")
+  managerScopedMembers  ProjectManagerMember[] @relation("TeamManagerScopeMembers")
+  leaderWorkerMember    ProjectWorkerMember?   @relation("WorkerTeamLeadership", fields: [leaderWorkerMemberId, projectId], references: [id, projectId], onDelete: Restrict)
+  leaderManagerMember   ProjectManagerMember?  @relation("ManagerTeamLeadership", fields: [leaderManagerMemberId, projectId], references: [id, projectId], onDelete: Restrict)
+  memberHistories       ProjectMemberHistory[]
+  reportExports         ReportExport[]
 
   @@unique([id, projectId])
+  @@unique([projectId, name])
   @@index([projectId, status])
   @@map("teams")
 }
 
 model ProjectWorkerMember {
-  id                 String        @id @default(uuid())
+  id                 String                   @id @default(uuid())
   projectId          String
   workerId           String
   teamId             String?
-  requiresAttendance Boolean       @default(true)
+  requiresAttendance Boolean                  @default(true)
   enteredAt          DateTime
   exitedAt           DateTime?
   projectRoleLabel   String
   status             MemberStatus
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
-  project            Project       @relation(fields: [projectId], references: [id])
-  worker             WorkerProfile @relation(fields: [workerId], references: [id])
-  team               Team?         @relation("TeamWorkerMembers", fields: [teamId, projectId], references: [id, projectId])
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  project            Project                  @relation(fields: [projectId], references: [id])
+  worker             WorkerProfile            @relation(fields: [workerId], references: [id])
+  team               Team?                    @relation("TeamWorkerMembers", fields: [teamId, projectId], references: [id, projectId])
+  ledTeams           Team[]                   @relation("WorkerTeamLeadership")
+  history            ProjectMemberHistory[]
+  evaluation         ProjectMemberEvaluation?
 
+  @@unique([id, projectId])
   @@unique([projectId, workerId])
   @@index([projectId, teamId, status])
   @@index([workerId, status])
+  @@index([projectId, createdAt, id])
   @@map("project_worker_members")
 }
 
 model ProjectManagerMember {
-  id                 String         @id @default(uuid())
+  id                 String                   @id @default(uuid())
   projectId          String
   managerId          String
   roleCode           RoleCode
   teamScopeId        String?
-  requiresAttendance Boolean        @default(true)
+  requiresAttendance Boolean                  @default(true)
+  enteredAt          DateTime                 @default(now())
+  exitedAt           DateTime?
   status             MemberStatus
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  project            Project        @relation(fields: [projectId], references: [id])
-  manager            ManagerProfile @relation(fields: [managerId], references: [id])
-  teamScope          Team?          @relation("TeamManagerScopeMembers", fields: [teamScopeId, projectId], references: [id, projectId])
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  project            Project                  @relation(fields: [projectId], references: [id])
+  manager            ManagerProfile           @relation(fields: [managerId], references: [id])
+  teamScope          Team?                    @relation("TeamManagerScopeMembers", fields: [teamScopeId, projectId], references: [id, projectId])
+  ledTeams           Team[]                   @relation("ManagerTeamLeadership")
+  history            ProjectMemberHistory[]
+  evaluation         ProjectMemberEvaluation?
 
+  @@unique([id, projectId])
   @@unique([projectId, managerId])
   @@index([projectId, roleCode, status])
   @@index([projectId, teamScopeId, status])
   @@index([managerId, status])
+  @@index([projectId, createdAt, id])
   @@map("project_manager_members")
 }
 
@@ -401,22 +476,22 @@ model FaceProfile {
 }
 
 model FaceVerificationSession {
-  id                 String              @id @default(uuid())
+  id                 String            @id @default(uuid())
   userId             String
   projectId          String
   participantType    ProfileOwnerType
   participantId      String
-  pointCode          AttendancePointCode
-  attendanceDate     DateTime            @db.Date
+  pointCode          String
+  attendanceDate     DateTime          @db.Date
   faceProfileId      String
   faceProfileVersion Int
-  bizToken           String?             @unique
-  provider           String              @default("WECHAT_NATIVE")
+  bizToken           String?           @unique
+  provider           String            @default("WECHAT_NATIVE")
   actionSequence     String?
   videoHash          String?
-  providerAttempts   Int                 @default(0)
+  providerAttempts   Int               @default(0)
   status             String
-  score              Decimal?            @db.Decimal(7, 4)
+  score              Decimal?          @db.Decimal(7, 4)
   selfieObjectKey    String?
   selfieHash         String?
   providerRequestId  String?
@@ -424,8 +499,11 @@ model FaceVerificationSession {
   expiresAt          DateTime
   verifiedAt         DateTime?
   consumedAt         DateTime?
-  createdAt          DateTime            @default(now())
-  faceProfile        FaceProfile         @relation(fields: [faceProfileId], references: [id])
+  createdAt          DateTime          @default(now())
+  faceProfile        FaceProfile       @relation(fields: [faceProfileId], references: [id])
+  user               User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  project            Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  attendanceRecord   AttendanceRecord?
 
   @@index([userId, projectId, createdAt])
   @@map("face_verification_sessions")
@@ -453,29 +531,32 @@ model FaceLivenessTestSession {
 }
 
 model AttendanceRecord {
-  id                 String                 @id @default(uuid())
-  projectId          String
-  participantType    ProfileOwnerType
-  participantId      String
-  attendanceDate     DateTime               @db.Date
-  pointCode          AttendancePointCode
-  source             AttendanceRecordSource
-  status             AttendanceRecordStatus
-  occurredAt         DateTime
-  serverReceivedAt   DateTime               @default(now())
-  latitude           Decimal                @db.Decimal(10, 7)
-  longitude          Decimal                @db.Decimal(10, 7)
-  locationAccuracyM  Decimal?               @db.Decimal(8, 2)
-  geofenceDistanceM  Decimal?               @db.Decimal(8, 2)
-  selfieObjectKey    String
-  sitePhotoObjectKey String
-  selfieHash         String
-  sitePhotoHash      String
-  faceScore          Decimal?               @db.Decimal(7, 4)
-  facePassed         Boolean
-  abnormalReason     String?
-  createdAt          DateTime               @default(now())
-  project            Project                @relation(fields: [projectId], references: [id])
+  pointLabel                String?
+  id                        String                   @id @default(uuid())
+  projectId                 String
+  participantType           ProfileOwnerType
+  participantId             String
+  attendanceDate            DateTime                 @db.Date
+  pointCode                 String
+  source                    AttendanceRecordSource
+  status                    AttendanceRecordStatus
+  occurredAt                DateTime
+  serverReceivedAt          DateTime                 @default(now())
+  latitude                  Decimal                  @db.Decimal(10, 7)
+  longitude                 Decimal                  @db.Decimal(10, 7)
+  locationAccuracyM         Decimal?                 @db.Decimal(8, 2)
+  geofenceDistanceM         Decimal?                 @db.Decimal(8, 2)
+  selfieObjectKey           String
+  sitePhotoObjectKey        String
+  selfieHash                String
+  sitePhotoHash             String
+  faceScore                 Decimal?                 @db.Decimal(7, 4)
+  facePassed                Boolean
+  abnormalReason            String?
+  faceVerificationSessionId String?                  @unique
+  createdAt                 DateTime                 @default(now())
+  project                   Project                  @relation(fields: [projectId], references: [id])
+  faceVerificationSession   FaceVerificationSession? @relation(fields: [faceVerificationSessionId], references: [id], onDelete: Restrict)
 
   @@index([projectId, attendanceDate, participantType, participantId])
   @@index([projectId, attendanceDate, pointCode])
@@ -504,24 +585,25 @@ model AttendanceResult {
 }
 
 model MakeupRequest {
-  id                  String              @id @default(uuid())
+  pointLabel          String?
+  id                  String           @id @default(uuid())
   projectId           String
   requesterUserId     String
   participantType     ProfileOwnerType
   participantId       String
-  attendanceDate      DateTime            @db.Date
-  pointCode           AttendancePointCode
+  attendanceDate      DateTime         @db.Date
+  pointCode           String
   requestedOccurredAt DateTime
   reason              String
   status              MakeupStatus
   approverUserId      String?
   approvalReason      String?
   approvedAt          DateTime?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  project             Project             @relation(fields: [projectId], references: [id])
-  requesterUser       User                @relation("requester", fields: [requesterUserId], references: [id])
-  approverUser        User?               @relation("approver", fields: [approverUserId], references: [id])
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  project             Project          @relation(fields: [projectId], references: [id])
+  requesterUser       User             @relation("requester", fields: [requesterUserId], references: [id])
+  approverUser        User?            @relation("approver", fields: [approverUserId], references: [id])
 
   @@index([projectId, attendanceDate, status])
   @@index([requesterUserId, status])
@@ -541,4 +623,125 @@ model AuditLog {
   @@index([actorUserId, createdAt])
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+model ProjectMemberHistory {
+  id                 String                @id @default(uuid())
+  projectId          String
+  workerMemberId     String?
+  managerMemberId    String?
+  teamId             String?
+  event              MemberHistoryEvent
+  version            Int
+  status             MemberStatus
+  requiresAttendance Boolean
+  enteredAt          DateTime
+  exitedAt           DateTime?
+  projectRoleLabel   String?
+  roleCode           RoleCode?
+  recordedAt         DateTime              @default(now())
+  project            Project               @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  workerMember       ProjectWorkerMember?  @relation(fields: [workerMemberId, projectId], references: [id, projectId], onDelete: Restrict)
+  managerMember      ProjectManagerMember? @relation(fields: [managerMemberId, projectId], references: [id, projectId], onDelete: Restrict)
+  team               Team?                 @relation(fields: [teamId, projectId], references: [id, projectId], onDelete: Restrict)
+
+  @@unique([workerMemberId, version])
+  @@unique([managerMemberId, version])
+  @@index([projectId, recordedAt])
+  @@index([workerMemberId, recordedAt])
+  @@index([managerMemberId, recordedAt])
+  @@map("project_member_histories")
+}
+
+model ProjectMemberEvaluation {
+  id              String                @id @default(uuid())
+  projectId       String
+  workerMemberId  String?
+  managerMemberId String?
+  score           Int
+  comment         String?
+  reviewerUserId  String
+  reviewedAt      DateTime              @default(now())
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  project         Project               @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  workerMember    ProjectWorkerMember?  @relation(fields: [workerMemberId, projectId], references: [id, projectId], onDelete: Restrict)
+  managerMember   ProjectManagerMember? @relation(fields: [managerMemberId, projectId], references: [id, projectId], onDelete: Restrict)
+  reviewer        User                  @relation(fields: [reviewerUserId], references: [id], onDelete: Restrict)
+
+  @@unique([workerMemberId, projectId])
+  @@unique([managerMemberId, projectId])
+  @@index([projectId, reviewedAt])
+  @@index([reviewerUserId, reviewedAt])
+  @@map("project_member_evaluations")
+}
+
+model StoredFile {
+  id             String        @id @default(uuid())
+  objectKey      String        @unique
+  uploaderUserId String
+  contentType    String
+  sizeBytes      Int
+  hash           String        @db.Char(64)
+  createdAt      DateTime      @default(now())
+  expiresAt      DateTime?
+  deletedAt      DateTime?
+  uploader       User          @relation(fields: [uploaderUserId], references: [id], onDelete: Restrict)
+  reportExport   ReportExport?
+
+  @@index([uploaderUserId, createdAt])
+  @@index([expiresAt, deletedAt])
+  @@map("stored_files")
+}
+
+model ReportExport {
+  id                 String             @id @default(uuid())
+  companyId          String
+  projectId          String?
+  teamId             String?
+  scope              ReportExportScope
+  month              DateTime           @db.Date
+  version            Int                @default(1)
+  calculationVersion String
+  dataCutoffAt       DateTime
+  requestedByUserId  String
+  status             ReportExportStatus @default(PENDING)
+  fileId             String?            @unique
+  errorCode          String?
+  errorMessage       String?
+  createdAt          DateTime           @default(now())
+  startedAt          DateTime?
+  completedAt        DateTime?
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  project            Project?           @relation(fields: [projectId, companyId], references: [id, companyId], onDelete: Restrict)
+  team               Team?              @relation(fields: [teamId, projectId], references: [id, projectId], onDelete: Restrict)
+  requestedBy        User               @relation(fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  file               StoredFile?        @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@unique([scope, companyId, projectId, teamId, month, version])
+  @@index([companyId, month, status])
+  @@index([requestedByUserId, createdAt])
+  @@map("report_exports")
+}
+
+// Append-only rules preserve the schedule used by each historical attendance day.
+model AttendancePlan {
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  author          User?     @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+  id              String    @id @default(uuid())
+  projectId       String
+  scopeType       String
+  scopeId         String
+  authorUserId    String?
+  authorRoleLevel Int
+  startsOn        DateTime  @db.Date
+  endsOn          DateTime? @db.Date
+  inherit         Boolean   @default(false)
+  name            String
+  points          Json
+  workdayMask     Int
+  createdAt       DateTime  @default(now())
+
+  @@index([projectId, scopeType, scopeId, startsOn, createdAt])
+  @@map("attendance_plans")
 }

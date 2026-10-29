@@ -12,6 +12,11 @@ type ScopeTypeValue = "GLOBAL" | "COMPANY" | "PROJECT" | "TEAM";
 type ProfileRef = { id: string } | null;
 
 type MeUser = {
+  readonly openid: string;
+  readonly encryptedRealName: string;
+  readonly phone: string;
+  readonly nickname: string;
+  readonly avatarObjectKey: string;
   id: string;
   isBound: boolean;
   managerProfile: ProfileRef;
@@ -104,6 +109,11 @@ const seedUser = (
 ): void => {
   const user: MeUser = {
     id: params.userId,
+    openid: params.userId,
+    encryptedRealName: "test-encrypted-name",
+    phone: "13800000000",
+    nickname: "Test",
+    avatarObjectKey: "test/avatar.png",
     isBound: params.workerProfile !== null || params.managerProfile !== null,
     managerProfile: params.managerProfile,
     sessionVersion: 1,

@@ -19,6 +19,7 @@ const envSchema = z
     JWT_ACCESS_TOKEN_SECRET: z.string().min(32),
     JWT_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive(),
     NODE_ENV: z.enum(["development", "test", "production"]),
+    PERSONNEL_ENCRYPTION_KEY: z.string().regex(/^$|^[a-fA-F0-9]{64}$/).default(""),
     OBJECT_STORAGE_ACCESS_KEY: z.string().min(1),
     OBJECT_STORAGE_BUCKET: z.string().min(1),
     OBJECT_STORAGE_ENDPOINT: z.string().url(),
