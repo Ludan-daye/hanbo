@@ -1,0 +1,63 @@
+name: hanbo-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hanbo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a dedicated test database password}
+      POSTGRES_DB: hanbo_test
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hanbo -d hanbo_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    image: hanbo-api:test
+    build:
+      context: ../..
+      dockerfile: deploy/test/Dockerfile
+      args:
+        DEBIAN_MIRROR: http://mirrors.tencentyun.com
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: ${HANBO_ENV_FILE:?Set the absolute server env path}
+        format: raw
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ${HANBO_UPLOADS_DIR:?Set the absolute uploads path}:/data/uploads
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 4
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:

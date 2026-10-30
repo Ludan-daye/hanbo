@@ -11,6 +11,7 @@ import {
   parseCreateCompanyRequest,
   parseCreateProjectManagerRequest,
   parseCreateProjectRequest,
+  parseProjectManagerSearch,
   parseCreateProjectWorkerRequest,
   parseCreateTeamRequest,
   parseUpdateProjectRequest,
@@ -29,10 +30,12 @@ import type {
   CompanyResponse,
   ManagedProjectResponse,
   ProjectManagerMemberResponse,
+  ProjectManagerCandidate,
   ProjectParticipantResponse,
   ProjectResponse,
   ProjectWorkerMemberResponse,
-  TeamResponse
+  TeamResponse,
+  WorkRoleScope
 } from "./management.types.js";
 
 @Controller("management")
@@ -42,6 +45,12 @@ export class ManagementController {
     @Inject(ParticipantsService) private readonly participants: ParticipantsService,
     @Inject(TeamsService) private readonly teams: TeamsService
   ) {}
+
+  @Get("my-role-scopes")
+  @UseGuards(AccessTokenGuard)
+  async myRoleScopes(@CurrentUser() actor: AuthenticatedUser): Promise<readonly WorkRoleScope[]> {
+    return this.managementService.listMyRoleScopes(actor.userId);
+  }
 
   @Get("projects/:projectId/managed-teams")
   @RequirePermission({ permissionCode: "team.manage", target: { source: "projectParam", paramName: "projectId" } })
@@ -134,6 +143,13 @@ export class ManagementController {
   @UseGuards(AccessTokenGuard, PermissionsGuard)
   async createCompany(@Body() body: unknown): Promise<CompanyResponse> {
     return this.managementService.createCompany(parseCreateCompanyRequest(body));
+  }
+
+  @Get("companies/:companyId/project-manager-candidates")
+  @RequirePermission({ permissionCode: "project.create", target: { paramName: "companyId", source: "companyParam" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async projectManagerCandidates(@Param("companyId") companyId: string, @Query() query: unknown): Promise<readonly ProjectManagerCandidate[]> {
+    return this.managementService.listProjectManagerCandidates(companyId, parseProjectManagerSearch(query).search);
   }
 
   @Post("companies/:companyId/projects")

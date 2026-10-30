@@ -10,7 +10,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { authorizePermission } from "@construction/domain/roles.js";
-import type { RoleCode, UserRoleScopeType, Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 import type { AuthorizationData } from "../authorization/authorization.types.js";
 import { AuthorizationContextService } from "../authorization/authorization-context.service.js";
@@ -24,7 +24,15 @@ import {
   personnelNameSearchHashes,
   personnelSearchHash,
 } from "./personnel-name.js";
+import {
+  additionalRoleView,
+  membershipGrants,
+  replaceAdditionalRoles,
+  synchronizeMembershipGrants,
+  validateAdditionalRoles,
+} from "./membership-roles.js";
 import type {
+  AdditionalMemberRole,
   ManagedParticipantResponse,
   ParticipantPageQuery,
   ParticipantPageResponse,
@@ -34,64 +42,34 @@ import type {
 } from "./participants.types.js";
 
 type WorkerMember = Prisma.ProjectWorkerMemberGetPayload<{
-  include: { worker: true; team: true };
+  include: {
+    worker: true;
+    team: true;
+    additionalRoles: { include: { team: true } };
+  };
 }>;
 type ManagerMember = Prisma.ProjectManagerMemberGetPayload<{
-  include: { manager: true; teamScope: true };
+  include: {
+    manager: true;
+    teamScope: true;
+    additionalRoles: { include: { team: true } };
+  };
 }>;
-type MembershipGrant = {
-  readonly roleCode: RoleCode;
-  readonly scopeId: string;
-  readonly scopeType: UserRoleScopeType;
-};
-
 const nextTimestamp = (previous: Date, now: Date): Date =>
   new Date(Math.max(previous.getTime() + 1, now.getTime()));
 
-const managerRole = (value: string): "PROJECT_ADMIN" | "TEAM_LEADER" => {
-  if (value === "PROJECT_ADMIN" || value === "TEAM_LEADER") return value;
+const managerRole = (
+  value: string,
+): "WORKER" | "PROJECT_ADMIN" | "TEAM_LEADER" => {
+  if (
+    value === "WORKER" ||
+    value === "PROJECT_ADMIN" ||
+    value === "TEAM_LEADER"
+  )
+    return value;
   throw new BadRequestException({ message: "INVALID_MANAGER_ROLE" });
 };
 
-const synchronizeMembershipGrant = async (
-  transaction: Prisma.TransactionClient,
-  userId: string | null,
-  previous: MembershipGrant | null,
-  next: MembershipGrant | null,
-): Promise<void> => {
-  if (userId === null) return;
-  if (previous !== null) {
-    await transaction.userRole.deleteMany({
-      where: {
-        userId,
-        scopeId: previous.scopeId,
-        scopeType: previous.scopeType,
-        role: { code: previous.roleCode },
-      },
-    });
-  }
-  if (next !== null) {
-    const role = await transaction.role.findUnique({
-      where: { code: next.roleCode },
-    });
-    if (role === null)
-      throw new NotFoundException({
-        message: "MEMBERSHIP_ROLE_NOT_CONFIGURED",
-        roleCode: next.roleCode,
-      });
-    const assignment = {
-      userId,
-      roleId: role.id,
-      scopeId: next.scopeId,
-      scopeType: next.scopeType,
-    };
-    await transaction.userRole.upsert({
-      where: { userId_roleId_scopeType_scopeId: assignment },
-      create: assignment,
-      update: {},
-    });
-  }
-};
 
 @Injectable()
 export class ParticipantsService {
@@ -112,6 +90,7 @@ export class ParticipantsService {
             this.env.PERSONNEL_ENCRYPTION_KEY,
           )
         : null,
+      additionalRoles: member.additionalRoles.map(additionalRoleView),
       nameStatus: available ? "AVAILABLE" : "REQUIRES_UPDATE",
       memberId: member.id,
       participantType: "WORKER",
@@ -134,6 +113,7 @@ export class ParticipantsService {
   private managerResponse(member: ManagerMember): ManagedParticipantResponse {
     return {
       displayName: member.manager.name,
+      additionalRoles: member.additionalRoles.map(additionalRoleView),
       nameStatus: "AVAILABLE",
       memberId: member.id,
       participantType: "MANAGER",
@@ -160,11 +140,19 @@ export class ParticipantsService {
     const [worker, manager] = await Promise.all([
       this.prisma.projectWorkerMember.findFirst({
         where: { id: memberId, projectId },
-        include: { worker: true, team: true },
+        include: {
+          worker: true,
+          team: true,
+          additionalRoles: { include: { team: true } },
+        },
       }),
       this.prisma.projectManagerMember.findFirst({
         where: { id: memberId, projectId },
-        include: { manager: true, teamScope: true },
+        include: {
+          manager: true,
+          teamScope: true,
+          additionalRoles: { include: { team: true } },
+        },
       }),
     ]);
     if (worker !== null && manager !== null)
@@ -188,13 +176,39 @@ export class ParticipantsService {
     const search: string = query.search;
     const workerWhere: Prisma.ProjectWorkerMemberWhereInput = {
       projectId,
-      ...(query.permissionRole === "TEAM_LEADER"
-        ? { projectRoleLabel: "TEAM_LEADER" }
-        : query.permissionRole === "WORKER"
-          ? { projectRoleLabel: { not: "TEAM_LEADER" } }
-          : {}),
+      AND: [
+        ...(query.permissionRole === null
+          ? []
+          : [
+              {
+                OR: [
+                  query.permissionRole === "WORKER"
+                    ? {
+                        projectRoleLabel: {
+                          notIn: ["TEAM_LEADER", "PROJECT_ADMIN"],
+                        },
+                      }
+                    : { projectRoleLabel: query.permissionRole },
+                  {
+                    additionalRoles: {
+                      some: { roleCode: query.permissionRole },
+                    },
+                  },
+                ],
+              },
+            ]),
+        ...(query.teamId === null
+          ? []
+          : [
+              {
+                OR: [
+                  { teamId: query.teamId },
+                  { additionalRoles: { some: { teamId: query.teamId } } },
+                ],
+              },
+            ]),
+      ],
       ...(query.status === null ? {} : { status: query.status }),
-      ...(query.teamId === null ? {} : { teamId: query.teamId }),
       ...(search.length === 0
         ? {}
         : {
@@ -220,11 +234,33 @@ export class ParticipantsService {
     };
     const managerWhere: Prisma.ProjectManagerMemberWhereInput = {
       projectId,
-      ...(query.permissionRole === null || query.permissionRole === "WORKER"
-        ? {}
-        : { roleCode: query.permissionRole }),
+      AND: [
+        ...(query.permissionRole === null
+          ? []
+          : [
+              {
+                OR: [
+                  { roleCode: query.permissionRole },
+                  {
+                    additionalRoles: {
+                      some: { roleCode: query.permissionRole },
+                    },
+                  },
+                ],
+              },
+            ]),
+        ...(query.teamId === null
+          ? []
+          : [
+              {
+                OR: [
+                  { teamScopeId: query.teamId },
+                  { additionalRoles: { some: { teamId: query.teamId } } },
+                ],
+              },
+            ]),
+      ],
       ...(query.status === null ? {} : { status: query.status }),
-      ...(query.teamId === null ? {} : { teamScopeId: query.teamId }),
       ...(search.length === 0
         ? {}
         : {
@@ -245,11 +281,10 @@ export class ParticipantsService {
           }),
     };
     const [workerCount, managerCount] = await Promise.all([
-      query.participantType === "MANAGER" ||
-      query.permissionRole === "PROJECT_ADMIN"
+      query.participantType === "MANAGER"
         ? Promise.resolve(0)
         : this.prisma.projectWorkerMember.count({ where: workerWhere }),
-      query.participantType === "WORKER" || query.permissionRole === "WORKER"
+      query.participantType === "WORKER"
         ? Promise.resolve(0)
         : this.prisma.projectManagerMember.count({ where: managerWhere }),
     ]);
@@ -270,7 +305,11 @@ export class ParticipantsService {
         ? Promise.resolve([] as WorkerMember[])
         : this.prisma.projectWorkerMember.findMany({
             where: workerWhere,
-            include: { worker: true, team: true },
+            include: {
+              worker: true,
+              team: true,
+              additionalRoles: { include: { team: true } },
+            },
             orderBy: [{ createdAt: "asc" }, { id: "asc" }],
             skip: offset,
             take: workerTake,
@@ -279,7 +318,11 @@ export class ParticipantsService {
         ? Promise.resolve([] as ManagerMember[])
         : this.prisma.projectManagerMember.findMany({
             where: managerWhere,
-            include: { manager: true, teamScope: true },
+            include: {
+              manager: true,
+              teamScope: true,
+              additionalRoles: { include: { team: true } },
+            },
             orderBy: [{ createdAt: "asc" }, { id: "asc" }],
             skip: Math.max(0, offset - workerCount),
             take: managerTake,
@@ -425,13 +468,31 @@ export class ParticipantsService {
           });
           createdId = member.id;
         }
+        await validateAdditionalRoles(
+          transaction,
+          projectId,
+          body.projectRoleLabel,
+          body.teamId,
+          body.additionalRoles ?? [],
+        );
+        await replaceAdditionalRoles(
+          transaction,
+          projectId,
+          createdId,
+          body.participantType,
+          body.additionalRoles ?? [],
+        );
         await transaction.auditLog.create({
           data: {
             actorUserId,
             action: "project.member.create",
             entityType: "project_member",
             entityId: createdId,
-            metadata: { projectId, participantType: body.participantType },
+            metadata: {
+              projectId,
+              participantType: body.participantType,
+              additionalRoles: [...(body.additionalRoles ?? [])],
+            },
           },
         });
         return createdId;
@@ -586,25 +647,32 @@ export class ParticipantsService {
           createdId = created.id;
           userId = current.manager.userId;
         }
-        const grant: MembershipGrant =
-          source.participantType === "WORKER"
-            ? {
-                roleCode: workerRole(body.projectRoleLabel),
-                scopeType:
-                  workerRole(body.projectRoleLabel) === "TEAM_LEADER"
-                    ? "TEAM"
-                    : "PROJECT",
-                scopeId:
-                  workerRole(body.projectRoleLabel) === "TEAM_LEADER"
-                    ? body.teamId!
-                    : projectId,
-              }
-            : {
-                roleCode: managerRole(body.projectRoleLabel),
-                scopeType: body.teamId === null ? "PROJECT" : "TEAM",
-                scopeId: body.teamId ?? projectId,
-              };
-        await synchronizeMembershipGrant(transaction, userId, null, grant);
+        const additionalRoles = body.additionalRoles ?? [];
+        await validateAdditionalRoles(
+          transaction,
+          projectId,
+          body.projectRoleLabel,
+          body.teamId,
+          additionalRoles,
+        );
+        await replaceAdditionalRoles(
+          transaction,
+          projectId,
+          createdId,
+          body.participantType,
+          additionalRoles,
+        );
+        await synchronizeMembershipGrants(
+          transaction,
+          userId,
+          [],
+          membershipGrants(
+            projectId,
+            body.projectRoleLabel,
+            body.teamId,
+            additionalRoles,
+          ),
+        );
         await transaction.auditLog.create({
           data: {
             actorUserId,
@@ -675,10 +743,13 @@ export class ParticipantsService {
       await this.validateTeam(transaction, projectId, body.teamId);
       await this.checkPhone(transaction, projectId, body.phone, memberId);
       // Serialize profile edits, binding and reuse before inspecting shared memberships.
-      const profiles: readonly { readonly updatedAt: Date }[] =
+      const profiles: readonly {
+        readonly updatedAt: Date;
+        readonly userId: string | null;
+      }[] =
         body.participantType === "WORKER"
-          ? await transaction.$queryRaw`SELECT "updatedAt" FROM "worker_profiles" WHERE "id" = ${previous.profileId} FOR UPDATE`
-          : await transaction.$queryRaw`SELECT "updatedAt" FROM "manager_profiles" WHERE "id" = ${previous.profileId} FOR UPDATE`;
+          ? await transaction.$queryRaw`SELECT "updatedAt", "userId" FROM "worker_profiles" WHERE "id" = ${previous.profileId} FOR UPDATE`
+          : await transaction.$queryRaw`SELECT "updatedAt", "userId" FROM "manager_profiles" WHERE "id" = ${previous.profileId} FOR UPDATE`;
       if (profiles[0]?.updatedAt.toISOString() !== previous.profileUpdatedAt)
         throw new ConflictException({
           message: "MEMBER_CHANGED_RELOAD_BEFORE_SAVING",
@@ -704,11 +775,78 @@ export class ParticipantsService {
           authorization,
         );
       }
-      if (body.status !== "ACTIVE" || body.teamId !== previous.teamId) {
-        const cleared: readonly { readonly id: string }[] =
+      const additionalRoles: readonly AdditionalMemberRole[] =
+        body.additionalRoles ??
+        previous.additionalRoles.map(({ roleCode, teamId }) => ({
+          roleCode,
+          teamId,
+        }));
+      const oldGrants = membershipGrants(
+        projectId,
+        previous.projectRoleLabel,
+        previous.teamId,
+        previous.additionalRoles,
+      );
+      const nextGrants = membershipGrants(
+        projectId,
+        body.projectRoleLabel,
+        body.teamId,
+        additionalRoles,
+      );
+      const grantsChanged =
+        oldGrants.length !== nextGrants.length ||
+        oldGrants.some(
+          (old) =>
+            !nextGrants.some(
+              (next) =>
+                old.roleCode === next.roleCode && old.scopeId === next.scopeId,
+            ),
+        );
+      if (profiles[0]!.userId === actorUserId && grantsChanged)
+        throw new ConflictException({
+          message: "CANNOT_CHANGE_OWN_MANAGEMENT_ASSIGNMENT",
+        });
+      await validateAdditionalRoles(
+        transaction,
+        projectId,
+        body.projectRoleLabel,
+        body.teamId,
+        additionalRoles,
+      );
+      await replaceAdditionalRoles(
+        transaction,
+        projectId,
+        memberId,
+        body.participantType,
+        additionalRoles,
+      );
+      await synchronizeMembershipGrants(
+        transaction,
+        profiles[0]!.userId,
+        oldGrants,
+        body.status === "ACTIVE" ? nextGrants : [],
+      );
+      {
+        const eligibleTeams = [
+          body.teamId,
+          ...additionalRoles.map((role) => role.teamId),
+        ].filter((id): id is string => id !== null);
+        const leader =
           body.participantType === "WORKER"
-            ? await transaction.$queryRaw`UPDATE "teams" SET "leaderWorkerMemberId" = NULL, "updatedAt" = GREATEST(CURRENT_TIMESTAMP, "updatedAt" + interval '1 millisecond') WHERE "projectId" = ${projectId} AND "leaderWorkerMemberId" = ${memberId} RETURNING "id"`
-            : await transaction.$queryRaw`UPDATE "teams" SET "leaderManagerMemberId" = NULL, "updatedAt" = GREATEST(CURRENT_TIMESTAMP, "updatedAt" + interval '1 millisecond') WHERE "projectId" = ${projectId} AND "leaderManagerMemberId" = ${memberId} RETURNING "id"`;
+            ? { leaderWorkerMemberId: memberId }
+            : { leaderManagerMemberId: memberId };
+        const cleared = await transaction.team.findMany({
+          where: {
+            projectId,
+            ...leader,
+            ...(body.status === "ACTIVE"
+              ? { id: { notIn: eligibleTeams } }
+              : {}),
+          },
+          select: { id: true },
+        });
+        for (const team of cleared)
+          await transaction.$executeRaw`UPDATE "teams" SET "leaderWorkerMemberId" = NULL, "leaderManagerMemberId" = NULL, "updatedAt" = GREATEST(CURRENT_TIMESTAMP, "updatedAt" + interval '1 millisecond') WHERE "id" = ${team.id}`;
         for (const team of cleared)
           await transaction.auditLog.create({
             data: {
@@ -738,6 +876,10 @@ export class ParticipantsService {
             identityChanged:
               previous.displayName !== body.displayName ||
               previous.phone !== body.phone,
+            previousAdditionalRoles: previous.additionalRoles.map(
+              ({ roleCode, teamId }) => ({ roleCode, teamId }),
+            ),
+            additionalRoles: [...additionalRoles],
             previousStatus: previous.status,
             status: body.status,
             previousTeamId: previous.teamId,
@@ -843,22 +985,6 @@ export class ParticipantsService {
       throw new ConflictException({
         message: "CANNOT_CHANGE_OWN_MANAGEMENT_ASSIGNMENT",
       });
-    await synchronizeMembershipGrant(
-      transaction,
-      worker.userId,
-      {
-        roleCode: oldRole,
-        scopeType: oldRole === "TEAM_LEADER" ? "TEAM" : "PROJECT",
-        scopeId: oldRole === "TEAM_LEADER" ? previous.teamId! : projectId,
-      },
-      body.status === "ACTIVE"
-        ? {
-            roleCode: nextRole,
-            scopeType: nextRole === "TEAM_LEADER" ? "TEAM" : "PROJECT",
-            scopeId: nextRole === "TEAM_LEADER" ? body.teamId! : projectId,
-          }
-        : null,
-    );
     if (profileChanged)
       await this.synchronizeAccountIdentity(transaction, worker.userId, body);
   }
@@ -970,21 +1096,5 @@ export class ParticipantsService {
       previous.phone !== body.phone
     )
       await this.synchronizeAccountIdentity(transaction, manager.userId, body);
-    const oldGrant: MembershipGrant = {
-      roleCode: managerRole(previous.projectRoleLabel),
-      scopeType: previous.teamId === null ? "PROJECT" : "TEAM",
-      scopeId: previous.teamId ?? projectId,
-    };
-    const nextGrant: MembershipGrant = {
-      roleCode: managerRole(body.projectRoleLabel),
-      scopeType: body.teamId === null ? "PROJECT" : "TEAM",
-      scopeId: body.teamId ?? projectId,
-    };
-    await synchronizeMembershipGrant(
-      transaction,
-      manager.userId,
-      oldGrant,
-      body.status === "ACTIVE" ? nextGrant : null,
-    );
   }
 }

@@ -50,7 +50,7 @@ const createCompanyRequestSchema = z.object({
   status: nonEmptyStringSchema
 });
 
-const createProjectRequestSchema = z.object({
+const projectWriteFieldsSchema = z.object({
   address: nonEmptyStringSchema,
   centerLatitude: z.string().refine((value: string): boolean => isCoordinate(value, -90, 90)),
   centerLongitude: z.string().refine((value: string): boolean => isCoordinate(value, -180, 180)),
@@ -59,6 +59,13 @@ const createProjectRequestSchema = z.object({
   plannedEndDate: z.union([dateOnlySchema, z.null()]),
   plannedStartDate: dateOnlySchema,
   status: z.enum(projectStatusValues)
+});
+
+const createProjectRequestSchema = projectWriteFieldsSchema.extend({
+  managerProfileIds: z.array(z.string().trim().min(1)).min(1).max(20)
+    .refine((ids): boolean => new Set(ids).size === ids.length, "Duplicate project administrators.")
+}).refine((value): boolean => value.plannedEndDate === null || value.plannedEndDate >= value.plannedStartDate, {
+  path: ["plannedEndDate"], message: "Project end date must follow the start date."
 });
 
 const createTeamRequestSchema = z.object({
@@ -112,6 +119,9 @@ export const parseCreateCompanyRequest = (body: unknown): CreateCompanyRequest =
 export const parseCreateProjectRequest = (body: unknown): CreateProjectRequest =>
   parseBody(body, createProjectRequestSchema, "INVALID_CREATE_PROJECT_REQUEST");
 
+export const parseProjectManagerSearch = (query: unknown): { readonly search: string } =>
+  parseBody(query, z.object({ search: z.string().trim().max(60) }), "INVALID_PROJECT_MANAGER_SEARCH");
+
 export const parseCreateTeamRequest = (body: unknown): CreateTeamRequest =>
   parseBody(body, createTeamRequestSchema, "INVALID_CREATE_TEAM_REQUEST");
 
@@ -122,7 +132,7 @@ export const parseCreateProjectManagerRequest = (body: unknown): CreateProjectMa
   parseBody(body, createProjectManagerRequestSchema, "INVALID_CREATE_PROJECT_MANAGER_REQUEST");
 
 export const parseUpdateProjectRequest = (body: unknown): UpdateProjectRequest =>
-  parseBody(body, createProjectRequestSchema.extend({
+  parseBody(body, projectWriteFieldsSchema.extend({
     id: nonEmptyStringSchema,
     companyId: nonEmptyStringSchema,
     code: z.string().trim().min(1).max(60).nullable(),

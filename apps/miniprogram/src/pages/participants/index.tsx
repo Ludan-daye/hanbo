@@ -1,3 +1,4 @@
+import { memberRoleLabels } from "../../services/member-roles";
 import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
@@ -20,7 +21,6 @@ import {
   permissionLevel,
   type ProjectPermissionRole,
 } from "../../routing/permissionLevels";
-import { displayProjectRole } from "../../routing/features";
 import type {
   ManagedParticipant,
   ParticipantPage,
@@ -40,7 +40,7 @@ const participantDescription = (person: ManagedParticipant): string =>
   [
     ...new Set([
       person.workType ?? "工种待补录",
-      displayProjectRole(person.projectRoleLabel),
+      memberRoleLabels(person),
       person.teamName ?? "无班组",
       person.phone,
     ]),
@@ -148,7 +148,9 @@ export default function Participants(): JSX.Element {
           setPage(1);
         }}
       />
-      <Subtitle>一级：本人 · 二级：班组 · 三级：项目管理</Subtitle>
+      <Subtitle>
+        一级：本人 · 二级：班组 · 三级：项目管理；兼任人员可出现在多个职级筛选中
+      </Subtitle>
       {result === null && error === null ? <StateView title="加载中…" /> : null}
       {error !== null ? (
         <StateView title="加载失败" sub={error} onRetry={refresh} />
@@ -176,9 +178,11 @@ export default function Participants(): JSX.Element {
                 ? "已退场"
                 : person.status === "SUSPENDED"
                   ? "已暂停"
-                  : permissionLevel(
-                      participantPermissionRole(person),
-                    ).label.split(" · ")[0]
+                  : (person.additionalRoles?.length ?? 0) > 0
+                    ? "兼任"
+                    : permissionLevel(
+                        participantPermissionRole(person),
+                      ).label.split(" · ")[0]
             }
             onClick={() => {
               void Taro.navigateTo({

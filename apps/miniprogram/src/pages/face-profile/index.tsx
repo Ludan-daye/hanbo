@@ -5,18 +5,21 @@ import {
   Label,
   View,
 } from "@tarojs/components";
-import Taro from "@tarojs/taro";
+import Taro, { useRouter } from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
 import {
   Button,
+  AppHeader,
   Notice,
   PageHeader,
   Screen,
   Section,
   StateView,
   Subtitle,
+  Title,
 } from "../../components/ui/index";
+import { useSession } from "../../store/session";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import {
@@ -42,6 +45,10 @@ const livenessTestFlow: VideoFaceFlow<FaceLivenessTestResult> = {
 
 export default function FaceProfilePage(): JSX.Element {
   useSessionGuard();
+  const { phase, refreshMe, clear } = useSession();
+  const onboarding: boolean =
+    useRouter().params.onboarding === "1" ||
+    phase === "face-enrollment-required";
   const { revision, refresh } = usePageRefresh();
   const [data, setData] = useState<MyFace | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
@@ -53,6 +60,10 @@ export default function FaceProfilePage(): JSX.Element {
   const [testResult, setTestResult] = useState<FaceLivenessTestResult | null>(
     null,
   );
+  const enrollmentSubmitted: boolean =
+    data?.profile !== null &&
+    data?.profile !== undefined &&
+    ["PENDING", "APPROVED"].includes(data.profile.status);
   useEffect(() => {
     let cancelled = false;
     void fetchMyFace().then(
@@ -101,16 +112,45 @@ export default function FaceProfilePage(): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      await enrollMyFace(photo, data.consentVersion);
+      const profile = await enrollMyFace(photo, data.consentVersion);
+      setData({ ...data, profile });
       setPhoto(null);
       setConsented(false);
       setSaved(true);
       setTestResult(null);
-      refresh();
+      await refreshMe();
     } catch (reason: unknown) {
       setError(
         reason instanceof Error ? reason.message : "提交未完成，请重试。",
       );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const enterHome = async (): Promise<void> => {
+    if (busy || !enrollmentSubmitted) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await refreshMe();
+      await Taro.reLaunch({ url: "/pages/home/index" });
+    } catch (cause: unknown) {
+      setError(
+        cause instanceof Error ? cause.message : "读取登记结果失败，请重试。",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const signOut = async (): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await clear();
+      await Taro.reLaunch({ url: "/pages/login/index" });
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "退出失败，请重试。");
     } finally {
       setBusy(false);
     }
@@ -128,7 +168,23 @@ export default function FaceProfilePage(): JSX.Element {
           }}
         />
       ) : null}
-      <PageHeader title="人脸档案" />
+      {onboarding ? (
+        <AppHeader title="录入本人正脸" />
+      ) : (
+        <PageHeader title="人脸档案" />
+      )}
+      {onboarding ? (
+        <>
+          <Title>
+            {enrollmentSubmitted ? "底照已录入" : "最后一步，录入本人正脸"}
+          </Title>
+          <Subtitle>
+            {enrollmentSubmitted
+              ? "资料和底照均已提交，可以进入首页查看项目。审核通过后才能刷脸打卡。"
+              : "用工资料已保存。请拍摄本人清晰正脸，作为以后打卡的人脸比对底照；微信头像不会用作底照。"}
+          </Subtitle>
+        </>
+      ) : null}
       {error !== null ? <Notice>{error}</Notice> : null}
       {data === null ? (
         <StateView title="读取人脸档案" onRetry={refresh} />
@@ -155,7 +211,7 @@ export default function FaceProfilePage(): JSX.Element {
             ) : null}
             {saved ? <Notice>底照已提交，请等待管理员审核。</Notice> : null}
           </Section>
-          {data.mode === "VIDEO_ACTION" ? (
+          {data.mode === "VIDEO_ACTION" && !onboarding ? (
             <Section
               title="活体与本人比对测试"
               sub="无需排班或定位，可直接验证云端功能"
@@ -206,60 +262,93 @@ export default function FaceProfilePage(): JSX.Element {
               ) : null}
             </Section>
           ) : null}
-          <Section
-            title="录入本人正脸"
-            sub="正对镜头、光线均匀，保证只有本人一张脸"
-          >
-            {photo !== null ? (
-              <Image
-                src={photo}
-                mode="aspectFit"
-                style={{ width: "100%", height: "240px", borderRadius: "16px" }}
-              />
-            ) : (
-              <View className="face-capture-placeholder">
-                请拍摄清晰的本人照片
-              </View>
-            )}
+          {!onboarding || !enrollmentSubmitted ? (
+            <>
+              <Section
+                title="录入本人正脸"
+                sub="正对镜头、光线均匀，保证只有本人一张脸"
+              >
+                {photo !== null ? (
+                  <Image
+                    src={photo}
+                    mode="aspectFit"
+                    style={{
+                      width: "100%",
+                      height: "240px",
+                      borderRadius: "16px",
+                    }}
+                  />
+                ) : (
+                  <View className="face-capture-placeholder">
+                    请拍摄清晰的本人照片
+                  </View>
+                )}
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => {
+                    void choose();
+                  }}
+                >
+                  {photo === null ? "拍摄底照" : "重新拍摄"}
+                </Button>
+                {data.profile !== null ? (
+                  <Notice>
+                    重新提交后，旧底照停止使用，需要管理员重新审核后才能刷脸打卡。
+                  </Notice>
+                ) : null}
+              </Section>
+              <Section title="采集与使用说明">
+                <Subtitle>{data.consentText}</Subtitle>
+                <CheckboxGroup
+                  onChange={(event) =>
+                    setConsented(event.detail.value.includes("agree"))
+                  }
+                >
+                  <Label className="face-consent">
+                    <Checkbox
+                      value="agree"
+                      checked={consented}
+                      disabled={busy}
+                    />
+                    我已阅读并同意上述说明
+                  </Label>
+                </CheckboxGroup>
+              </Section>
+              <Button
+                loading={busy}
+                disabled={photo === null || !consented || busy}
+                onClick={() => {
+                  void submit();
+                }}
+              >
+                提交管理员审核
+              </Button>
+            </>
+          ) : null}
+          {onboarding && enrollmentSubmitted ? (
             <Button
-              variant="outline"
-              disabled={busy}
+              loading={busy}
               onClick={() => {
-                void choose();
+                void enterHome();
               }}
             >
-              {photo === null ? "拍摄底照" : "重新拍摄"}
+              完成，进入首页
             </Button>
-            {data.profile !== null ? (
-              <Notice>
-                重新提交后，旧底照停止使用，需要管理员重新审核后才能刷脸打卡。
-              </Notice>
-            ) : null}
-          </Section>
-          <Section title="采集与使用说明">
-            <Subtitle>{data.consentText}</Subtitle>
-            <CheckboxGroup
-              onChange={(event) =>
-                setConsented(event.detail.value.includes("agree"))
-              }
-            >
-              <Label className="face-consent">
-                <Checkbox value="agree" checked={consented} disabled={busy} />
-                我已阅读并同意上述说明
-              </Label>
-            </CheckboxGroup>
-          </Section>
-          <Button
-            loading={busy}
-            disabled={photo === null || !consented || busy}
-            onClick={() => {
-              void submit();
-            }}
-          >
-            提交管理员审核
-          </Button>
+          ) : null}
         </>
       )}
+      {onboarding ? (
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => {
+            void signOut();
+          }}
+        >
+          退出登录
+        </Button>
+      ) : null}
     </Screen>
   );
 }

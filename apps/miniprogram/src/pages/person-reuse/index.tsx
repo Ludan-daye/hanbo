@@ -1,3 +1,7 @@
+import { MemberRoleEditor } from "../../components/member-role-editor";
+import { memberRoleFields } from "../../services/member-roles";
+import { participantPermissionRole } from "../../routing/permissionLevels";
+import type { MemberRoleAssignment } from "../../services/management.types";
 import { Picker, Switch, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
@@ -10,7 +14,6 @@ import {
   PageHeader,
   Screen,
   Section,
-  Segmented,
   StateView,
 } from "../../components/ui/index";
 import { useManagedProjectId } from "../../hooks/use-management-scope";
@@ -44,6 +47,9 @@ export default function PersonReuse(): JSX.Element {
   const [teamId, setTeamId] = useState<string | null>(initialTeamId ?? null);
   const [people, setPeople] = useState<ParticipantPage | null>(null);
   const [selected, setSelected] = useState<ManagedParticipant | null>(null);
+  const [roles, setRoles] = useState<readonly MemberRoleAssignment[]>([
+    { roleCode: "WORKER", teamId: null },
+  ]);
   const [role, setRole] = useState<string>("");
   const [searchInput, setSearchInput] = useState<string>("");
   const [search, setSearch] = useState<string>("");
@@ -114,13 +120,16 @@ export default function PersonReuse(): JSX.Element {
   }, [sourceId, page, search, revision]);
   const submit = async (): Promise<void> => {
     if (!projectId || !selected || busy) return;
-    if (
-      !role.trim() ||
-      (selected.participantType === "MANAGER" &&
-        role === "TEAM_LEADER" &&
-        !teamId)
-    ) {
-      setError("请填写目标项目岗位，并为班组长选择班组。");
+    let fields: ReturnType<typeof memberRoleFields>;
+    try {
+      fields = memberRoleFields(
+        roles,
+        selected.participantType === "MANAGER" ? "WORKER" : role.trim(),
+        teamId,
+      );
+      if (!fields.projectRoleLabel) throw new Error("请填写目标项目岗位。");
+    } catch (failure: unknown) {
+      setError(failure instanceof Error ? failure.message : "请检查项目职级。");
       return;
     }
     const confirmation = await Taro.showModal({
@@ -138,11 +147,7 @@ export default function PersonReuse(): JSX.Element {
         participantType: selected.participantType,
         expectedSourceUpdatedAt: selected.updatedAt,
         expectedProfileUpdatedAt: selected.profileUpdatedAt,
-        teamId:
-          selected.participantType === "MANAGER" && role === "PROJECT_ADMIN"
-            ? null
-            : teamId,
-        projectRoleLabel: role.trim(),
+        ...fields,
         enteredAt,
         requiresAttendance,
       });
@@ -210,7 +215,23 @@ export default function PersonReuse(): JSX.Element {
               chip="选择"
               onClick={() => {
                 setSelected(person);
-                setRole(person.projectRoleLabel);
+                const primaryRole = participantPermissionRole(person);
+                setRoles([
+                  {
+                    roleCode: primaryRole,
+                    teamId:
+                      primaryRole === "TEAM_LEADER"
+                        ? (initialTeamId ?? "")
+                        : null,
+                  },
+                ]);
+                setRole(
+                  ["WORKER", "TEAM_LEADER", "PROJECT_ADMIN"].includes(
+                    person.projectRoleLabel,
+                  )
+                    ? (person.workType ?? "")
+                    : person.projectRoleLabel,
+                );
                 setError(null);
               }}
             />
@@ -232,41 +253,40 @@ export default function PersonReuse(): JSX.Element {
           title="目标项目安排"
           sub={`已选：${selected.displayName ?? "姓名待补录"} · ${selected.workType ?? "工种待补录"}`}
         >
-          {selected.participantType === "WORKER" ? (
-            <Field
-              label="本项目岗位 *"
-              value={role}
-              placeholder="例如：照明安装"
-              maxLength={40}
-              onInput={setRole}
-            />
-          ) : (
-            <Segmented
-              value={role}
-              options={[
-                { value: "TEAM_LEADER", label: "二级 · 班组权限" },
-                { value: "PROJECT_ADMIN", label: "三级 · 项目管理" },
-              ]}
-              onChange={setRole}
-            />
-          )}
-          {selected.participantType === "WORKER" || role !== "PROJECT_ADMIN" ? (
-            <Picker
-              mode="selector"
-              range={["暂不分配", ...teams.map((team) => team.name)]}
-              value={teams.findIndex((team) => team.id === teamId) + 1}
-              onChange={(event) =>
-                setTeamId(teams[Number(event.detail.value) - 1]?.id ?? null)
-              }
-            >
-              <ListItem
-                primary="目标班组"
-                secondary={
-                  teams.find((team) => team.id === teamId)?.name ?? "暂不分配"
+          <MemberRoleEditor
+            value={roles}
+            onChange={setRoles}
+            teams={teams}
+            disabled={busy}
+          />
+          {!roles.some((assignment) => assignment.roleCode !== "WORKER") ? (
+            <>
+              {selected.participantType === "WORKER" ? (
+                <Field
+                  label="本项目岗位 *"
+                  value={role}
+                  placeholder="例如：照明安装"
+                  maxLength={40}
+                  onInput={setRole}
+                />
+              ) : null}
+              <Picker
+                mode="selector"
+                range={["暂不分配", ...teams.map((team) => team.name)]}
+                value={teams.findIndex((team) => team.id === teamId) + 1}
+                onChange={(event) =>
+                  setTeamId(teams[Number(event.detail.value) - 1]?.id ?? null)
                 }
-                chip="选择"
-              />
-            </Picker>
+              >
+                <ListItem
+                  primary="目标考勤班组"
+                  secondary={
+                    teams.find((team) => team.id === teamId)?.name ?? "暂不分配"
+                  }
+                  chip="选择"
+                />
+              </Picker>
+            </>
           ) : null}
           <Picker
             mode="date"

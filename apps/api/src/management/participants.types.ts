@@ -4,7 +4,13 @@ import type {
   ProjectParticipantResponse,
 } from "./management.types.js";
 
+export type AdditionalMemberRole = {
+  readonly roleCode: "WORKER" | "TEAM_LEADER";
+  readonly teamId: string | null;
+};
+
 export type ParticipantWriteRequest = {
+  readonly additionalRoles?: readonly AdditionalMemberRole[] | undefined;
   readonly displayName: string;
   readonly phone: string;
   readonly participantType: ParticipantTypeValue;
@@ -20,6 +26,7 @@ export type ParticipantWriteRequest = {
 };
 
 export type ManagedParticipantResponse = ProjectParticipantResponse & {
+  readonly additionalRoles: readonly (AdditionalMemberRole & { readonly teamName: string | null })[];
   readonly workType: string | null;
   readonly enteredAt: string;
   readonly exitedAt: string | null;
@@ -46,6 +53,7 @@ export type ParticipantPageResponse = {
 };
 
 export type ReuseParticipantRequest = {
+  readonly additionalRoles?: readonly AdditionalMemberRole[] | undefined;
   readonly sourceProjectId: string;
   readonly sourceMemberId: string;
   readonly participantType: ParticipantTypeValue;

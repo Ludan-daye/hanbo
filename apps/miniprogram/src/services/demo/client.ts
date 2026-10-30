@@ -1,3 +1,7 @@
+import { memberRoleAssignments, memberRoleFields } from "../member-roles";
+import { demoMyProject } from "./my-project";
+import { demoReportPerson, saveDemoEvaluation } from "./report-details";
+import { demoProjectManagers } from "./project-managers";
 import { demoPlanRequest, effectiveDemoPlan, demoPlanLevel } from "./plans";
 import Taro from "@tarojs/taro";
 
@@ -7,10 +11,12 @@ import { participantPermissionRole } from "../../routing/permissionLevels";
 
 import { ApiError, type ApiClient, type RequestOptions } from "../apiClient";
 import type { AccountProfile } from "../account";
+import { emptyWorkerRegistration, normalizeWorkerRegistration, workerRegistrationError, type WorkerRegistration } from "@construction/domain";
 import type {
   DefaultScheduleBody,
   DefaultShiftBody,
   ManagedProject,
+  WorkRoleScope,
   ManagedParticipant,
   CreateProjectBody,
   ProjectParticipant,
@@ -42,6 +48,14 @@ import {
   type DemoFace,
   type DemoInvitation,
 } from "./state";
+
+const validateDemoRoles = (state: DemoState, projectId: string, body: Pick<PersonForm, "participantType" | "projectRoleLabel" | "teamId" | "additionalRoles">): void => {
+  const roles = memberRoleAssignments(body);
+  const fields = memberRoleFields(roles, body.projectRoleLabel, body.teamId);
+  if (fields.projectRoleLabel !== body.projectRoleLabel || fields.teamId !== body.teamId || roles.length > 21) throw new ApiError(400, "项目职级配置无效。", { projectId });
+  if (roles.some((role) => role.roleCode === "TEAM_LEADER" && !state.teams.some((team) => team.id === role.teamId && team.projectId === projectId))) throw new ApiError(400, "管理班组不属于本项目。", { projectId });
+};
+const belongsToDemoTeam = (person: ProjectParticipant, teamId: string): boolean => person.teamId === teamId || memberRoleAssignments(person).some((role) => role.roleCode === "TEAM_LEADER" && role.teamId === teamId);
 
 const STORAGE_KEY = "hanbo.frontend-demo.v1";
 export const readDemoState = (): DemoState => {
@@ -138,7 +152,7 @@ const assertDemoScope = (
     role === "SYSTEM_ADMIN" ||
     parts[0] === "auth" ||
     parts[0] === "account" ||
-    parts[0] === "me" ||
+    parts[0] === "me" || path === "/management/my-role-scopes" ||
     (parts[0] === "face-profiles" && parts[1] === "me") ||
     parts[0] === "app"
   )
@@ -149,13 +163,7 @@ const assertDemoScope = (
     (row) => row.id === assignedScope,
   );
   const managesProject = (projectId: string): boolean =>
-    role === "PROJECT_ADMIN"
-      ? assignedScope === projectId
-      : role === "COMPANY_ADMIN" &&
-        managedCompany?.status === "ACTIVE" &&
-        state.projects.some(
-          (row) => row.id === projectId && row.companyId === assignedScope,
-        );
+    canManageDemoProject(state, userId, projectId);
   if (parts[0] === "system")
     throw new ApiError(403, "需要系统管理员身份。", { path, userId });
   if (
@@ -169,7 +177,7 @@ const assertDemoScope = (
   if (parts[1] === "teams") {
     const team = state.teams.find((row) => row.id === parts[2]);
     if (
-      (role === "TEAM_LEADER" && assignedScope === parts[2]) ||
+      me.roles.assignments.some((assignment) => assignment.roleCode === "TEAM_LEADER" && assignment.scope.scopeId === parts[2]) ||
       (team && managesProject(team.projectId))
     )
       return;
@@ -190,7 +198,7 @@ const assertDemoScope = (
     );
     if (
       person &&
-      ((role === "TEAM_LEADER" && person.teamId === assignedScope) ||
+      (me.roles.assignments.some((assignment) => assignment.roleCode === "TEAM_LEADER" && person.teamId === assignment.scope.scopeId) ||
         managesProject(person.projectId))
     )
       return;
@@ -233,9 +241,34 @@ const routeDemo = (
     );
   if (path === "/app/settings") return response(state, state.settings);
   if (path === "/auth/me") return response(state, me);
+  if (path === "/account/worker-registration") {
+    const profileId: string | null = me.profile.id;
+    if (profileId === null || me.profile.type !== "WORKER") throw new ApiError(403, "请先绑定本人工人档案。", { path });
+    if (method === "GET") return response(state, state.workerRegistrations?.[profileId] ?? emptyWorkerRegistration());
+    if (method !== "PUT") throw new ApiError(405, "用工资料接口不支持此操作。", { path });
+    const value: WorkerRegistration = normalizeWorkerRegistration(options.data as WorkerRegistration);
+    const error: string | null = workerRegistrationError(value);
+    if (error !== null) throw new ApiError(400, error, { path });
+    const previous: WorkerRegistration | undefined = state.workerRegistrations?.[profileId];
+    if (previous && previous.idNumber !== value.idNumber) throw new ApiError(409, "身份证号与已有档案不一致，请联系管理员核实。", { path });
+    if (Object.entries(state.workerRegistrations ?? {}).some(([id, item]) => id !== profileId && item.idNumber === value.idNumber)) throw new ApiError(409, "该身份证号已有人员档案。", { path });
+    const updated: DemoState = { ...state, workerRegistrations: { ...state.workerRegistrations, [profileId]: value } };
+    return routeDemo(updated, userId, "/account/profile", { method: "GET" });
+  }
+  if (path === "/management/my-role-scopes") return response(state, me.roles.assignments.map((assignment): WorkRoleScope => {
+    const scopeType = assignment.scope.scopeType as WorkRoleScope["scopeType"];
+    const scopeId = assignment.scope.scopeId;
+    const team = state.teams.find((row) => row.id === scopeId);
+    const project = state.projects.find((row) => row.id === (scopeType === "TEAM" ? team?.projectId : scopeId));
+    const company = state.companies.find((row) => row.id === scopeId);
+    const scopeName = scopeType === "GLOBAL" ? "平台" : scopeType === "COMPANY" ? company?.name : scopeType === "PROJECT" ? project?.name : team && project ? `${project.name} / ${team.name}` : undefined;
+    if (scopeName === undefined) throw new ApiError(404, "工作范围不存在。", { scopeId });
+    return { roleCode: assignment.roleCode, scopeType, scopeId, scopeName, projectId: project?.id ?? null };
+  }));
   if (path === "/account/profile" || path === "/account/avatar") {
     const person = state.people.find((row) => row.profileId === me.profile.id);
     const profile: AccountProfile = {
+      workerRegistration: me.profile.type !== "WORKER" || me.profile.id === null ? "NOT_APPLICABLE" : state.workerRegistrations?.[me.profile.id] ? "COMPLETE" : "REQUIRED",
       realName: state.accountProfiles?.[userId]?.realName ?? null,
       phone: state.accountProfiles?.[userId]?.phone ?? null,
       nickname: state.accountProfiles?.[userId]?.nickname ?? null,
@@ -421,6 +454,8 @@ const routeDemo = (
           );
     if (parts[1] === "audit") return response(state, state.audit);
   }
+  if (parts[0] === "me" && parts[1] === "projects" && parts.length === 3 && method === "GET")
+    return response(state, demoMyProject(state, userId, parts[2]));
   if (path === "/me/projects")
     return response(
       state,
@@ -501,6 +536,7 @@ const routeDemo = (
       attendanceDate: date,
       configured: true,
       geofence: {
+        locationAccuracyLimitM: null,
         centerLatitude: project.centerLatitude,
         centerLongitude: project.centerLongitude,
         radiusM: project.geofenceRadiusM,
@@ -537,14 +573,28 @@ const routeDemo = (
     const scopeId = parts[2];
     const resource = parts[3];
     if (scope === "companies") {
+      if (resource === "project-manager-candidates") {
+        const search = (query.search ?? "").trim().toLowerCase();
+        return response(state, demoProjectManagers(state, scopeId)
+          .filter((person) => `${person.name} ${person.phone}`.toLowerCase().includes(search))
+          .slice(0, 50));
+      }
       if (resource === "projects") {
         if (method === "GET")
           return response(
             state,
             state.projects.filter((row) => row.companyId === scopeId),
           );
+        const body = options.data as CreateProjectBody;
+        if (!Array.isArray(body.managerProfileIds) || body.managerProfileIds.length === 0 ||
+          body.managerProfileIds.length > 20 || new Set(body.managerProfileIds).size !== body.managerProfileIds.length)
+          throw new ApiError(400, "请至少选择一名项目管理员，且不能重复。", {});
+        const managers = demoProjectManagers(state, scopeId).filter((person) => body.managerProfileIds.includes(person.profileId));
+        if (managers.length !== body.managerProfileIds.length)
+          throw new ApiError(400, "所选管理员已停用或不属于本公司，请重新选择。", {});
+        const { managerProfileIds, ...fields } = body;
         const project: ManagedProject = {
-          ...(options.data as CreateProjectBody),
+          ...fields,
           code: null,
           contactName: null,
           contactPhone: null,
@@ -553,8 +603,17 @@ const routeDemo = (
           id: demoId("project"),
           companyId: scopeId,
         };
+        const now = new Date().toISOString();
+        const people: readonly ManagedParticipant[] = managers.map((manager) => ({
+          memberId: demoId("member"), profileId: manager.profileId, projectId: project.id,
+          displayName: manager.name, phone: manager.phone, participantType: state.people.find((person) => person.profileId === manager.profileId)?.participantType ?? "MANAGER",
+          projectRoleLabel: "PROJECT_ADMIN", teamId: null, teamName: null, requiresAttendance: true,
+          status: "ACTIVE", workType: "施工管理", enteredAt: now, exitedAt: null,
+          updatedAt: now, profileUpdatedAt: state.people.find((person) => person.profileId === manager.profileId)?.profileUpdatedAt ?? now,
+          nameStatus: "AVAILABLE"
+        }));
         return response(
-          { ...state, projects: [...state.projects, project] },
+          { ...state, projects: [...state.projects, project], people: [...state.people, ...people] },
           project,
         );
       }
@@ -640,16 +699,10 @@ const routeDemo = (
               );
         if (body.teamId !== null && !team)
           throw new ApiError(400, "班组不属于目标项目。", {});
-        if (
-          source.participantType === "MANAGER" &&
-          ((body.projectRoleLabel !== "TEAM_LEADER" &&
-            body.projectRoleLabel !== "PROJECT_ADMIN") ||
-            (body.projectRoleLabel === "TEAM_LEADER" && !team) ||
-            (body.projectRoleLabel === "PROJECT_ADMIN" && team))
-        )
-          throw new ApiError(400, "请检查管理员角色与班组。", {});
+        validateDemoRoles(state, scopeId, body);
         const person: ManagedParticipant = {
           ...source,
+          additionalRoles: body.additionalRoles ?? [],
           memberId: demoId("member"),
           projectId: scopeId,
           projectRoleLabel: body.projectRoleLabel,
@@ -725,8 +778,8 @@ const routeDemo = (
             person.projectId === scopeId &&
             (!participantType || person.participantType === participantType) &&
             (!permissionRole ||
-              participantPermissionRole(person) === permissionRole) &&
-            (!teamId || person.teamId === teamId) &&
+              memberRoleAssignments(person).some((role) => role.roleCode === permissionRole)) &&
+            (!teamId || belongsToDemoTeam(person, teamId)) &&
             (!status || person.status === status) &&
             (!search ||
               (person.displayName ?? "").startsWith(search) ||
@@ -760,10 +813,14 @@ const routeDemo = (
             state.people.filter((row) => row.projectId === scopeId),
           );
         }
-        const body = options.data as PersonForm;
+        const input = options.data as PersonForm;
         const original = state.people.find(
           (row) => row.memberId === parts[4] && row.projectId === scopeId,
         );
+        const body: PersonForm = { ...input, additionalRoles: input.additionalRoles ?? original?.additionalRoles ?? [] };
+        validateDemoRoles(state, scopeId, body);
+        const grantKeys = (person: Pick<PersonForm, "participantType" | "projectRoleLabel" | "teamId" | "additionalRoles">): string => memberRoleAssignments(person).map((role) => `${role.roleCode}:${role.teamId}`).sort().join("|");
+        if (original && original.profileId === me.profile.id && (grantKeys(original) !== grantKeys(body) || original.status !== body.status)) throw new ApiError(409, "不能修改自己的管理权限，请由上级处理。", {});
         if (method === "PUT" && !original)
           throw new ApiError(404, "成员档案不存在。", { memberId: parts[4] });
         if (
@@ -852,7 +909,7 @@ const routeDemo = (
             teams: state.teams.map((team) =>
               team.projectId === scopeId &&
               team.leader?.memberId === person.memberId &&
-              (person.status !== "ACTIVE" || person.teamId !== team.id)
+              (person.status !== "ACTIVE" || !belongsToDemoTeam(person, team.id))
                 ? {
                     ...team,
                     leader: null,
@@ -897,7 +954,7 @@ const routeDemo = (
             !state.people.some(
               (person) =>
                 person.projectId === scopeId &&
-                person.teamId === original.id &&
+                belongsToDemoTeam(person, original.id) &&
                 person.memberId === body.leader?.memberId &&
                 person.participantType === body.leader.participantType &&
                 person.status === "ACTIVE",
@@ -1303,6 +1360,34 @@ const routeDemo = (
     return response(next, updated);
   }
 
+  if (parts[0] === "reports" && parts[3] === "members") {
+    const teamId = parts[1] === "teams" ? parts[2] : null;
+    const projectId =
+      teamId === null
+        ? parts[2]
+        : state.teams.find((t) => t.id === teamId)?.projectId;
+    if (!projectId) throw new ApiError(404, "项目不存在。", { teamId });
+    if (parts[5] === "evaluation" && method === "POST")
+      return saveDemoEvaluation(
+        state,
+        userId,
+        projectId,
+        parts[4],
+        options.data as Readonly<Record<string, unknown>>,
+      );
+    return response(
+      state,
+      demoReportPerson(
+        state,
+        userId,
+        projectId,
+        parts[4],
+        teamId,
+        query.from,
+        query.to,
+      ),
+    );
+  }
   if (parts[0] === "reports") {
     const scopeId = parts[2];
     const people = state.people.filter((row) =>

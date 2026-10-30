@@ -22,14 +22,14 @@ describe("apiClient", () => {
     expect(data).toEqual({ ok: true });
   });
 
-  test("on 401 refreshes once and retries with the new token", async () => {
+  test.each([200, 201])("on 401 refreshes with status %i and retries with the new token", async (statusCode: number) => {
     Taro.setStorageSync("accessToken", "old");
     Taro.setStorageSync("refreshToken", "r1");
     const calls: string[] = [];
     __setRequestHandler(async (o) => {
       calls.push(`${o.method} ${o.url} auth=${o.header?.Authorization ?? ""}`);
       if (o.url.endsWith("/auth/refresh")) {
-        return { statusCode: 200, data: { accessToken: "new" } };
+        return { statusCode, data: { accessToken: "new" } };
       }
       if (o.header?.Authorization === "Bearer old") {
         return { statusCode: 401, data: { message: "expired" } };

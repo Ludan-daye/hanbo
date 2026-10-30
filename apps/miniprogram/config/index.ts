@@ -30,6 +30,7 @@ export default defineConfig<"webpack5">(async (merge) => {
       "process.env.TARO_APP_API_BASE_URL": JSON.stringify(
         process.env.TARO_APP_API_BASE_URL || "http://localhost:3000",
       ),
+      "process.env.TARO_APP_TEST_LOGIN": JSON.stringify(process.env.TARO_APP_TEST_LOGIN === "true" ? "true" : "false"),
       "process.env.TARO_APP_DATA_MODE": JSON.stringify(process.env.TARO_APP_DATA_MODE || "http"),
       "process.env.TARO_APP_FACE_NATIVE_SDK": JSON.stringify(nativeFaceEnabled ? "true" : "false"),
     },

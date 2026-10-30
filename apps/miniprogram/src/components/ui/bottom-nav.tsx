@@ -1,9 +1,10 @@
 import { Button, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 
+import { useSession } from "../../store/session";
 import { AppIcon, type IconName } from "./icon";
 
-type NavKey = "home" | "workspace" | "profile";
+type NavKey = "home" | "workspace" | "projects" | "profile";
 type NavItem = {
   readonly key: NavKey;
   readonly title: string;
@@ -25,19 +26,33 @@ export const BottomNav = ({
   active,
 }: {
   readonly active: NavKey;
-}): JSX.Element => (
-  <View className="ui-bottom-nav">
-    {ITEMS.map((item) => (
-      <Button
-        key={item.key}
-        className={`ui-bottom-nav__item ${active === item.key ? "ui-bottom-nav__item--active" : ""}`}
-        onClick={() => {
-          if (active !== item.key) void Taro.reLaunch({ url: item.url });
-        }}
-      >
-        <AppIcon name={item.icon} />
-        <View>{item.title}</View>
-      </Button>
-    ))}
-  </View>
-);
+}): JSX.Element => {
+  const { state } = useSession();
+  const isWorker = state.me?.roles.highestRoleCode === "WORKER";
+  const items: readonly NavItem[] = ITEMS.map((item) =>
+    item.key === "workspace" && isWorker
+      ? {
+          key: "projects",
+          title: "项目",
+          icon: "building",
+          url: "/pages/my-projects/index",
+        }
+      : item,
+  );
+  return (
+    <View className="ui-bottom-nav">
+      {items.map((item) => (
+        <Button
+          key={item.key}
+          className={`ui-bottom-nav__item ${active === item.key ? "ui-bottom-nav__item--active" : ""}`}
+          onClick={() => {
+            if (active !== item.key) void Taro.reLaunch({ url: item.url });
+          }}
+        >
+          <AppIcon name={item.icon} />
+          <View>{item.title}</View>
+        </Button>
+      ))}
+    </View>
+  );
+};

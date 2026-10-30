@@ -1,3 +1,4 @@
+import { memberRoleAssignments } from "../member-roles";
 import type { ManagedTeam } from "../management.types";
 import type { DemoState, DemoTeam } from "./state";
 
@@ -10,7 +11,7 @@ export const managedDemoTeam = (
       person.projectId === team.projectId &&
       person.memberId === team.leader?.memberId &&
       person.participantType === team.leader.participantType &&
-      person.teamId === team.id &&
+      (person.teamId === team.id || memberRoleAssignments(person).some((role) => role.roleCode === "TEAM_LEADER" && role.teamId === team.id)) &&
       person.status === "ACTIVE",
   );
   return {

@@ -5,6 +5,7 @@ import { readDemoPhoto } from "./demo/photo";
 import { demoEnrollFace } from "./demo/client";
 import { apiClient } from "./client";
 import { fetchMe } from "./auth";
+import type { AttendanceLocation } from "./geofence";
 import type { AttendancePointCode } from "./me.types";
 import { ApiError } from "./apiClient";
 
@@ -55,12 +56,18 @@ export type FaceLivenessTestResult = CompletedFaceSession & {
 export const createVideoFaceSession = async (
   projectId: string,
   pointCode: AttendancePointCode,
+  position: AttendanceLocation,
 ): Promise<VideoFaceSession> =>
   apiClient.request<VideoFaceSession>(
     `/attendance/projects/${projectId}/face-verifications/video`,
     {
       method: "POST",
-      data: { pointCode },
+      data: {
+        pointCode,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        locationAccuracyM: position.accuracyM,
+      },
     },
   );
 
@@ -249,10 +256,19 @@ export const reviewFaceProfile = async (
 export const createFaceSession = async (
   projectId: string,
   pointCode: AttendancePointCode,
+  position: AttendanceLocation,
 ): Promise<FaceSession> =>
   apiClient.request<FaceSession>(
     `/attendance/projects/${projectId}/face-verifications`,
-    { method: "POST", data: { pointCode } },
+    {
+      method: "POST",
+      data: {
+        pointCode,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        locationAccuracyM: position.accuracyM,
+      },
+    },
   );
 export const completeFaceSession = async (
   projectId: string,

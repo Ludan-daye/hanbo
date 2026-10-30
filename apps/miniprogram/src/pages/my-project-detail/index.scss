@@ -1,0 +1,104 @@
+.worker-project-hero {
+  padding: 26rpx 0 30rpx;
+}
+.worker-project-company {
+  color: var(--ink-soft);
+  font-size: 24rpx;
+  margin-bottom: 16rpx;
+}
+.worker-project-title {
+  font-size: 42rpx;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.worker-project-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 22rpx;
+}
+.worker-project-tags > view,
+.worker-project-tags > taro-view-core {
+  padding: 8rpx 16rpx;
+  border-radius: 24rpx;
+  background: var(--surface-sunk);
+  color: var(--ink-soft);
+  font-size: 23rpx;
+}
+.worker-project-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+.worker-project-actions > * {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.worker-project-schedule-heading {
+  font-size: 30rpx;
+  font-weight: 650;
+}
+.worker-project-point {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid var(--line);
+  font-size: 25rpx;
+}
+.worker-project-point-time {
+  font-size: 34rpx;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.worker-project-point-main {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.7;
+}
+.worker-project-muted {
+  color: var(--ink-soft);
+  font-size: 23rpx;
+  line-height: 1.6;
+}
+.worker-project-danger {
+  color: var(--danger);
+  font-size: 23rpx;
+}
+.worker-project-footnote {
+  margin-top: 20rpx;
+}
+.worker-project-address {
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+.worker-project-radius {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  color: var(--ink-soft);
+  font-size: 25rpx;
+  padding: 18rpx 0;
+}
+.worker-project-radius > view,
+.worker-project-radius > taro-view-core {
+  color: var(--ink);
+  font-weight: 650;
+}
+.worker-project-map {
+  width: 100%;
+  height: 340rpx;
+  border-radius: 16rpx;
+  margin: 8rpx 0 20rpx;
+}
+.worker-project-map-note {
+  padding: 22rpx;
+  margin: 8rpx 0 20rpx;
+  background: var(--surface-sunk);
+  color: var(--ink-soft);
+  border-radius: 14rpx;
+  font-size: 24rpx;
+  line-height: 1.7;
+}

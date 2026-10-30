@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Header,
   Inject,
   Param,
   Query,
@@ -24,6 +25,8 @@ import type { MakeupRequestResponse } from "../makeup/makeup.types.js";
 import { parseMyAttendanceRecordsQuery } from "./me-query.parsers.js";
 import { MeService } from "./me.service.js";
 import type { MyProjectMembership } from "./me.types.js";
+import type { MyProjectDetail } from "@construction/domain";
+import { MyProjectService } from "./my-project.service.js";
 
 @Controller("me")
 export class MeController {
@@ -32,6 +35,7 @@ export class MeController {
     private readonly attendanceService: AttendanceService,
     @Inject(ReportsService) private readonly reports: ReportsService,
     @Inject(MeService) private readonly meService: MeService,
+    @Inject(MyProjectService) private readonly myProjects: MyProjectService,
   ) {}
 
   @Get("projects/:projectId/attendance-plan")
@@ -100,5 +104,15 @@ export class MeController {
       projectId,
       currentUser.userId,
     );
+  }
+
+  @Get("projects/:projectId")
+  @Header("Cache-Control", "no-store")
+  @UseGuards(AccessTokenGuard)
+  async project(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param("projectId") projectId: string,
+  ): Promise<MyProjectDetail> {
+    return this.myProjects.get(currentUser.userId, projectId);
   }
 }

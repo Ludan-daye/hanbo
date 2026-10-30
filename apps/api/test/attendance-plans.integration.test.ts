@@ -1,4 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import ExcelJS from "exceljs";
+import { ReportExportsService } from "../src/reports/report-exports.service.js";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
@@ -22,6 +24,15 @@ import type {
 import { PrismaService } from "../src/infrastructure/database/prisma.service.js";
 import { encryptPersonnelName } from "../src/management/personnel-name.js";
 
+const parseBinary = (
+  response: request.Response,
+  callback: (error: Error | null, data: Buffer) => void,
+): void => {
+  const chunks: Buffer[] = [];
+  response.on("data", (chunk: Buffer) => chunks.push(chunk));
+  response.on("end", () => callback(null, Buffer.concat(chunks)));
+  response.on("error", (error: Error) => callback(error, Buffer.alloc(0)));
+};
 const projectId = "planning-project";
 const teamId = "planning-team";
 const scopePath = (type: string, id: string): string =>
@@ -213,6 +224,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
               employmentStatus: "ACTIVE",
               faceProfileStatus: "APPROVED",
               realNameStatus: "VERIFIED",
+              registrationCompletedAt: new Date("2030-01-01"),
               projectMemberships: {
                 create: {
                   id: `member-${actor}`,
@@ -761,6 +773,428 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         .auth(auth("admin"), { type: "bearer" })
         .send({})
         .expect(410);
+    });
+
+    test("project scoring and person detail preserve scope, hierarchy, versions and audit history", async () => {
+      vi.setSystemTime(new Date("2030-01-21T04:00:00Z"));
+      const path = `/reports/projects/${projectId}/members/member-worker`;
+      await database.managerProfile.create({ data: { id: "report-peer-manager", name: "Same level manager", phone: "13900000666", status: "ACTIVE", projectMemberships: { create: { id: "report-peer-member", projectId, roleCode: "PROJECT_ADMIN", status: "ACTIVE" } } } });
+      const body = {
+        score: 92,
+        comment: "配合良好，注意准时",
+        expectedUpdatedAt: null,
+      };
+      for (const actor of ["worker", "leader"]) {
+        await request(app.getHttpServer())
+          .post(`${path}/evaluation`)
+          .auth(auth(actor), { type: "bearer" })
+          .send(body)
+          .expect(403);
+      }
+      await request(app.getHttpServer())
+        .post(`/reports/projects/${projectId}/members/member-admin/evaluation`)
+        .auth(auth("admin"), { type: "bearer" })
+        .send(body)
+        .expect(403);
+      await request(app.getHttpServer())
+        .post(`${path}/evaluation`)
+        .auth(auth("admin"), { type: "bearer" })
+        .send({ ...body, score: 101 })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post(
+          `/reports/projects/planning-other-project/members/member-worker/evaluation`,
+        )
+        .auth(auth("admin"), { type: "bearer" })
+        .send(body)
+        .expect(403);
+      const created = await request(app.getHttpServer())
+        .post(`${path}/evaluation`)
+        .auth(auth("admin"), { type: "bearer" })
+        .send(body)
+        .expect(201);
+      await request(app.getHttpServer()).post(`/reports/projects/${projectId}/members/report-peer-member/evaluation`).auth(auth("admin"), { type: "bearer" }).send(body).expect(403);
+      expect(created.body).toMatchObject({
+        score: 92,
+        reviewerName: "admin",
+        comment: body.comment,
+      });
+      await request(app.getHttpServer())
+        .post(`${path}/evaluation`)
+        .auth(auth("admin"), { type: "bearer" })
+        .send(body)
+        .expect(409);
+      const updates = await Promise.all(
+        [90, 95].map((score) =>
+          request(app.getHttpServer())
+            .post(`${path}/evaluation`)
+            .auth(auth("admin"), { type: "bearer" })
+            .send({
+              ...body,
+              score,
+              expectedUpdatedAt: created.body.updatedAt,
+            }),
+        ),
+      );
+      expect(updates.map((r) => r.status).sort()).toEqual([201, 409]);
+      const current = updates.find((r) => r.status === 201)!.body;
+      expect(current.updatedAt).not.toBe(created.body.updatedAt);
+      expect(
+        await database.auditLog.count({
+          where: {
+            entityType: "project_member_evaluation",
+            entityId: created.body.id,
+          },
+        }),
+      ).toBe(2);
+      const detail = await request(app.getHttpServer())
+        .get(path)
+        .query({ from: "2030-01-01", to: "2030-01-21" })
+        .auth(auth("admin"), { type: "bearer" })
+        .expect(200);
+      expect(detail.body).toMatchObject({
+        canEvaluate: true,
+        person: {
+          projectId,
+          projectName: projectId,
+          workType: "木工",
+          evaluation: { score: current.score },
+        },
+      });
+      expect(
+        detail.body.days.some(
+          (day: { records: readonly { source: string }[] }) =>
+            day.records.length > 0,
+        ),
+      ).toBe(true);
+      const monthly = await request(app.getHttpServer())
+        .get(`/reports/projects/${projectId}/monthly?month=2030-01`)
+        .auth(auth("admin"), { type: "bearer" })
+        .expect(200);
+      const expectedMinutes = monthly.body.participants
+        .filter((p: { memberId: string }) => p.memberId === "member-worker")
+        .reduce(
+          (sum: number, p: { workedMinutes: number }) => sum + p.workedMinutes,
+          0,
+        );
+      expect(
+        detail.body.days.reduce(
+          (sum: number, day: { workedMinutes: number }) =>
+            sum + day.workedMinutes,
+          0,
+        ),
+      ).toBe(expectedMinutes);
+      const team = await request(app.getHttpServer())
+        .get(`/reports/teams/${teamId}/members/member-worker`)
+        .query({ from: "2030-01-01", to: "2030-01-21" })
+        .auth(auth("leader"), { type: "bearer" })
+        .expect(200);
+      expect(team.body.canEvaluate).toBe(false);
+      const teamForAdmin = await request(app.getHttpServer()).get(`/reports/teams/${teamId}/members/member-worker`).query({ from: "2030-01-01", to: "2030-01-21" }).auth(auth("admin"), { type: "bearer" }).expect(200);
+      expect(teamForAdmin.body.canEvaluate).toBe(true);
+      expect(
+        team.body.days.every(
+          (day: { teamName: string }) => day.teamName === teamId,
+        ),
+      ).toBe(true);
+      await request(app.getHttpServer())
+        .get(`/reports/teams/${teamId}/members/member-other`)
+        .query({ from: "2030-01-01", to: "2030-01-21" })
+        .auth(auth("leader"), { type: "bearer" })
+        .expect(404);
+      await request(app.getHttpServer())
+        .get(path)
+        .query({ from: "2030-01-01", to: "2030-02-05" })
+        .auth(auth("admin"), { type: "bearer" })
+        .expect(400);
+      await request(app.getHttpServer())
+        .get(path)
+        .query({ from: "2030-01-01", to: "2030-01-21" })
+        .auth(auth("worker"), { type: "bearer" })
+        .expect(403);
+    });
+
+    test("company reports keep one shared worker separate by project and preserve independent scores", async () => {
+      vi.setSystemTime(new Date("2030-01-21T04:00:00Z"));
+      await database.projectWorkerMember.create({
+        data: {
+          id: "report-other-membership",
+          workerId: "planning-worker",
+          projectId: "planning-other-project",
+          status: "ACTIVE",
+          enteredAt: new Date("2030-01-01"),
+          projectRoleLabel: "木工",
+        },
+      });
+      await database.projectMemberEvaluation.create({
+        data: {
+          projectId: "planning-other-project",
+          workerMemberId: "report-other-membership",
+          score: 60,
+          reviewerUserId: "planning-admin",
+          comment: "另一项目评价",
+        },
+      });
+      const companyRole = await database.role.findUniqueOrThrow({
+        where: { code: "COMPANY_ADMIN" },
+      });
+      const grant = await database.userRole.create({
+        data: {
+          userId: "planning-admin",
+          roleId: companyRole.id,
+          scopeType: "COMPANY",
+          scopeId: "planning-company",
+        },
+      });
+      try {
+        const report = await request(app.getHttpServer())
+          .get("/reports/companies/planning-company/monthly?month=2030-01")
+          .auth(auth("admin"), { type: "bearer" })
+          .expect(200);
+        const people = report.body.participants.filter(
+          (p: { participantId: string }) =>
+            p.participantId === "planning-worker",
+        );
+        expect(
+          new Set(people.map((p: { projectId: string }) => p.projectId)),
+        ).toEqual(new Set([projectId, "planning-other-project"]));
+        expect(
+          people.find(
+            (p: { projectId: string }) =>
+              p.projectId === "planning-other-project",
+          ),
+        ).toMatchObject({
+          projectName: "planning-other-project",
+          memberId: "report-other-membership",
+          evaluation: { score: 60 },
+        });
+        expect(
+          people
+            .filter((p: { projectId: string }) => p.projectId === projectId)
+            .every(
+              (p: { evaluation: { score: number } }) =>
+                p.evaluation.score !== 60,
+            ),
+        ).toBe(true);
+        const detail = await request(app.getHttpServer())
+          .get(
+            "/reports/projects/planning-other-project/members/report-other-membership?from=2030-01-01&to=2030-01-21",
+          )
+          .auth(auth("admin"), { type: "bearer" })
+          .expect(200);
+        expect(
+          detail.body.days.every(
+            (day: { records: readonly unknown[] }) => day.records.length === 0,
+          ),
+        ).toBe(true);
+      } finally {
+        await database.userRole.delete({ where: { id: grant.id } });
+      }
+    });
+
+    test("exports an immutable four-sheet workbook matching monthly statistics and rejects unauthorized downloads", async () => {
+      vi.setSystemTime(new Date("2030-01-21T04:00:00Z"));
+      const body = { scope: "PROJECT", scopeId: projectId, month: "2030-01" };
+      for (const actor of ["worker", "leader"])
+        await request(app.getHttpServer())
+          .post("/report-exports")
+          .auth(auth(actor), { type: "bearer" })
+          .send(body)
+          .expect(403);
+      await request(app.getHttpServer())
+        .post("/report-exports")
+        .auth(auth("admin"), { type: "bearer" })
+        .send({ ...body, month: "2030-13" })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post("/report-exports")
+        .auth(auth("admin"), { type: "bearer" })
+        .send({ ...body, month: "2030-02" })
+        .expect(400);
+      const jobs = await Promise.all(
+        [0, 1].map(() =>
+          request(app.getHttpServer())
+            .post("/report-exports")
+            .auth(auth("admin"), { type: "bearer" })
+            .send(body)
+            .expect(201),
+        ),
+      );
+      const id = String(jobs[0]!.body.id);
+      expect(jobs[1]!.body.id).toBe(id);
+      await request(app.getHttpServer())
+        .get(`/report-exports/${id}/file`)
+        .auth(auth("admin"), { type: "bearer" })
+        .expect(409);
+      expect(await app.get(ReportExportsService).processNext()).toBe(true);
+      const ready = await request(app.getHttpServer())
+        .get(`/report-exports/${id}`)
+        .auth(auth("admin"), { type: "bearer" })
+        .expect(200);
+      expect(ready.body.status).toBe("COMPLETED");
+      await request(app.getHttpServer())
+        .get(`/report-exports/${id}/file`)
+        .auth(auth("worker"), { type: "bearer" })
+        .expect(404);
+      await request(app.getHttpServer())
+        .get(`/report-exports/${id}/file`)
+        .expect(401);
+      const file = await request(app.getHttpServer())
+        .get(`/report-exports/${id}/file`)
+        .auth(auth("admin"), { type: "bearer" })
+        .buffer(true)
+        .parse(parseBinary)
+        .expect(200);
+      expect(file.headers["content-type"]).toContain("spreadsheetml.sheet");
+      const bytes: Buffer = file.body;
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(bytes);
+      expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+        "月度汇总",
+        "每日明细",
+        "补卡与异常",
+        "统计说明",
+      ]);
+      const report = await request(app.getHttpServer())
+        .get(`/reports/projects/${projectId}/monthly?month=2030-01`)
+        .auth(auth("admin"), { type: "bearer" })
+        .expect(200);
+      const summary = workbook.getWorksheet("月度汇总")!;
+      const sum = (column: number): number =>
+        summary
+          .getColumn(column)
+          .values.slice(2)
+          .reduce<number>((total, value) => total + Number(value ?? 0), 0);
+      expect(summary.getCell("R1").value).toBe("当前项目评分（0–100）");
+      const scoredRows = summary
+        .getColumn(18)
+        .values.slice(2)
+        .filter((value) => typeof value === "number");
+      expect(scoredRows.length).toBeGreaterThan(0);
+      const currentEvaluation =
+        await database.projectMemberEvaluation.findFirstOrThrow({
+          where: { projectId, workerMemberId: "member-worker" },
+        });
+      expect(
+        scoredRows.every((value) => value === currentEvaluation.score),
+      ).toBe(true);
+      expect(summary.rowCount - 1).toBe(report.body.totals.participantCount);
+      expect(sum(7)).toBe(report.body.totals.scheduledDays);
+      expect(sum(8)).toBe(report.body.totals.actualAttendedDays);
+      expect(sum(10)).toBe(report.body.totals.workedMinutes);
+      expect(sum(16)).toBe(report.body.totals.approvedMakeupCount);
+      expect(summary.getCell("I2").formula).toBe('IF(G2=0,"不适用",H2/G2)');
+      expect(summary.getCell("K2").formula).toBe("J2/60");
+      const serialized = JSON.stringify(workbook.model);
+      expect(serialized).not.toContain("13900000777");
+      expect(serialized).not.toContain("selfieObjectKey");
+      expect(workbook.getWorksheet("补卡与异常")!.rowCount).toBeGreaterThan(1);
+      const daily = workbook.getWorksheet("每日明细")!;
+      const minutes = daily
+        .getColumn(11)
+        .values.slice(2)
+        .reduce<number>((total, value) => total + Number(value ?? 0), 0);
+      expect(minutes).toBe(sum(10));
+      await mkdir(join(process.cwd(), "../../.temp"), { recursive: true });
+      await writeFile(
+        join(process.cwd(), "../../.temp/monthly-report-sample.xlsx"),
+        bytes,
+      );
+      await request(app.getHttpServer()).post(`/reports/projects/${projectId}/members/member-worker/evaluation`).auth(auth("admin"), { type: "bearer" }).send({ score: 0, comment: "测试修订零分", expectedUpdatedAt: currentEvaluation.updatedAt.toISOString() }).expect(201);
+      const again = await request(app.getHttpServer())
+        .post("/report-exports")
+        .auth(auth("admin"), { type: "bearer" })
+        .send(body)
+        .expect(201);
+      expect(again.body.version).toBe(ready.body.version + 1);
+      await app.get(ReportExportsService).processNext();
+      const revised = await app.get(ReportExportsService).download("planning-admin", String(again.body.id));
+      const revisedWorkbook = new ExcelJS.Workbook();
+      await revisedWorkbook.xlsx.load(revised.bytes);
+      expect(revisedWorkbook.getWorksheet("月度汇总")!.getColumn(18).values).toContain(0);
+      const old = await app
+        .get(ReportExportsService)
+        .download("planning-admin", id);
+      expect(old.bytes.equals(bytes)).toBe(true);
+      const grant = await database.userRole.findFirstOrThrow({
+        where: { userId: "planning-admin" },
+      });
+      await database.userRole.delete({ where: { id: grant.id } });
+      try {
+        await request(app.getHttpServer())
+          .get(`/report-exports/${id}/file`)
+          .auth(auth("admin"), { type: "bearer" })
+          .expect(403);
+      } finally {
+        await database.userRole.create({ data: grant });
+      }
+    });
+
+    test("limits team exports to historical membership and safely regenerates interrupted jobs", async () => {
+      const body = { scope: "TEAM", scopeId: teamId, month: "2030-01" };
+      const result = await request(app.getHttpServer())
+        .post("/report-exports")
+        .auth(auth("leader"), { type: "bearer" })
+        .send(body)
+        .expect(201);
+      const id = String(result.body.id);
+      await database.reportExport.update({
+        where: { id },
+        data: {
+          status: "PROCESSING",
+          startedAt: new Date(Date.now() - 16 * 60_000),
+        },
+      });
+      await app.get(ReportExportsService).processNext();
+      expect(
+        (await database.reportExport.findUniqueOrThrow({ where: { id } }))
+          .status,
+      ).toBe("FAILED");
+      const retry = await request(app.getHttpServer())
+        .post("/report-exports")
+        .auth(auth("leader"), { type: "bearer" })
+        .send(body)
+        .expect(201);
+      expect(retry.body.version).toBe(2);
+      await app.get(ReportExportsService).processNext();
+      const file = await app
+        .get(ReportExportsService)
+        .download("planning-leader", String(retry.body.id));
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(file.bytes);
+      const teams = workbook
+        .getWorksheet("每日明细")!
+        .getColumn(2)
+        .values.slice(2);
+      expect(teams.length).toBeGreaterThan(0);
+      expect(teams.every((name) => name === teamId)).toBe(true);
+      expect(JSON.stringify(workbook.model)).not.toContain("Updated worker");
+      const created = await request(app.getHttpServer())
+        .post("/report-exports")
+        .auth(auth("leader"), { type: "bearer" })
+        .send(body)
+        .expect(201);
+      await database.user.update({
+        where: { id: "planning-leader" },
+        data: { status: "DISABLED" },
+      });
+      try {
+        await expect(
+          app.get(ReportExportsService).processNext(),
+        ).rejects.toThrow("无权导出");
+        expect(
+          (
+            await database.reportExport.findUniqueOrThrow({
+              where: { id: String(created.body.id) },
+            })
+          ).status,
+        ).toBe("FAILED");
+      } finally {
+        await database.user.update({
+          where: { id: "planning-leader" },
+          data: { status: "ACTIVE" },
+        });
+      }
     });
   },
 );

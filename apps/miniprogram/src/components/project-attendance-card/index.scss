@@ -1,0 +1,114 @@
+.project-attendance-card {
+  margin-top: 20rpx;
+  padding: 26rpx;
+  border: 1rpx solid var(--line);
+  border-radius: 22rpx;
+  background: #fff;
+}
+.project-attendance-card__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+.project-attendance-card__name {
+  min-width: 0;
+  font-size: 30rpx;
+  font-weight: 650;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.project-attendance-card__status {
+  flex-shrink: 0;
+  padding: 6rpx 14rpx;
+  border-radius: 24rpx;
+  background: var(--surface-sunk);
+  color: var(--ink-soft);
+  font-size: 20rpx;
+  line-height: 1.5;
+}
+.project-attendance-card__status--done {
+  background: #e9f6ef;
+  color: #147452;
+}
+.project-attendance-card__meta {
+  margin-top: 10rpx;
+  font-size: 23rpx;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+.project-attendance-card__detail {
+  margin-top: 10rpx;
+  padding: 8rpx 0;
+  font-size: 23rpx;
+  color: var(--ink-soft);
+}
+.project-attendance-card__progress {
+  display: flex;
+  justify-content: space-between;
+  gap: 12rpx;
+  flex-wrap: wrap;
+  margin-top: 22rpx;
+  font-size: 23rpx;
+  color: var(--ink-soft);
+}
+.project-attendance-card__progress > view:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+}
+.project-attendance-card__number {
+  color: var(--ink);
+  font-weight: 650;
+  font-size: 30rpx;
+}
+.project-attendance-card__points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+.project-attendance-card__point {
+  box-sizing: border-box;
+  width: calc(50% - 6rpx);
+  padding: 14rpx;
+  border-radius: 10rpx;
+  background: var(--surface-sunk);
+  font-size: 22rpx;
+  line-height: 1.6;
+}
+.project-attendance-card__point > view:last-child {
+  color: var(--ink-soft);
+  font-size: 20rpx;
+}
+.project-attendance-card__point--done > view:last-child {
+  color: #147452;
+}
+.project-attendance-card__error {
+  margin-top: 14rpx;
+  color: #a43c31;
+  font-size: 23rpx;
+  line-height: 1.6;
+}
+.project-attendance-card__action {
+  margin: 20rpx 0 0;
+  padding: 18rpx 0 0;
+  border: 0;
+  border-top: 1rpx solid var(--line);
+  border-radius: 0;
+  display: flex;
+  justify-content: space-between;
+  background: #fff;
+  color: var(--ink);
+  font-size: 25rpx;
+  font-weight: 600;
+  line-height: 1.6;
+  text-align: left;
+}
+.project-attendance-card__action::after {
+  border: 0;
+}
+
+.project-attendance-card__point--invalid > view:last-child {
+  color: #a43c31;
+}

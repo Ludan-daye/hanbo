@@ -1,4 +1,4 @@
-import { View } from "@tarojs/components";
+import { Input, View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
@@ -11,15 +11,15 @@ import {
   Subtitle,
   type IconName,
 } from "../../components/ui/index";
-import { ACCESS_TOKEN_KEY, FRONTEND_DEMO } from "../../config/env";
-import { devLogin, loginWithWechat } from "../../services/auth";
+import { ACCESS_TOKEN_KEY, FRONTEND_DEMO, TEST_LOGIN_ENABLED } from "../../config/env";
+import { devLogin, loginWithWechat, loginTestAccount, type TestAccountCode } from "../../services/auth";
 import { useSession } from "../../store/session";
 import { sessionEntryUrl } from "../../routing/session";
 
 import "./index.scss";
 
 type DemoRole = {
-  readonly code: string;
+  readonly code: TestAccountCode;
   readonly label: string;
   readonly sub: string;
   readonly icon: IconName;
@@ -60,6 +60,7 @@ const nativeWechatLogin: boolean = process.env.TARO_ENV === "weapp";
 
 export default function Login(): JSX.Element {
   const { phase, onLoggedIn, error: sessionError } = useSession();
+  const [testPasscode, setTestPasscode] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const redirectForPhase = (): void => {
@@ -122,18 +123,27 @@ export default function Login(): JSX.Element {
       {(error ?? sessionError) ? (
         <Notice>{error ?? sessionError}</Notice>
       ) : null}
-      {FRONTEND_DEMO ? (
+      {FRONTEND_DEMO || TEST_LOGIN_ENABLED ? (
         <>
           <View className="login-section login-section--demo">
-            <View className="login-section__title">选择演示身份</View>
+            <View className="login-section__title">{FRONTEND_DEMO ? "选择演示身份" : "测试人员登录"}</View>
           </View>
+          {TEST_LOGIN_ENABLED ? (
+            <View className="ui-field-wrap">
+              <View className="ui-field-label">测试口令</View>
+              <Input className="ui-field" password value={testPasscode} maxlength={128}
+                placeholder="输入口令后，点击下方测试身份"
+                onInput={(event) => setTestPasscode(event.detail.value)} />
+              <View className="login-wechat__note">共用测试账号，操作会保存到云端测试库。</View>
+            </View>
+          ) : null}
           <View className="login-roles">
             {DEMO_ROLES.map((role) => (
               <View
                 key={role.code}
                 className={`login-role ${busy === role.code ? "login-role--busy" : ""}`}
                 onClick={() => {
-                  void signIn(() => devLogin(role.code), role.code);
+                  void signIn(() => FRONTEND_DEMO ? devLogin(role.code) : loginTestAccount(role.code, testPasscode), role.code);
                 }}
               >
                 <View className="login-role__icon">

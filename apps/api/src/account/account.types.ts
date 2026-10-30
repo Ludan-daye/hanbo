@@ -1,3 +1,5 @@
+import type { WorkerRegistrationStatus } from "@construction/domain";
+
 export type AccountProfileInput = {
   readonly nickname: string;
   readonly realName: string;
@@ -5,6 +7,7 @@ export type AccountProfileInput = {
 };
 
 export type AccountProfile = {
+  readonly workerRegistration: WorkerRegistrationStatus;
   readonly realName: string | null;
   readonly phone: string | null;
   readonly nickname: string | null;

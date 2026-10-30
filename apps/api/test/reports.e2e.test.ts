@@ -318,7 +318,7 @@ class ReportsPrismaTestDouble {
           (args.where.status === undefined || member.status === args.where.status) &&
           (args.where.requiresAttendance === undefined || member.requiresAttendance === args.where.requiresAttendance) &&
           (args.where.teamId === undefined || member.teamId === args.where.teamId)
-      ).map((member) => ({ ...member, enteredAt: new Date("2020-01-01"), exitedAt: member.status === "EXITED" ? new Date("2020-01-02") : null, worker: { encryptedName: "legacy-name", userId: null, ...member.worker } }))
+      ).map((member) => ({ ...member, project: { name: member.projectId }, evaluation: null, enteredAt: new Date("2020-01-01"), exitedAt: member.status === "EXITED" ? new Date("2020-01-02") : null, worker: { encryptedName: "legacy-name", userId: null, ...member.worker } }))
   };
 
   readonly projectManagerMember = {
@@ -329,7 +329,7 @@ class ReportsPrismaTestDouble {
           (args.where.status === undefined || member.status === args.where.status) &&
           (args.where.requiresAttendance === undefined || member.requiresAttendance === args.where.requiresAttendance) &&
           (args.where.teamScopeId === undefined || member.teamScopeId === args.where.teamScopeId)
-      ).map((member) => ({ ...member, enteredAt: new Date("2020-01-01"), exitedAt: member.status === "EXITED" ? new Date("2020-01-02") : null, manager: { workType: null, userId: null, ...member.manager } }))
+      ).map((member) => ({ ...member, project: { name: member.projectId }, evaluation: null, enteredAt: new Date("2020-01-01"), exitedAt: member.status === "EXITED" ? new Date("2020-01-02") : null, manager: { workType: null, userId: null, ...member.manager } }))
   };
 
   readonly attendanceResult = {
@@ -597,6 +597,8 @@ describe("ReportsModule", (): void => {
           participantType: "WORKER",
           phone: "13800000001",
           projectId: "project-1",
+          projectName: "project-1",
+          evaluation: null,
           projectRoleLabel: "Welder",
           requiresAttendance: true,
           teamId: "team-1",
@@ -618,6 +620,8 @@ describe("ReportsModule", (): void => {
           participantType: "WORKER",
           phone: "13800000003",
           projectId: "project-1",
+          projectName: "project-1",
+          evaluation: null,
           projectRoleLabel: "Carpenter",
           requiresAttendance: true,
           teamId: "team-1",
@@ -639,6 +643,8 @@ describe("ReportsModule", (): void => {
           participantType: "MANAGER",
           phone: "13800000002",
           projectId: "project-1",
+          projectName: "project-1",
+          evaluation: null,
           projectRoleLabel: "TEAM_LEADER",
           requiresAttendance: true,
           teamId: "team-1",

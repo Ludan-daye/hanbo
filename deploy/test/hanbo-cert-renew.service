@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew Hanbo test IP certificate and reload Nginx
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/hanbo-test/certbot-venv/bin/certbot renew --quiet --deploy-hook "systemctl reload nginx"

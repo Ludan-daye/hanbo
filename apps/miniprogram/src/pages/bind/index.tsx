@@ -36,6 +36,10 @@ export default function Bind(): JSX.Element {
     }
     if (phase === "profile-required")
       void Taro.reLaunch({ url: "/pages/complete-profile/index" });
+    if (phase === "worker-registration-required")
+      void Taro.reLaunch({ url: "/pages/worker-registration/index" });
+    if (phase === "face-enrollment-required")
+      void Taro.reLaunch({ url: "/pages/face-profile/index?onboarding=1" });
   };
   useDidShow(guard);
   useEffect(guard, [phase]);
@@ -70,7 +74,12 @@ export default function Bind(): JSX.Element {
       const me = await refreshMe();
       if (!me.user.isBound)
         throw new Error("尚未确认档案绑定结果，请重试或联系管理员。");
-      await Taro.reLaunch({ url: "/pages/home/index" });
+      await Taro.reLaunch({
+        url:
+          me.profile.type === "WORKER"
+            ? "/pages/worker-registration/index"
+            : "/pages/home/index",
+      });
     } catch (cause: unknown) {
       setError(
         cause instanceof Error
@@ -127,7 +136,7 @@ export default function Bind(): JSX.Element {
         <Title>{bound ? "本人档案已绑定" : "连接你的工作现场"}</Title>
         <Subtitle>
           {bound ? (
-            "登录账号已关联人员档案，可以进入项目开始工作。"
+            "登录账号已关联人员档案，工人需补齐用工资料并录入本人正脸后进入项目。"
           ) : (
             <>
               已完成{FRONTEND_DEMO ? "演示" : "微信"}登录，

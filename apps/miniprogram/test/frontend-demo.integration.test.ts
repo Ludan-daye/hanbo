@@ -1,4 +1,6 @@
+import { memberRoleFields, memberRoleAssignments } from "../src/services/member-roles";
 import { beforeEach, describe, expect, test } from "vitest";
+import type { MyProjectDetail } from "@construction/domain";
 import Taro from "@tarojs/taro";
 
 import {
@@ -10,8 +12,11 @@ import {
 import type { LoginResponse, MeResponse } from "../src/services/auth.types";
 import type { AccountProfile } from "../src/services/account";
 import type {
+  ProjectEvaluation,
+  ReportPersonDetail,
   CompanyProject,
   ManagedParticipant,
+  ManagedProject,
   ParticipantPage,
   DailyReport,
   DefaultAttendanceConfiguration,
@@ -26,7 +31,10 @@ import type {
   Makeup,
   SubmitAttendanceRecordResult,
 } from "../src/services/me.types";
-import type { FaceProfile } from "../src/services/face";
+import { fetchMyProjectAttendance, hasAttendanceToday, projectAttendanceProgress, projectPunchUrl } from "../src/services/project-attendance";
+import { locationFromMapSelection, locationFromMapBoundary, projectMapBounds } from "../src/services/project-location";
+import { checkAttendanceGeofence } from "../src/services/geofence";
+import type { FaceProfile, MyFace } from "../src/services/face";
 import type {
   Account,
   Company,
@@ -63,7 +71,12 @@ const restoreSession = async (): Promise<SessionState> => {
     accessToken: String(Taro.getStorageSync("demoAccessToken")),
     refreshToken: "demo-refresh",
   });
-  return sessionReducer(tokens, { type: "SET_ME", me, accountProfile });
+  const loaded: SessionState = sessionReducer(tokens, { type: "SET_ME", me, accountProfile, faceEnrollmentRequired: false });
+  const phase = sessionPhase(loaded);
+  const faceEnrollmentRequired: boolean = me.profile.type === "WORKER" && (phase === "ready" || phase === "norole")
+    ? (await client.request<MyFace>("/face-profiles/me", { method: "GET" })).profile === null
+    : false;
+  return sessionReducer(loaded, { type: "SET_ME", me, accountProfile, faceEnrollmentRequired });
 };
 beforeEach(() => {
   resetDemoState();
@@ -71,6 +84,71 @@ beforeEach(() => {
 });
 
 describe("standalone frontend workflows using persistent demo storage", () => {
+  test("shows a member's project, duties and designated contacts without granting management access", async () => {
+    await login("dev-project");
+    const team = await client.request<ManagedTeam>("/management/projects/demo-project/teams/demo-team", { method: "GET" });
+    await client.request("/management/projects/demo-project/teams/demo-team", { method: "PUT", data: {
+      name: team.name, workType: team.workType, remark: team.remark, status: "ACTIVE",
+      leader: { memberId: "member-team", participantType: "MANAGER" }, expectedUpdatedAt: team.updatedAt,
+    } });
+    await login("dev-worker");
+    const detail = await client.request<MyProjectDetail>("/me/projects/demo-project", { method: "GET" });
+    expect(detail.address).toContain("滨江路");
+    expect(detail.geofenceRadiusM).toBe(300);
+    expect(detail.workType).toBe("钢筋工");
+    expect(detail.roles.map((role) => role.roleCode)).toEqual(["WORKER"]);
+    expect(detail.team?.leader?.name).toBe("王师傅（演示）");
+    expect(detail.managers[0]?.name).toBe("陈工（演示）");
+    await expect(client.request("/me/projects/demo-project-2", { method: "GET" })).rejects.toThrow("不在该项目");
+    await expect(client.request("/management/projects/demo-project", { method: "PUT", data: {} })).rejects.toThrow("权限");
+  });
+
+  test("groups reports by project and persists a scoped person evaluation with daily detail", async () => {
+    await login("dev-project");
+    const path = "/reports/projects/demo-project/members/member-worker";
+    const date = chinaToday();
+    const detail = await client.request<ReportPersonDetail>(
+      `${path}?from=${date}&to=${date}`,
+      { method: "GET" },
+    );
+    expect(detail.person.projectId).toBe("demo-project");
+    expect(detail.person.projectName.length).toBeGreaterThan(0);
+    expect(detail.person.evaluation).toBeNull();
+    expect(detail.days[0].points.length).toBe(2);
+    expect(detail.canEvaluate).toBe(true);
+    const body = {
+      score: 90,
+      comment: "测试项目表现",
+      expectedUpdatedAt: null,
+    };
+    const evaluation = await client.request<ProjectEvaluation>(
+      `${path}/evaluation`,
+      { method: "POST", data: body },
+    );
+    expect(evaluation.score).toBe(90);
+    await expect(
+      client.request(`${path}/evaluation`, { method: "POST", data: body }),
+    ).rejects.toThrow("已被更新");
+    const report = await client.request<DailyReport>(
+      `/reports/projects/demo-project/daily?date=${date}`,
+      { method: "GET" },
+    );
+    expect(
+      report.participants.find((p) => p.memberId === "member-worker")
+        ?.evaluation?.score,
+    ).toBe(90);
+    await login("dev-team");
+    await expect(
+      client.request(`${path}/evaluation`, { method: "POST", data: body }),
+    ).rejects.toThrow("权限");
+    const teamDetail = await client.request<ReportPersonDetail>(
+      `/reports/teams/demo-team/members/member-worker?from=${date}&to=${date}`,
+      { method: "GET" },
+    );
+    expect(teamDetail.canEvaluate).toBe(false);
+    expect(teamDetail.person.evaluation?.score).toBe(90);
+  });
+
   test("saves team details and responsible person, then clears the designation on member exit", async () => {
     await login("dev-project");
     const team = await client.request<ManagedTeam>(
@@ -212,6 +290,45 @@ describe("standalone frontend workflows using persistent demo storage", () => {
         })
       ).map((project) => project.projectId),
     ).toContain("demo-project-2");
+    const initialProjects = await fetchMyProjectAttendance(client);
+    expect(initialProjects).toHaveLength(2);
+    expect(initialProjects.filter(hasAttendanceToday)).toHaveLength(1);
+    await login("dev-company");
+    const secondProject = await client.request<ManagedProject>("/management/projects/demo-project-2", { method: "GET" });
+    await client.request("/management/projects/demo-project-2", { method: "PUT", data: { ...secondProject, status: "ACTIVE", expectedUpdatedAt: secondProject.updatedAt } });
+    await login("dev-worker");
+    const entries = await fetchMyProjectAttendance(client);
+    const todays = entries.filter(hasAttendanceToday);
+    expect(todays.map(entry => entry.project.projectId)).toEqual(["demo-project", "demo-project-2"]);
+    const first = todays[0]!;
+    const second = todays[1]!;
+    expect(projectAttendanceProgress(first).total).toBe(2);
+    expect(projectAttendanceProgress(second).completed).toBe(0);
+    expect(projectPunchUrl(second.project.projectId)).toBe("/pages/punch/index?projectId=demo-project-2");
+    const point = second.today.points[0]!;
+    await client.request("/attendance/projects/demo-project-2/records", {
+      method: "POST",
+      data: {
+        attendanceDate: chinaToday(), pointCode: point.pointCode,
+        occurredAt: `${chinaToday()}T${point.scheduledTime}:00+08:00`,
+        latitude: second.today.geofence.centerLatitude,
+        longitude: second.today.geofence.centerLongitude, locationAccuracyM: "5",
+        selfieObjectKey: "demo/selfie", selfieHash: "demo",
+        sitePhotoObjectKey: "demo/site", sitePhotoHash: "demo",
+      },
+    });
+    const refreshed = (await fetchMyProjectAttendance(client)).filter(hasAttendanceToday);
+    expect(projectAttendanceProgress(refreshed[0]!)).toEqual(projectAttendanceProgress(first));
+    expect(projectAttendanceProgress(refreshed[1]!).completed).toBe(1);
+    expect(projectAttendanceProgress(refreshed[1]!).label).toBe("打卡进行中");
+    await login("dev-company");
+    const activeProject = await client.request<ManagedProject>("/management/projects/demo-project-2", { method: "GET" });
+    await client.request("/management/projects/demo-project-2", { method: "PUT", data: { ...activeProject, status: "PREPARING", expectedUpdatedAt: activeProject.updatedAt } });
+    await login("dev-worker");
+    const resting = await fetchMyProjectAttendance(client);
+    expect(resting).toHaveLength(2);
+    expect(resting.filter(hasAttendanceToday).map(entry => entry.project.projectId)).toEqual(["demo-project"]);
+
   });
   test("upgrades legacy saved data without losing account profiles or attendance records", async () => {
     await login("dev-worker");
@@ -260,7 +377,7 @@ describe("standalone frontend workflows using persistent demo storage", () => {
       ),
     ).toBe(true);
     expect(readDemoState()).toEqual(upgraded);
-    expect(sessionPhase(await restoreSession())).toBe("ready");
+    expect(sessionPhase(await restoreSession())).toBe("worker-registration-required");
   });
   test("login requires both profile fields before binding, persists completion, and checks returning bound accounts", async () => {
     await login("dev-unbound");
@@ -323,9 +440,26 @@ describe("standalone frontend workflows using persistent demo storage", () => {
       method: "POST",
       data: { invitationCode: "HANBO-DEMO" },
     });
+    expect(sessionEntryUrl(sessionPhase(await restoreSession()))).toBe("/pages/worker-registration/index");
+    const registration = {
+      idNumber: "11010519491231002X", residentialAddress: "测试市测试街道 1 号",
+      emergencyContactName: "测试联系人", emergencyContactPhone: "13800000883",
+      hasLongTermMedication: false, medicationDetails: "",
+      hasPersonalInsurance: false, insuranceDetails: "", payrollBankCard: "6222020000000000000",
+    };
+    await expect(client.request("/account/worker-registration", { method: "PUT", data: { ...registration, hasLongTermMedication: null } })).rejects.toThrow("请选择");
+    await expect(client.request("/account/worker-registration", { method: "PUT", data: { ...registration, hasPersonalInsurance: true } })).rejects.toThrow("保险名称");
+    await client.request("/account/worker-registration", { method: "PUT", data: registration });
+    expect(await client.request("/account/worker-registration", { method: "GET" })).toEqual(registration);
     expect(sessionEntryUrl(sessionPhase(await restoreSession()))).toBe(
-      "/pages/home/index",
+      "/pages/face-profile/index?onboarding=1",
     );
+    await login("dev-unbound");
+    expect(sessionPhase(await restoreSession())).toBe("face-enrollment-required");
+    const beforeEnrollment: MyFace = await client.request("/face-profiles/me", { method: "GET" });
+    const enrolled: FaceProfile = demoEnrollFace("data:image/png;base64,iVBORw0KGgo=", beforeEnrollment.consentVersion);
+    expect(enrolled.status).toBe("PENDING");
+    expect(sessionEntryUrl(sessionPhase(await restoreSession()))).toBe("/pages/home/index");
     await login("dev-unbound");
     expect(sessionPhase(await restoreSession())).toBe("ready");
     await login("dev-worker");
@@ -341,7 +475,7 @@ describe("standalone frontend workflows using persistent demo storage", () => {
       method: "PUT",
       data: { nickname: "李师傅", realName: "张建国", phone: "13800000001" },
     });
-    expect(sessionPhase(await restoreSession())).toBe("ready");
+    expect(sessionPhase(await restoreSession())).toBe("worker-registration-required");
   });
   test("avatar and nickname persist for one account across logins and stay separate from other identities", async () => {
     await login("dev-worker");
@@ -524,22 +658,49 @@ describe("standalone frontend workflows using persistent demo storage", () => {
   });
   test("project creation and atomic attendance plan saving keep scope isolated", async () => {
     await login("dev-company");
+    const selection = { latitude: 31.2304, longitude: 121.4737, address: "上海市测试路", name: "测试工地入口" };
+    const center = locationFromMapSelection(selection, 300);
+    const boundary = { latitude: 31.2324, longitude: 121.4737 };
+    const location = locationFromMapBoundary(center, boundary);
+    expect(center.geofenceRadiusM).toBe(300);
+    expect(location.geofenceRadiusM).toBe(223);
+    expect(location.centerLatitude).toBe("31.2304000");
+    expect(location.centerLongitude).toBe("121.4737000");
+    expect(location.address).toContain("测试工地入口");
+    expect(() => locationFromMapBoundary(center, {})).toThrow("有效位置");
+    expect(() => locationFromMapBoundary(center, selection)).toThrow("太近");
+    expect(() => locationFromMapSelection({ ...selection, latitude: NaN }, 300)).toThrow("有效位置");
+    const bounds = projectMapBounds(location);
+    expect(bounds).toHaveLength(4);
+    expect(bounds.every(point => Number.isFinite(point.latitude) && Number.isFinite(point.longitude))).toBe(true);
+    const candidates = await client.request<{ profileId: string; name: string }[]>("/management/companies/demo-company/project-manager-candidates?search=", { method: "GET" });
+    expect(candidates.some(person => person.profileId === "profile-dev-company")).toBe(true);
+    expect(candidates.some(person => person.profileId === "profile-project")).toBe(true);
+    const before = readDemoState().projects.length;
+    for (const ids of [undefined, [], ["profile-worker"], ["profile-project", "profile-project"]]) {
+      await expect(client.request("/management/companies/demo-company/projects", { method: "POST", data: { name: "拒绝创建", ...location, managerProfileIds: ids } })).rejects.toThrow();
+    }
+    expect(readDemoState().projects).toHaveLength(before);
     const project = await client.request<CompanyProject>(
       "/management/companies/demo-company/projects",
       {
         method: "POST",
         data: {
           name: "新项目",
-          address: "测试地址",
-          centerLatitude: "31",
-          centerLongitude: "121",
-          geofenceRadiusM: 200,
+          managerProfileIds: ["profile-dev-company"],
+          ...location,
           status: "PREPARING",
           plannedStartDate: chinaToday(),
           plannedEndDate: null,
         },
       },
     );
+    const saved = await createDemoClient().request<ManagedProject>(`/management/projects/${project.id}`, { method: "GET" });
+    expect(saved).toMatchObject(location);
+    expect(readDemoState().people.filter(person => person.projectId === project.id)).toMatchObject([{ profileId: "profile-dev-company", projectRoleLabel: "PROJECT_ADMIN", status: "ACTIVE" }]);
+    const geofence = { ...saved, radiusM: saved.geofenceRadiusM };
+    expect(checkAttendanceGeofence(geofence, { latitude: String(boundary.latitude), longitude: String(boundary.longitude), accuracyM: "5" }).isInside).toBe(true);
+    expect(checkAttendanceGeofence(geofence, { latitude: "31.24", longitude: saved.centerLongitude, accuracyM: "5" }).isInside).toBe(false);
     const path = `/attendance/planning/${project.id}/PROJECT/${project.id}`;
     await client.request(path, {
       method: "POST",
@@ -557,6 +718,42 @@ describe("standalone frontend workflows using persistent demo storage", () => {
         method: "GET",
       }),
     ).rejects.toThrow("没有访问");
+  });
+  test("selected project managers receive access without losing their original project", async () => {
+    await login("dev-company");
+    const project = await client.request<CompanyProject>("/management/companies/demo-company/projects", {
+      method: "POST", data: { name: "管理员分配", address: "测试地址", centerLatitude: "31", centerLongitude: "121", geofenceRadiusM: 300,
+        status: "PREPARING", plannedStartDate: chinaToday(), plannedEndDate: null, managerProfileIds: ["profile-project", "profile-team"] }
+    });
+    for (const user of ["dev-project", "dev-team"]) {
+      await login(user);
+      const people = await client.request<ProjectParticipant[]>(`/management/projects/${project.id}/participants`, { method: "GET" });
+      expect(people).toHaveLength(2);
+    }
+    expect(readDemoState().people.filter(person => person.profileId === "profile-project")).toHaveLength(2);
+  });
+  test("one member can hold several roles and removing a duty revokes only its scope", async () => {
+    await login("dev-company");
+    const path = "/management/projects/demo-project/participants/member-worker";
+    let person = await client.request<ManagedParticipant>(path, { method: "GET" });
+    const write = (row: ManagedParticipant) => ({ displayName: row.displayName!, phone: row.phone, participantType: row.participantType, workType: row.workType!, projectRoleLabel: row.projectRoleLabel, teamId: row.teamId, requiresAttendance: row.requiresAttendance, status: row.status, enteredAt: row.enteredAt, exitedAt: row.exitedAt, expectedUpdatedAt: row.updatedAt, expectedProfileUpdatedAt: row.profileUpdatedAt });
+    const roles = [{ roleCode: "PROJECT_ADMIN" as const, teamId: null }, { roleCode: "WORKER" as const, teamId: null }, { roleCode: "TEAM_LEADER" as const, teamId: "demo-team" }, { roleCode: "TEAM_LEADER" as const, teamId: "demo-team-2" }];
+    const count = readDemoState().people.length;
+    person = await client.request<ManagedParticipant>(path, { method: "PUT", data: { ...write(person), ...memberRoleFields(roles, person.workType!, null) } });
+    expect(memberRoleAssignments(person)).toHaveLength(4);
+    expect(readDemoState().people).toHaveLength(count);
+    await login("dev-worker");
+    const scopes = await client.request<{ roleCode: string; scopeId: string; scopeName: string }[]>("/management/my-role-scopes", { method: "GET" });
+    expect(scopes).toHaveLength(4);
+    expect(scopes.some(scope => scope.roleCode === "TEAM_LEADER" && scope.scopeName.includes("木工一班"))).toBe(true);
+    await client.request("/management/projects/demo-project/participants", { method: "GET" });
+    await expect(client.request(path, { method: "PUT", data: { ...write(person), additionalRoles: [] } })).rejects.toThrow("不能修改自己");
+    await login("dev-company");
+    person = await client.request<ManagedParticipant>(path, { method: "PUT", data: { ...write(person), ...memberRoleFields(roles.filter(role => role.roleCode !== "PROJECT_ADMIN" && role.teamId !== "demo-team-2"), person.workType!, null) } });
+    await login("dev-worker");
+    await client.request("/management/teams/demo-team/participants", { method: "GET" });
+    await expect(client.request("/management/teams/demo-team-2/participants", { method: "GET" })).rejects.toThrow("没有访问");
+    expect(readDemoState().people).toHaveLength(count);
   });
   test("photo submission, admin review, and photo persistence remain local", async () => {
     await login("dev-worker");

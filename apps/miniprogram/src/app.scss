@@ -61,3 +61,27 @@ textarea {
   font-size: 26px;
   color: #334155;
 }
+
+.report-project {
+  margin-top: 24px;
+  border-top: 2px solid #dce6ee;
+}
+.report-member {
+  border-left: 4px solid #e6eff6;
+  padding-left: 16px;
+}
+.report-person-detail {
+  padding: 0 12px 20px;
+  overflow-wrap: anywhere;
+}
+.report-day-detail {
+  padding: 12px 16px;
+  background: #f6f8fb;
+  border-radius: 12px;
+}
+.report-point-label {
+  margin-top: 16px;
+  font-size: 26px;
+  color: #19334c;
+  line-height: 1.6;
+}

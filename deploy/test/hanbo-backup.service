@@ -1,0 +1,9 @@
+[Unit]
+Description=Back up Hanbo test database, files and encryption configuration
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/bin/bash /opt/hanbo-test/current/deploy/test/backup.sh

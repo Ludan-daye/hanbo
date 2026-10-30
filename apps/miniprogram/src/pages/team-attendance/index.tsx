@@ -1,3 +1,4 @@
+import { MonthlyExport } from "../../components/monthly-export";
 import { Picker, View } from "@tarojs/components";
 import { useEffect, useState } from "react";
 import { ReportParticipants } from "../../components/report-participants";
@@ -11,7 +12,7 @@ import {
   StateView,
   StatCards,
 } from "../../components/ui/index";
-import { resolveTeamLeaderTeamId } from "../../routing/teamLeader";
+import { useManagedTeamId } from "../../hooks/use-management-scope";
 import {
   fetchTeamDailyReport,
   fetchTeamMonthlyReport,
@@ -46,7 +47,7 @@ export default function TeamAttendance(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
   const { revision, refresh } = usePageRefresh();
-  const teamId = resolveTeamLeaderTeamId(state.me);
+  const teamId = useManagedTeamId(state.me);
   const [period, setPeriod] = useState<Period>("DAILY");
   const [date, setDate] = useState<string>(chinaToday());
   const [weekStart, setWeekStart] = useState<string>(chinaMonday());
@@ -155,7 +156,22 @@ export default function TeamAttendance(): JSX.Element {
         </View>
       ) : null}
       {totals !== null ? <StatCards items={totalsStatItems(totals)} /> : null}
-      {report ? <ReportParticipants report={report} /> : null}
+      {period === "MONTHLY" && report !== null ? (
+        <MonthlyExport
+          key={`${teamId}:${month}`}
+          scope="TEAM"
+          scopeId={teamId}
+          month={month}
+        />
+      ) : null}
+      {report ? (
+        <ReportParticipants
+          key={`${report.projectId}:${report.startDate}:${report.endDate}`}
+          report={report}
+          teamId={teamId}
+          onChanged={refresh}
+        />
+      ) : null}
     </Screen>
   );
 }

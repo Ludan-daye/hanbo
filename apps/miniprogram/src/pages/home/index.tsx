@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 
 import {
   AppHeader,
-  AppIcon,
   BottomNav,
   Button,
   ListItem,
@@ -15,6 +14,7 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { RolePanel } from "../../components/role-panels/index";
+import { WorkerProjectOverview } from "../../components/worker-project-overview";
 import { AccountAvatar } from "../../components/account-avatar";
 import { useAccountProfile } from "../../hooks/use-account-profile";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
@@ -23,7 +23,6 @@ import { roleHomePanel } from "../../routing/roleHome";
 import { resolveAdminProjectId } from "../../routing/projectAdmin";
 import { resolveCompanyAdminCompanyId } from "../../routing/companyAdmin";
 import { resolveTeamLeaderTeamId } from "../../routing/teamLeader";
-import { fetchAttendanceToday, fetchMyProjects } from "../../services/me";
 import {
   fetchCompanyDailyReport,
   fetchDailyReport,
@@ -31,10 +30,6 @@ import {
 } from "../../services/management";
 import { fetchPendingMakeups } from "../../services/makeups";
 import { chinaDateLabel, chinaToday } from "../../services/time";
-import type {
-  AttendanceToday,
-  MyProjectMembership,
-} from "../../services/me.types";
 import type { ReportTotals } from "../../services/management.types";
 import { FRONTEND_DEMO } from "../../config/env";
 import {
@@ -52,8 +47,6 @@ export default function Home(): JSX.Element {
   const { revision, refresh } = usePageRefresh();
   const panel = roleHomePanel(state.me?.roles.highestRoleCode ?? null);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
-  const [projects, setProjects] = useState<readonly MyProjectMembership[]>([]);
-  const [today, setToday] = useState<AttendanceToday | null>(null);
   const [totals, setTotals] = useState<ReportTotals | null>(null);
   const [pending, setPending] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
@@ -69,17 +62,7 @@ export default function Home(): JSX.Element {
           const appSettings = await fetchAppSettings();
           if (!cancelled) setSettings(appSettings);
         }
-        if (panel === "worker") {
-          const rows = await fetchMyProjects();
-          const data =
-            rows.length > 0
-              ? await fetchAttendanceToday(rows[0].projectId)
-              : null;
-          if (!cancelled) {
-            setProjects(rows);
-            setToday(data);
-          }
-        } else {
+        if (panel !== "worker") {
           const companyId = resolveCompanyAdminCompanyId(state.me);
           const projectId = resolveAdminProjectId(state.me);
           const teamId = resolveTeamLeaderTeamId(state.me);
@@ -113,9 +96,6 @@ export default function Home(): JSX.Element {
       cancelled = true;
     };
   }, [state.me, phase, revision, panel]);
-  const completed =
-    today?.points.filter((point) => point.record !== null).length ?? 0;
-  const nextPoint = today?.points.find((point) => point.record === null);
   return (
     <Screen>
       <AppHeader title="瀚渤" />
@@ -146,50 +126,35 @@ export default function Home(): JSX.Element {
         </View>
       </View>
       {accountError ? <Notice>{accountError}</Notice> : null}
-      <View className="home-hero">
-        <View className="home-hero__top">
+      {panel === "worker" ? (
+        <WorkerProjectOverview
+          revision={revision}
+          onRefresh={refresh}
+          account={account}
+        />
+      ) : (
+        <View className="home-hero">
           <View className="home-hero__label">
-            {panel === "worker"
-              ? "今日打卡"
-              : panel === "systemAdmin" || panel === "none"
-                ? "账号状态"
-                : "今日出勤"}
+            {panel === "systemAdmin" || panel === "none"
+              ? "账号状态"
+              : "今日出勤"}
           </View>
-        </View>
-        {panel === "worker" ? (
-          <>
-            <View className="home-hero__title">
-              {projects[0]?.projectName ?? "我的考勤"}
-            </View>
-            <View className="home-hero__sub">
-              {projects[0]?.teamName ?? "查看今日排班与打卡进度"}
-            </View>
-          </>
-        ) : null}
-        <View className="home-hero__bottom">
-          <View>
-            <View className="home-hero__number">
-              {panel === "worker"
-                ? `${completed}`
-                : totals !== null
+          <View className="home-hero__bottom">
+            <View>
+              <View className="home-hero__number">
+                {totals !== null
                   ? `${totals.actualAttendedDays}`
                   : panel === "systemAdmin"
                     ? "已就绪"
                     : panel === "none"
                       ? "待分配"
                       : "—"}
-              <View className="home-hero__unit">
-                {panel === "worker"
-                  ? "/ 4 次"
-                  : panel === "systemAdmin" || panel === "none"
-                    ? ""
-                    : "人次"}
+                <View className="home-hero__unit">
+                  {panel === "systemAdmin" || panel === "none" ? "" : "人次"}
+                </View>
               </View>
-            </View>
-            <View className="home-hero__caption">
-              {panel === "worker"
-                ? "已完成"
-                : panel === "systemAdmin"
+              <View className="home-hero__caption">
+                {panel === "systemAdmin"
                   ? "平台身份已连接"
                   : panel === "none"
                     ? "请联系管理员分配角色"
@@ -198,16 +163,14 @@ export default function Home(): JSX.Element {
                       : panel === "teamLeader"
                         ? "当前班组"
                         : "当前项目"}
+              </View>
             </View>
-          </View>
-          <View
-            className="home-hero__link"
-            onClick={() => {
-              void Taro.navigateTo({
-                url:
-                  panel === "worker"
-                    ? "/pages/punch/index"
-                    : panel === "companyAdmin"
+            <View
+              className="home-hero__link"
+              onClick={() => {
+                void Taro.navigateTo({
+                  url:
+                    panel === "companyAdmin"
                       ? "/pages/company-reports/index"
                       : panel === "projectAdmin"
                         ? "/pages/reports/index"
@@ -216,41 +179,19 @@ export default function Home(): JSX.Element {
                           : panel === "systemAdmin"
                             ? "/pages/system-management/index"
                             : "/pages/profile/index",
-              });
-            }}
-          >
-            {panel === "worker" ? "去打卡" : "查看详情"}
-            <View>→</View>
+                });
+              }}
+            >
+              查看详情<View>→</View>
+            </View>
           </View>
         </View>
-      </View>
-      {loading ? <View className="home-loading">正在同步工作信息…</View> : null}
+      )}
+      {panel !== "worker" && loading ? (
+        <View className="home-loading">正在同步工作信息…</View>
+      ) : null}
       {error ? (
         <StateView title="概览加载失败" sub={error} onRetry={refresh} />
-      ) : null}
-      {panel === "worker" && today ? (
-        <View className="home-progress">
-          <View className="home-progress__heading">
-            <View>今日考勤</View>
-            <View>{today.shiftName ?? "暂未排班"}</View>
-          </View>
-          <View className="home-progress__points">
-            {today.points.map((point) => (
-              <View
-                key={point.pointCode}
-                className={`home-point ${point.record ? "home-point--done" : ""}`}
-              >
-                <View className="home-point__dot">
-                  {point.record ? "✓" : ""}
-                </View>
-                <View>{point.scheduledTime}</View>
-                <View className="home-point__state">
-                  {point.record ? "已打卡" : "待打卡"}
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
       ) : null}
       {panel !== "worker" && totals ? (
         <View className="home-summary">
@@ -278,20 +219,8 @@ export default function Home(): JSX.Element {
           }}
         />
       ) : null}
-      {panel === "worker" && !loading && projects.length === 0 ? (
-        <Notice>还没有加入项目，请联系管理员分配项目和班组。</Notice>
-      ) : null}
-      {panel === "worker" && today && !today.isWorkday ? (
-        <Notice>今天是休息日，辛苦了，好好休息。</Notice>
-      ) : null}
-      {panel === "worker" && nextPoint && today?.isWorkday ? (
-        <View className="home-tip">
-          <AppIcon name="shield" />
-          <View>打卡需定位、活体核验与现场照片。</View>
-        </View>
-      ) : null}
       {settings?.announcement ? <Notice>{settings.announcement}</Notice> : null}
-      <Section title="常用功能">
+      <Section title={panel === "worker" ? "快捷入口" : "常用功能"}>
         <View className="home-shortcuts">
           <RolePanel panel={panel} limit={4} />
         </View>

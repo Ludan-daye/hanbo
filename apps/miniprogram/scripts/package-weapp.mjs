@@ -4,25 +4,14 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { phoneApiOrigin } from "./weapp-api-origin.mjs";
 
 const { values } = parseArgs({
-  options: { "api-base-url": { type: "string" } },
+  options: { "api-base-url": { type: "string" }, "test-login": { type: "boolean" } },
   strict: true,
   allowPositionals: false,
 });
-const apiBaseUrl = values["api-base-url"];
-if (!apiBaseUrl) {
-  throw new Error("API URL is required. Run: corepack pnpm package:weapp --api-base-url http://YOUR_COMPUTER_LAN_IP:3000");
-}
-const apiUrl = new URL(apiBaseUrl);
-if (
-  !["http:", "https:"].includes(apiUrl.protocol) ||
-  apiUrl.username || apiUrl.password || apiUrl.search || apiUrl.hash ||
-  apiUrl.pathname !== "/" ||
-  ["localhost", "127.0.0.1", "[::1]"].includes(apiUrl.hostname)
-) {
-  throw new Error("Use an HTTP(S) API origin reachable by your phone, without credentials, a path, query or fragment. A localhost address cannot reach your computer from a phone.");
-}
+const apiUrl = new URL(phoneApiOrigin(values["api-base-url"]));
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const frontendRoot = join(repoRoot, "apps/miniprogram");
 const nativeFaceEnabled = process.env.TARO_APP_FACE_NATIVE_SDK === "true";
@@ -32,7 +21,7 @@ const build = spawnSync("corepack", ["pnpm", "--filter", "@construction/miniprog
   cwd: repoRoot,
   env: {
     ...process.env,
-    TARO_APP_DATA_MODE: "http",
+    TARO_APP_DATA_MODE: "http", TARO_APP_TEST_LOGIN: values["test-login"] === true ? "true" : "false",
     TARO_APP_API_BASE_URL: apiUrl.origin,
   },
   stdio: "inherit",
@@ -66,13 +55,14 @@ await writeFile(join(packageRoot, "运行说明.txt"), `瀚渤智慧工地 · �
 
 API 地址：${apiUrl.origin}
 AppID：${project.appid}
+测试人员登录：${values["test-login"] === true ? "已启用，输入管理员单独提供的测试口令后选择角色。" : "未启用"}
 
 1. 解压 ZIP，打开电脑上的“微信开发者工具”，选择导入项目。
 2. 导入整个“${folderName}”文件夹，根目录应能看到 project.config.json。不要只导入 miniprogram 子文件夹。
-3. 点击“编译”，通过微信登录后选择头像、填写昵称；首次使用再绑定本人档案。
-4. 点击“预览”，用开发者或体验者微信扫码。手机和电脑须连接同一 Wi-Fi，电脑的 API 和数据库须保持运行。
+3. 点击“编译”，通过微信登录后按页面补齐头像、昵称、真实姓名和手机号；首次使用再绑定本人档案。
+4. 点击“预览”，用有权限的微信扫码。手机须能访问上方 API 地址；连接云端 API 时可使用移动网络，连接电脑局域网 API 时须处于同一 Wi-Fi。
 5. 本地调试包已关闭域名校验；手机若仍提示域名限制，在右上角“…”开启调试后重新进入。
-6. 局域网 IP 改变后，需要用新地址重新打包。此包连接本地 API，不是已部署到云端的独立服务。
+6. API 地址改变后，需要用新地址重新构建。此导入包是生成时的客户端快照；服务端和数据库由 API 所在的电脑或云服务器运行。
 
 已配置本地环境时，在源码目录启动服务：
 cd '${repoRoot.replace(/'/g, "'\\''")}'
@@ -82,7 +72,7 @@ corepack pnpm --filter @construction/api build
 corepack pnpm --filter @construction/api start:local
 
 重新打包源码：
-corepack pnpm ${packageCommand} --api-base-url ${apiUrl.origin}
+corepack pnpm ${packageCommand} --api-base-url ${apiUrl.origin}${values["test-login"] === true ? " --test-login" : ""}
 
 ${nativeFaceEnabled ? `活体核验接入要求：
 客户端已包含腾讯云官方 Taro SDK。服务端还须配置已审核的微信小程序 RuleId、TENCENT_SECRET_ID、TENCENT_SECRET_KEY，并设置 FACE_DEV_STUB=false。密钥仅保存在 apps/api/.env。

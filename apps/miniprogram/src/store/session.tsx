@@ -11,6 +11,7 @@ import Taro from "@tarojs/taro";
 import { ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY } from "../config/env";
 import { fetchMe, logout } from "../services/auth";
 import { fetchAccountProfile } from "../services/account";
+import { fetchMyFace } from "../services/face";
 import type { MeResponse } from "../services/auth.types";
 import {
   initialSessionState,
@@ -51,7 +52,18 @@ export const SessionProvider = ({
     setError(null);
     const me = await fetchMe();
     const accountProfile = await fetchAccountProfile();
-    dispatch({ me, accountProfile, type: "SET_ME" });
+    const profilePhase: SessionPhase = sessionPhase({
+      ...initialSessionState,
+      accessToken: String(Taro.getStorageSync(ACCESS_TOKEN_KEY) || ""),
+      me,
+      accountProfile,
+    });
+    const faceEnrollmentRequired: boolean =
+      me.profile.type === "WORKER" &&
+      (profilePhase === "ready" || profilePhase === "norole")
+        ? (await fetchMyFace()).profile === null
+        : false;
+    dispatch({ me, accountProfile, faceEnrollmentRequired, type: "SET_ME" });
     return me;
   };
 

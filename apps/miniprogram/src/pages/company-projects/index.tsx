@@ -137,8 +137,10 @@ export default function CompanyProjects(): JSX.Element {
                     secondary={`工地中心周围 ${project.geofenceRadiusM} 米`}
                   />
                   <ListItem
-                    primary="围栏中心"
-                    secondary={`纬度 ${project.centerLatitude} · 经度 ${project.centerLongitude}`}
+                    primary="工地位置"
+                    secondary={project.address}
+                    chip="查看地图"
+                    onClick={() => { void Taro.navigateTo({ url: `/pages/project-detail/index?projectId=${project.id}` }); }}
                   />
                   <ListItem
                     primary="计划工期"

@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
+import type { Prisma, MakeupRequest } from "@prisma/client";
 import {
   summarizeScheduledAttendance,
   type AttendanceRecordInput,
+  type ScheduledAttendancePoint,
 } from "@construction/domain/attendance.js";
 import { ROLE_LEVEL } from "@construction/domain/roles.js";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
@@ -19,7 +22,9 @@ import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { decryptPersonnelName } from "../management/personnel-name.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
+import { evaluationView } from "./project-evaluations.service.js";
 import type {
+  ReportPersonDetail,
   AttendanceReportParticipantBase,
   AttendanceReportTotals,
   DailyAttendanceReportParticipant,
@@ -33,7 +38,7 @@ type ReportMember = AttendanceReportParticipantBase &
     readonly userId: string | null;
   };
 
-type AttendanceDayValues = {
+export type AttendanceDayValues = {
   readonly abnormalRecordCount: number;
   readonly approvedMakeupCount: number;
   readonly hasResult: boolean;
@@ -45,7 +50,13 @@ type AttendanceDayValues = {
   readonly workedMinutes: number;
 };
 
-type DailyParticipantWithDayValues = {
+export type ReportDay = {
+  readonly date: string;
+  readonly planName: string;
+  readonly planVersion: string;
+  readonly points: readonly ScheduledAttendancePoint[];
+  readonly evidence: readonly AttendanceRecordInput[];
+  readonly makeups: readonly MakeupRequest[];
   readonly dayValues: AttendanceDayValues;
   readonly participant: AttendanceReportParticipantBase;
 };
@@ -180,6 +191,57 @@ const createRangeParticipant = (
   workedMinutes: totals.workedMinutes,
 });
 
+export const summarizeReportDays = (
+  rows: readonly ReportDay[],
+  reportId: string,
+  periodType: "WEEKLY" | "MONTHLY",
+  start: Date,
+  end: Date,
+): RangeAttendanceReportResponse => {
+  const groups = new Map<
+    string,
+    {
+      readonly person: AttendanceReportParticipantBase;
+      readonly totals: AttendanceReportTotals;
+    }
+  >();
+  for (const row of rows) {
+    const key = JSON.stringify([
+      row.participant.projectId,
+      row.participant.memberId,
+      row.participant.teamId,
+    ]);
+    const previous = groups.get(key);
+    groups.set(key, {
+      person: row.participant,
+      totals: addDayToTotals(
+        previous?.totals ?? createEmptyTotals(1),
+        row.dayValues,
+      ),
+    });
+  }
+  const participantCount = new Set(
+    rows.map((row) =>
+      JSON.stringify([row.participant.projectId, row.participant.memberId]),
+    ),
+  ).size;
+  const participants = [...groups.values()].map((row) =>
+    createRangeParticipant(row.person, row.totals),
+  );
+  const totals = [...groups.values()].reduce(
+    (total, row) => mergeTotals(total, row.totals),
+    createEmptyTotals(participantCount),
+  );
+  return {
+    periodType,
+    projectId: reportId,
+    startDate: toDateOnly(start),
+    endDate: toDateOnly(end),
+    participants,
+    totals,
+  };
+};
+
 @Injectable()
 export class ReportsService {
   constructor(
@@ -305,16 +367,117 @@ export class ReportsService {
     })[]
   > {
     const rows = await this.days(
+      this.prisma,
       [],
       null,
       userId,
       dateOnlyToDate(from),
       dateOnlyToDate(to),
+      new Date(),
+      null,
     );
     return rows.map((row) => ({
       ...createDailyParticipant(row.participant, row.dayValues),
       attendanceDate: row.date,
     }));
+  }
+  async personDetail(
+    projectId: string,
+    memberId: string,
+    teamId: string | null,
+    from: string,
+    to: string,
+  ): Promise<Omit<ReportPersonDetail, "canEvaluate">> {
+    return this.prisma.$transaction(
+      async (database) => {
+        const rows = await this.days(
+          database,
+          [projectId],
+          teamId,
+          null,
+          dateOnlyToDate(from),
+          dateOnlyToDate(to),
+          new Date(),
+          memberId,
+        );
+        const first = rows[0];
+        if (first === undefined)
+          throw new NotFoundException({
+            message: "该人员在所选范围内没有可查看的明细。",
+            projectId,
+            memberId,
+            from,
+            to,
+          });
+        const approvers = await database.user.findMany({
+          where: {
+            id: {
+              in: [
+                ...new Set(
+                  rows.flatMap((row) =>
+                    row.makeups.flatMap((m) =>
+                      m.approverUserId === null ? [] : [m.approverUserId],
+                    ),
+                  ),
+                ),
+              ],
+            },
+          },
+          select: { id: true, encryptedRealName: true },
+        });
+        const names = new Map(
+          approvers.map((user) => [
+            user.id,
+            user.encryptedRealName === null
+              ? "未填写实名"
+              : decryptPersonnelName(
+                  user.encryptedRealName,
+                  this.env.PERSONNEL_ENCRYPTION_KEY,
+                ),
+          ]),
+        );
+        return {
+          person: first.participant,
+          startDate: from,
+          endDate: to,
+          days: rows.map((row) => ({
+            date: row.date,
+            teamName: row.participant.teamName,
+            planName: row.planName,
+            isScheduled: row.dayValues.isScheduled,
+            workedMinutes: row.dayValues.workedMinutes,
+            flags: [
+              row.dayValues.isAbsent ? "缺勤" : "",
+              row.dayValues.isMissingPunch ? "缺卡" : "",
+              row.dayValues.isLate ? "迟到" : "",
+              row.dayValues.isEarlyLeave ? "早退" : "",
+              row.dayValues.abnormalRecordCount > 0
+                ? `核验未通过 ${row.dayValues.abnormalRecordCount} 次`
+                : "",
+            ].filter(Boolean),
+            points: row.points,
+            records: [...row.evidence]
+              .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+              .map((record) => ({
+                ...record,
+                occurredAt: record.occurredAt.toISOString(),
+              })),
+            makeups: row.makeups.map((m) => ({
+              id: m.id,
+              pointLabel: m.pointLabel ?? m.pointCode,
+              requestedOccurredAt: m.requestedOccurredAt.toISOString(),
+              status: m.status,
+              reason: m.reason,
+              approvalReason: m.approvalReason,
+              approverName:
+                m.approverUserId === null ? null : names.get(m.approverUserId)!,
+              approvedAt: m.approvedAt?.toISOString() ?? null,
+            })),
+          })),
+        };
+      },
+      { isolationLevel: "RepeatableRead", timeout: 30000 },
+    );
   }
   private async requireProject(projectId: string): Promise<void> {
     if (
@@ -356,11 +519,14 @@ export class ReportsService {
     date: string,
   ): Promise<DailyAttendanceReportResponse> {
     const rows = await this.days(
+      this.prisma,
       projects,
       teamId,
       userId,
       dateOnlyToDate(date),
       dateOnlyToDate(date),
+      new Date(),
+      null,
     );
     return {
       periodType: "DAILY",
@@ -384,58 +550,96 @@ export class ReportsService {
     start: Date,
     end: Date,
   ): Promise<RangeAttendanceReportResponse> {
-    const rows = await this.days(projects, teamId, null, start, end);
-    const groups = new Map<
-      string,
-      {
-        readonly person: AttendanceReportParticipantBase;
-        readonly totals: AttendanceReportTotals;
-      }
-    >();
-    for (const row of rows) {
-      const key = JSON.stringify([
-        row.participant.projectId,
-        row.participant.memberId,
-        row.participant.teamId,
-      ]);
-      const previous = groups.get(key);
-      groups.set(key, {
-        person: row.participant,
-        totals: addDayToTotals(
-          previous?.totals ?? createEmptyTotals(1),
-          row.dayValues,
-        ),
-      });
-    }
-    const participantCount = new Set(
-      rows.map((row) =>
-        JSON.stringify([row.participant.projectId, row.participant.memberId]),
-      ),
-    ).size;
-    const participants = [...groups.values()].map((row) =>
-      createRangeParticipant(row.person, row.totals),
+    const rows = await this.days(
+      this.prisma,
+      projects,
+      teamId,
+      null,
+      start,
+      end,
+      new Date(),
+      null,
     );
-    const totals = [...groups.values()].reduce(
-      (total, row) => mergeTotals(total, row.totals),
-      createEmptyTotals(participantCount),
+    return summarizeReportDays(rows, reportId, periodType, start, end);
+  }
+  async monthlySnapshot(
+    projectIds: readonly string[],
+    teamId: string | null,
+    reportId: string,
+    month: string,
+  ): Promise<{
+    readonly rows: readonly ReportDay[];
+    readonly report: RangeAttendanceReportResponse;
+    readonly projectNames: ReadonlyMap<string, string>;
+    readonly approverNames: ReadonlyMap<string, string>;
+    readonly cutoff: Date;
+  }> {
+    return this.prisma.$transaction(
+      async (transaction) => {
+        const cutoff = new Date();
+        const start = getMonthStartDate(month);
+        const end = getMonthEndDate(month);
+        const rows = await this.days(
+          transaction,
+          projectIds,
+          teamId,
+          null,
+          start,
+          end,
+          cutoff,
+          null,
+        );
+        const projects = await transaction.project.findMany({
+          where: { id: { in: [...projectIds] } },
+          select: { id: true, name: true },
+        });
+        const approverIds = [
+          ...new Set(
+            rows.flatMap((row) =>
+              row.makeups.flatMap((m) =>
+                m.approverUserId === null ? [] : [m.approverUserId],
+              ),
+            ),
+          ),
+        ];
+        const approvers = await transaction.user.findMany({
+          where: { id: { in: approverIds } },
+          select: { id: true, encryptedRealName: true },
+        });
+        return {
+          rows,
+          report: summarizeReportDays(rows, reportId, "MONTHLY", start, end),
+          cutoff,
+          projectNames: new Map(projects.map((p) => [p.id, p.name])),
+          approverNames: new Map(
+            approvers.map((u) => [
+              u.id,
+              u.encryptedRealName === null
+                ? "未填写实名"
+                : decryptPersonnelName(
+                    u.encryptedRealName,
+                    this.env.PERSONNEL_ENCRYPTION_KEY,
+                  ),
+            ]),
+          ),
+        };
+      },
+      { isolationLevel: "RepeatableRead", timeout: 120000 },
     );
-    return {
-      periodType,
-      projectId: reportId,
-      startDate: toDateOnly(start),
-      endDate: toDateOnly(end),
-      participants,
-      totals,
-    };
   }
   private async members(
+    database: Prisma.TransactionClient,
     projectIds: readonly string[],
     userId: string | null,
     teamId: string | null,
+    memberId: string | null,
   ): Promise<readonly ReportMember[]> {
-    const where = userId === null ? { projectId: { in: [...projectIds] } } : {};
+    const where = {
+      ...(userId === null ? { projectId: { in: [...projectIds] } } : {}),
+      ...(memberId === null ? {} : { id: memberId }),
+    };
     const [workers, managers] = await Promise.all([
-      this.prisma.projectWorkerMember.findMany({
+      database.projectWorkerMember.findMany({
         where: {
           ...where,
           ...(userId === null ? {} : { worker: { userId } }),
@@ -443,10 +647,17 @@ export class ReportsService {
             ? {}
             : { OR: [{ teamId }, { history: { some: { teamId } } }] }),
         },
-        include: { worker: true, team: true },
+        include: {
+          worker: true,
+          team: true,
+          project: { select: { name: true } },
+          evaluation: {
+            include: { reviewer: { select: { encryptedRealName: true } } },
+          },
+        },
         orderBy: { createdAt: "asc" },
       }),
-      this.prisma.projectManagerMember.findMany({
+      database.projectManagerMember.findMany({
         where: {
           ...where,
           ...(userId === null ? {} : { manager: { userId } }),
@@ -459,7 +670,14 @@ export class ReportsService {
                 ],
               }),
         },
-        include: { manager: true, teamScope: true },
+        include: {
+          manager: true,
+          teamScope: true,
+          project: { select: { name: true } },
+          evaluation: {
+            include: { reviewer: { select: { encryptedRealName: true } } },
+          },
+        },
         orderBy: { createdAt: "asc" },
       }),
     ]);
@@ -467,6 +685,11 @@ export class ReportsService {
       ...workers.map(
         (m): ReportMember => ({
           projectId: m.projectId,
+          projectName: m.project.name,
+          evaluation: evaluationView(
+            m.evaluation,
+            this.env.PERSONNEL_ENCRYPTION_KEY,
+          ),
           memberId: m.id,
           participantId: m.workerId,
           participantType: "WORKER",
@@ -493,6 +716,11 @@ export class ReportsService {
       ...managers.map(
         (m): ReportMember => ({
           projectId: m.projectId,
+          projectName: m.project.name,
+          evaluation: evaluationView(
+            m.evaluation,
+            this.env.PERSONNEL_ENCRYPTION_KEY,
+          ),
           memberId: m.id,
           participantId: m.managerId,
           participantType: "MANAGER",
@@ -514,15 +742,22 @@ export class ReportsService {
     ];
   }
   private async days(
+    database: Prisma.TransactionClient,
     projectIds: readonly string[],
     teamId: string | null,
     userId: string | null,
     start: Date,
     end: Date,
-  ): Promise<
-    readonly (DailyParticipantWithDayValues & { readonly date: string })[]
-  > {
-    const members = await this.members(projectIds, userId, teamId);
+    now: Date,
+    memberId: string | null,
+  ): Promise<readonly ReportDay[]> {
+    const members = await this.members(
+      database,
+      projectIds,
+      userId,
+      teamId,
+      memberId,
+    );
     if (members.length === 0) return [];
     const ids = [...new Set(members.map((m) => m.projectId))];
     const owners = members.map((m) => ({
@@ -533,13 +768,13 @@ export class ReportsService {
     const where = { attendanceDate: { gte: start, lte: end }, OR: owners };
     const [planning, records, makeups, storedResults, teams] =
       await Promise.all([
-        loadPlanningData(this.prisma, ids),
-        this.prisma.attendanceRecord.findMany({ where }),
-        this.prisma.makeupRequest.findMany({
-          where: { ...where, status: "APPROVED" },
+        loadPlanningData(database, ids),
+        database.attendanceRecord.findMany({ where }),
+        database.makeupRequest.findMany({
+          where,
         }),
-        this.prisma.attendanceResult.findMany({ where }),
-        this.prisma.team.findMany({
+        database.attendanceResult.findMany({ where }),
+        database.team.findMany({
           where: { projectId: { in: ids } },
           select: { id: true, name: true },
         }),
@@ -564,6 +799,7 @@ export class ReportsService {
         },
       ]);
     }
+    const makeupsByDay = new Map<string, readonly MakeupRequest[]>();
     for (const row of makeups) {
       const key = createResultKey(
         row.projectId,
@@ -571,6 +807,8 @@ export class ReportsService {
         row.participantId,
         row.attendanceDate,
       );
+      makeupsByDay.set(key, [...(makeupsByDay.get(key) ?? []), row]);
+      if (row.status !== "APPROVED") continue;
       inputs.set(key, [
         ...(inputs.get(key) ?? []),
         {
@@ -593,14 +831,11 @@ export class ReportsService {
         r,
       ]),
     );
-    const now = new Date();
     const today = chinaDate(now);
     const dates = listDatesInclusive(start, end).filter(
       (d) => toDateOnly(d) <= today,
     );
-    const output: (DailyParticipantWithDayValues & {
-      readonly date: string;
-    })[] = [];
+    const output: ReportDay[] = [];
     const historiesByMember = new Map<string, typeof planning.histories>();
     for (const row of planning.histories) {
       const id = row.workerMemberId ?? row.managerMemberId!;
@@ -634,7 +869,12 @@ export class ReportsService {
         const evidence = inputs.get(key) ?? [];
         const legacy = stored.get(key);
         const eligible = isAttendanceMemberOn(state, text);
-        if (!eligible && evidence.length === 0 && legacy === undefined)
+        if (
+          !eligible &&
+          evidence.length === 0 &&
+          legacy === undefined &&
+          !makeupsByDay.has(key)
+        )
           continue;
         const plan = resolveAttendancePlan(
           data,
@@ -667,6 +907,8 @@ export class ReportsService {
           (imported !== null && !imported.isAbsent);
         const participant: AttendanceReportParticipantBase = {
           projectId: member.projectId,
+          projectName: member.projectName,
+          evaluation: member.evaluation,
           participantId: member.participantId,
           participantType: member.participantType,
           memberId: member.memberId,
@@ -683,6 +925,14 @@ export class ReportsService {
         output.push({
           date: text,
           participant,
+          planName: plan.name,
+          planVersion: createHash("sha256")
+            .update(JSON.stringify(plan))
+            .digest("hex")
+            .slice(0, 12),
+          points: plan.points,
+          evidence,
+          makeups: makeupsByDay.get(key) ?? [],
           dayValues: {
             isScheduled,
             hasResult,

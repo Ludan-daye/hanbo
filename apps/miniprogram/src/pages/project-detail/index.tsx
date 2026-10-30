@@ -16,7 +16,8 @@ import {
 import { useManagedProjectId } from "../../hooks/use-management-scope";
 import { useSession } from "../../store/session";
 import { useSessionGuard } from "../../hooks/use-session-guard";
-import { usePageRefresh } from "../../hooks/use-page-refresh";
+import { ProjectGeofence } from "../../components/project-geofence";
+import { validateProjectLocation } from "../../services/project-location";
 import { FEATURES } from "../../routing/features";
 import type { ManagedProject } from "../../services/management.types";
 import { fetchProject, updateProject } from "../../services/workflows";
@@ -25,7 +26,8 @@ export default function ProjectDetail(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
   const projectId = useManagedProjectId(state.me);
-  const { revision, refresh } = usePageRefresh();
+  const [revision, setRevision] = useState<number>(0);
+  const refresh = (): void => setRevision((current) => current + 1);
   const [project, setProject] = useState<ManagedProject | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
@@ -50,19 +52,16 @@ export default function ProjectDetail(): JSX.Element {
   }, [projectId, revision]);
   const save = async (): Promise<void> => {
     if (!project || busy) return;
-    if (
-      !project.name.trim() ||
-      !project.address.trim() ||
-      !Number.isInteger(project.geofenceRadiusM) ||
-      project.geofenceRadiusM <= 0 ||
-      !project.centerLatitude.trim() ||
-      !project.centerLongitude.trim() ||
-      Math.abs(Number(project.centerLatitude)) > 90 ||
-      Math.abs(Number(project.centerLongitude)) > 180 ||
-      !Number.isFinite(Number(project.centerLatitude)) ||
-      !Number.isFinite(Number(project.centerLongitude))
-    ) {
-      setError("请填写有效的名称、地址、经纬度和正整数考勤半径。");
+    if (!project.name.trim()) {
+      setError("请填写项目名称。");
+      return;
+    }
+    try {
+      validateProjectLocation(project);
+    } catch (cause: unknown) {
+      setError(
+        cause instanceof Error ? cause.message : "请在地图上重新选择工地范围。",
+      );
       return;
     }
     setBusy(true);
@@ -101,7 +100,7 @@ export default function ProjectDetail(): JSX.Element {
                 (feature) =>
                   ![
                     "/pages/project-detail/index",
-                    "/pages/punch/index",
+                    "/pages/my-projects/index",
                     "/pages/my-records/index",
                     "/pages/my-makeups/index",
                   ].includes(feature.url),
@@ -198,29 +197,13 @@ export default function ProjectDetail(): JSX.Element {
               value={project.status}
               onChange={(status) => setProject({ ...project, status })}
             />
-            <Field
-              label="中心纬度"
-              value={project.centerLatitude}
-              placeholder="-90 至 90"
-              onInput={(centerLatitude) =>
-                setProject({ ...project, centerLatitude })
-              }
-            />
-            <Field
-              label="中心经度"
-              value={project.centerLongitude}
-              placeholder="-180 至 180"
-              onInput={(centerLongitude) =>
-                setProject({ ...project, centerLongitude })
-              }
-            />
-            <Field
-              label="考勤范围 / 米"
-              value={String(project.geofenceRadiusM)}
-              type="number"
-              placeholder="正整数"
-              onInput={(value) =>
-                setProject({ ...project, geofenceRadiusM: Number(value) })
+            <ProjectGeofence
+              value={project}
+              disabled={busy}
+              onChange={(location) =>
+                setProject((current) =>
+                  current === null ? null : { ...current, ...location },
+                )
               }
             />
             <Field

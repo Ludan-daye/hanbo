@@ -79,7 +79,7 @@ export const createApiClient = (baseUrl: string): ApiClient => {
     );
     assertCurrentSession(session);
     if (res.statusCode === 401) return null;
-    if (res.statusCode !== 200)
+    if (res.statusCode < 200 || res.statusCode >= 300)
       throw new ApiError(
         res.statusCode,
         "登录状态刷新失败，请稍后重试。",
@@ -169,6 +169,11 @@ export const createApiClient = (baseUrl: string): ApiClient => {
         ? res.data.message
         : "";
     const messages: Readonly<Record<string, string>> = {
+      TEST_LOGIN_DISABLED: "当前环境未开放测试人员登录。",
+      TEST_LOGIN_INVALID_CREDENTIALS: "测试口令不正确，请核对后重试。",
+      INVALID_TEST_LOGIN_REQUEST: "请选择测试身份并填写测试口令。",
+      TEST_ACCOUNT_NOT_READY: "测试账号尚未初始化，请联系管理员。",
+      PERSONNEL_NAME_FORMAT_INVALID: "人员档案姓名格式异常，请联系管理员修复历史测试资料。",
       INVALID_UPDATE_TEAM_REQUEST: "请核对班组名称、状态、工种和负责人。",
       PROJECT_TEAM_NAME_ALREADY_EXISTS: "此项目已有同名班组，请更换名称。",
       PROJECT_TEAM_NOT_FOUND: "班组不存在或已变更，请返回列表刷新。",
@@ -181,6 +186,10 @@ export const createApiClient = (baseUrl: string): ApiClient => {
       INVALID_REUSE_PARTICIPANT_REQUEST:
         "请核对来源人员、目标岗位、班组及进场日期。",
       REUSE_PROFILE_NOT_ACTIVE: "该人员的基础档案已停用，请先由管理员核实。",
+      PROJECT_MANAGERS_NOT_ELIGIBLE: "所选管理员已停用或不属于本公司，请重新选择。",
+      INVALID_CREATE_PROJECT_REQUEST: "请检查项目资料，并至少选择一名项目管理员。",
+      INVALID_ADDITIONAL_MEMBER_ROLES: "职级或管理班组重复，请重新选择兼任职级。",
+      ROLE_SCOPE_NOT_FOUND: "工作范围已变更，请联系管理员核对授权。",
       PROJECT_MEMBER_ALREADY_EXISTS:
         "此人员已在本项目，请在人员列表恢复或编辑已有任职。",
       INVALID_PARTICIPANT_REQUEST:
@@ -206,6 +215,13 @@ export const createApiClient = (baseUrl: string): ApiClient => {
       PROJECT_CODE_ALREADY_EXISTS:
         "该项目编号已被同一公司其他项目使用，请更换编号。",
       ACCOUNT_PROFILE_REQUIRED: "请先完善头像、昵称、真实姓名和手机号。",
+      WORKER_REGISTRATION_REQUIRED: "请先补齐身份证、住址、紧急联系人、健康、保险及工资银行卡资料。",
+      WORKER_REGISTRATION_INVALID: "用工资料不完整或格式有误，请核对全部必填项。",
+      WORKER_PROFILE_NOT_BOUND: "请先用邀请码绑定本人工人档案。",
+      WORKER_IDENTITY_CHANGE_REQUIRES_REVIEW: "身份证号与已有档案不一致，请联系管理员核实。",
+      WORKER_ID_NUMBER_ALREADY_EXISTS: "该身份证号已有人员档案，请联系管理员核对绑定。",
+      FACE_LOCATION_REQUIRED: "请重新获取 GPS 位置后再开始刷脸。",
+      LOCATION_ACCURACY_INSUFFICIENT: "定位精度不足，请到开阔位置后重试。",
       OUTSIDE_GEOFENCE: "不在考勤范围内，无法打卡。请进入项目范围后重新打卡。",
       ACCOUNT_BINDING_REQUIRED: "请先使用邀请码绑定本人档案。",
       ACCOUNT_PROFILE_INVALID: "请填写有效昵称、真实姓名和 11 位手机号。",

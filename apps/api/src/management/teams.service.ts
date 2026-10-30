@@ -106,7 +106,7 @@ export class TeamsService {
               where: {
                 id: body.leader.memberId,
                 projectId,
-                teamId,
+                OR: [{ teamId }, { additionalRoles: { some: { roleCode: "TEAM_LEADER", teamId } } }],
                 status: "ACTIVE",
               },
             });
@@ -121,7 +121,7 @@ export class TeamsService {
               where: {
                 id: body.leader.memberId,
                 projectId,
-                teamScopeId: teamId,
+                OR: [{ teamScopeId: teamId }, { additionalRoles: { some: { roleCode: "TEAM_LEADER", teamId } } }],
                 status: "ACTIVE",
               },
             });

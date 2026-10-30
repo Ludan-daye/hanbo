@@ -14,9 +14,18 @@ import {
   Segmented,
   StateView,
 } from "../../components/ui/index";
+import { ProjectGeofence } from "../../components/project-geofence";
+import { ProjectManagerPicker } from "../../components/project-manager-picker";
+import {
+  validateProjectLocation,
+  type ProjectLocation,
+} from "../../services/project-location";
 import { useManagedCompanyId } from "../../hooks/use-management-scope";
 import { createCompanyProject } from "../../services/management";
-import type { ProjectStatus } from "../../services/management.types";
+import type {
+  ProjectManagerCandidate,
+  ProjectStatus,
+} from "../../services/management.types";
 import { chinaToday } from "../../services/time";
 import { useSession } from "../../store/session";
 
@@ -30,15 +39,15 @@ export default function CreateProject(): JSX.Element {
   const { state } = useSession();
   const companyId = useManagedCompanyId(state.me);
   const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
-  const [latitude, setLatitude] = useState("");
-  const [longitude, setLongitude] = useState("");
-  const [radius, setRadius] = useState("300");
+  const [location, setLocation] = useState<ProjectLocation | null>(null);
   const [status, setStatus] = useState<ProjectStatus>("PREPARING");
   const [startsOn, setStartsOn] = useState<string>(chinaToday());
   const [endsOn, setEndsOn] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [managers, setManagers] = useState<readonly ProjectManagerCandidate[]>(
+    [],
+  );
 
   if (companyId === null) {
     return (
@@ -51,26 +60,21 @@ export default function CreateProject(): JSX.Element {
 
   const submit = async (): Promise<void> => {
     if (busy) return;
+    if (managers.length === 0) {
+      setError("请至少选择一名项目管理员。");
+      return;
+    }
     const trimmedName = name.trim();
-    const trimmedAddress = address.trim();
-    if (trimmedName.length === 0 || trimmedAddress.length === 0) {
-      await Taro.showToast({ icon: "none", title: "请填写名称与地址" });
+    if (trimmedName.length === 0 || location === null) {
+      setError("请填写项目名称，并在地图上选择工地范围。");
       return;
     }
-    const radiusN = Number(radius);
-    if (!Number.isInteger(radiusN) || radiusN <= 0) {
-      await Taro.showToast({ icon: "none", title: "围栏半径须为正整数" });
-      return;
-    }
-    if (
-      latitude.trim() === "" ||
-      longitude.trim() === "" ||
-      !Number.isFinite(Number(latitude)) ||
-      !Number.isFinite(Number(longitude)) ||
-      Math.abs(Number(latitude)) > 90 ||
-      Math.abs(Number(longitude)) > 180
-    ) {
-      setError("请填写有效的工地中心经纬度。");
+    try {
+      validateProjectLocation(location);
+    } catch (cause: unknown) {
+      setError(
+        cause instanceof Error ? cause.message : "工地位置无效，请重新选择。",
+      );
       return;
     }
     if (endsOn !== null && endsOn < startsOn) {
@@ -81,17 +85,18 @@ export default function CreateProject(): JSX.Element {
     setError(null);
     try {
       await createCompanyProject(companyId, {
+        managerProfileIds: managers.map((person) => person.profileId),
         name: trimmedName,
-        address: trimmedAddress,
-        centerLatitude: latitude,
-        centerLongitude: longitude,
-        geofenceRadiusM: radiusN,
+        ...location,
+        address: location.address.trim(),
         status,
         plannedStartDate: startsOn,
         plannedEndDate: endsOn,
       });
       await Taro.showToast({ icon: "success", title: "已创建" });
-      await Taro.redirectTo({ url: `/pages/company-projects/index?companyId=${companyId}` });
+      await Taro.redirectTo({
+        url: `/pages/company-projects/index?companyId=${companyId}`,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "REQUEST_FAILED";
       setError(msg);
@@ -105,7 +110,7 @@ export default function CreateProject(): JSX.Element {
     <Screen>
       <PageHeader title="新建项目" />
       <Notice>
-        填写项目资料并设置考勤范围，后续可由项目管理员配置班组和排班。
+        设置工地范围并选择项目管理员，创建后由管理员配置班组和排班。
       </Notice>
       <Section title="基本信息">
         <Field
@@ -114,35 +119,27 @@ export default function CreateProject(): JSX.Element {
           placeholder="请输入项目名称"
           onInput={setName}
         />
-        <Field
-          value={address}
-          label="项目地址 *"
-          placeholder="请输入详细地址"
-          onInput={setAddress}
-        />
       </Section>
-      <Section title="考勤位置">
-        <Field
-          value={latitude}
-          label="中心纬度 *"
-          placeholder="例如：31.2304"
-          type="digit"
-          onInput={setLatitude}
+      <ProjectManagerPicker
+        companyId={companyId}
+        value={managers}
+        onChange={setManagers}
+        disabled={busy}
+      />
+      <Section title="工地位置与考勤范围">
+        <ProjectGeofence
+          value={location}
+          onChange={setLocation}
+          disabled={busy}
         />
-        <Field
-          value={longitude}
-          label="中心经度 *"
-          placeholder="例如：121.4737"
-          type="digit"
-          onInput={setLongitude}
-        />
-        <Field
-          value={radius}
-          label="考勤范围 / 米 *"
-          placeholder="请输入正整数"
-          type="number"
-          onInput={setRadius}
-        />
+        {location !== null ? (
+          <Field
+            value={location.address}
+            label="详细地址 *"
+            placeholder="可补充门牌、入口等信息"
+            onInput={(address) => setLocation({ ...location, address })}
+          />
+        ) : null}
       </Section>
       <Section title="项目状态与工期">
         <Segmented
@@ -196,9 +193,9 @@ export default function CreateProject(): JSX.Element {
         loading={busy}
         disabled={
           name.trim().length === 0 ||
-          address.trim().length === 0 ||
-          latitude.trim().length === 0 ||
-          longitude.trim().length === 0
+          managers.length === 0 ||
+          location === null ||
+          location.address.trim().length === 0
         }
         onClick={() => {
           void submit();

@@ -1,6 +1,7 @@
 import { apiClient } from "./client";
 import type { RoleCode } from "./auth.types";
 import type {
+  AdditionalMemberRole,
   MemberStatus,
   ParticipantType,
   ProjectTeam,
@@ -15,6 +16,7 @@ import type {
 } from "./management.types";
 
 export type PersonForm = {
+  readonly additionalRoles?: readonly AdditionalMemberRole[];
   readonly displayName: string;
   readonly phone: string;
   readonly participantType: ParticipantType;

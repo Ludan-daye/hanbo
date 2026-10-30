@@ -13,6 +13,7 @@ import type {
   DailyAttendanceReportResponse,
   RangeAttendanceReportResponse,
 } from "../src/reports/reports.types.js";
+import { ManagementService } from "../src/management/management.service.js";
 import type { ManagedProjectResponse } from "../src/management/management.types.js";
 import type {
   ManagedTeamResponse,
@@ -186,6 +187,194 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
     });
     afterAll(async (): Promise<void> => {
       if (app !== undefined) await app.close();
+    });
+
+    test("reads worker project details with contacts and rejects nonmembers and exited workers", async (): Promise<void> => {
+      const userId: string = "project-detail-worker";
+      await database.user.create({ data: {
+        id: userId, openid: userId, isBound: true, nickname: "Detail test", phone: "13800000981",
+        encryptedRealName: encryptPersonnelName("详情测试工人", "ab".repeat(32), randomBytes(12)),
+        avatarObjectKey: "test/avatar.jpg", avatarContentType: "image/jpeg",
+      } });
+      const profile = await database.workerProfile.create({ data: {
+        userId, encryptedName: encryptPersonnelName("详情测试工人", "ab".repeat(32), randomBytes(12)),
+        phone: "13800000981", workType: "木工", realNameStatus: "PENDING", faceProfileStatus: "PENDING", employmentStatus: "ACTIVE", registrationCompletedAt: new Date(),
+      } });
+      const detailProject = await database.project.create({ data: {
+        companyId, name: "详情测试项目", address: "测试地址", centerLatitude: "31", centerLongitude: "121", geofenceRadiusM: 250,
+        locationAccuracyLimitM: 80, status: "ACTIVE", plannedStartDate: new Date("2026-01-01"), contactName: "现场联系人", contactPhone: "13800000982",
+      } });
+      const team = await database.team.create({ data: { projectId: detailProject.id, name: "测试木工班", status: "ACTIVE" } });
+      const member = await database.projectWorkerMember.create({ data: {
+        projectId: detailProject.id, workerId: profile.id, teamId: team.id, projectRoleLabel: "木工", status: "ACTIVE", enteredAt: new Date("2026-01-01"),
+      } });
+      await database.projectMemberRole.create({ data: { projectId: detailProject.id, workerMemberId: member.id, roleCode: "TEAM_LEADER", teamId: team.id, scopeId: team.id } });
+      await database.team.update({ where: { id: team.id }, data: { leaderWorkerMemberId: member.id } });
+      const manager = await database.managerProfile.create({ data: { name: "项目负责人", phone: "13800000983", status: "ACTIVE" } });
+      await database.projectManagerMember.create({ data: { projectId: detailProject.id, managerId: manager.id, roleCode: "PROJECT_ADMIN", status: "ACTIVE" } });
+      const token: string = await tokenFor(userId);
+      const path: string = `/me/projects/${detailProject.id}`;
+      const detail = await request(app.getHttpServer()).get(path).auth(token, { type: "bearer" }).expect(200);
+      expect(detail.body).toMatchObject({ projectName: "详情测试项目", workType: "木工", geofenceRadiusM: 250, locationAccuracyLimitM: 80,
+        team: { name: "测试木工班", leader: { name: "详情测试工人", phone: "13800000981" } },
+        managers: [{ name: "项目负责人", phone: "13800000983" }], contact: { name: "现场联系人", phone: "13800000982" },
+        roles: [{ roleCode: "WORKER", teamName: null }, { roleCode: "TEAM_LEADER", teamName: "测试木工班" }],
+      });
+      expect(detail.headers["cache-control"]).toBe("no-store");
+      expect(JSON.stringify(detail.body)).not.toMatch(/encrypted|idNumber|payrollBankCard/);
+      await request(app.getHttpServer()).get(path).expect(401);
+      await request(app.getHttpServer()).get(path).auth(adminToken, { type: "bearer" }).expect(403);
+      await request(app.getHttpServer()).get(`/me/projects/${otherProjectId}`).auth(token, { type: "bearer" }).expect(403);
+      await database.projectWorkerMember.update({ where: { id: member.id }, data: { status: "EXITED", exitedAt: new Date() } });
+      await request(app.getHttpServer()).get(path).auth(token, { type: "bearer" }).expect(403);
+    });
+
+    test("creates projects with required company-scoped administrators and rolls all writes back on failure", async (): Promise<void> => {
+      const isolatedCompany = await database.company.create({ data: { name: "Project creation company", status: "ACTIVE" } });
+      const makeUser = async (name: string, phone: string): Promise<string> => {
+        const user = await database.user.create({ data: {
+          openid: `project-creation-${phone}`, nickname: name, phone, isBound: true,
+          encryptedRealName: encryptPersonnelName(name, "ab".repeat(32), randomBytes(12)),
+          avatarObjectKey: "test/avatar.jpg", avatarContentType: "image/jpeg"
+        } });
+        return user.id;
+      };
+      const companyUser = await makeUser("创建项目公司管理员", "13800000801");
+      const managerUser = await makeUser("指定项目管理员", "13800000802");
+      const companyRole = await database.role.findUniqueOrThrow({ where: { code: "COMPANY_ADMIN" } });
+      await database.userRole.create({ data: { userId: companyUser, roleId: companyRole.id, scopeType: "COMPANY", scopeId: isolatedCompany.id } });
+      const owner = await database.managerProfile.create({ data: { userId: companyUser, name: "公司负责人", phone: "13800000801", status: "ACTIVE" } });
+      const companyToken = await tokenFor(companyUser);
+      const path = `/management/companies/${isolatedCompany.id}`;
+      const fields = { name: "管理员必选测试", address: "测试工地", centerLatitude: "31.2304000", centerLongitude: "121.4737000", geofenceRadiusM: 300, status: "PREPARING" as const, plannedStartDate: "2026-10-30", plannedEndDate: null };
+      const candidates = await request(app.getHttpServer()).get(`${path}/project-manager-candidates?search=`).auth(companyToken, { type: "bearer" }).expect(200);
+      expect(candidates.body).toEqual([{ profileId: owner.id, name: owner.name, phone: owner.phone, isBound: true }]);
+      await request(app.getHttpServer()).get(`${path}/project-manager-candidates?search=`).auth(adminToken, { type: "bearer" }).expect(403);
+      for (const ids of [undefined, [], [owner.id, owner.id], ["unknown-profile"]]) {
+        await request(app.getHttpServer()).post(`${path}/projects`).auth(companyToken, { type: "bearer" }).send({ ...fields, managerProfileIds: ids }).expect(400);
+      }
+      expect(await database.project.count({ where: { companyId: isolatedCompany.id } })).toBe(0);
+      const bootstrap = await request(app.getHttpServer()).post(`${path}/projects`).auth(companyToken, { type: "bearer" }).send({ ...fields, managerProfileIds: [owner.id] }).expect(201);
+      const manager = await database.managerProfile.create({ data: { userId: managerUser, name: "选定管理员", phone: "13800000802", status: "ACTIVE" } });
+      const unbound = await database.managerProfile.create({ data: { name: "待绑定管理员", phone: "13800000803", status: "ACTIVE" } });
+      const inactive = await database.managerProfile.create({ data: { name: "已停用管理员", phone: "13800000804", status: "SUSPENDED" } });
+      const foreign = await database.managerProfile.create({ data: { name: "其他公司管理员", phone: "13800000805", status: "ACTIVE" } });
+      for (const profile of [manager, unbound, inactive]) {
+        await database.projectManagerMember.create({ data: { projectId: bootstrap.body.id, managerId: profile.id, roleCode: "PROJECT_ADMIN", status: "ACTIVE" } });
+      }
+      await database.projectManagerMember.create({ data: { projectId, managerId: foreign.id, roleCode: "PROJECT_ADMIN", status: "ACTIVE" } });
+      for (const id of [inactive.id, foreign.id]) {
+        await request(app.getHttpServer()).post(`${path}/projects`).auth(companyToken, { type: "bearer" }).send({ ...fields, managerProfileIds: [owner.id, id] }).expect(400);
+      }
+      const searched = await request(app.getHttpServer()).get(`${path}/project-manager-candidates?search=${encodeURIComponent("选定")}`).auth(companyToken, { type: "bearer" }).expect(200);
+      expect(searched.body.map((row: { profileId: string }) => row.profileId)).toEqual([manager.id]);
+      const eligible = await request(app.getHttpServer()).get(`${path}/project-manager-candidates?search=`).auth(companyToken, { type: "bearer" }).expect(200);
+      expect(eligible.body.map((row: { profileId: string }) => row.profileId).sort()).toEqual([owner.id, manager.id, unbound.id].sort());
+      const counts = { projects: await database.project.count(), members: await database.projectManagerMember.count(), grants: await database.userRole.count() };
+      await expect(app.get(ManagementService).createProject(isolatedCompany.id, "nonexistent-audit-actor", { ...fields, managerProfileIds: [manager.id] })).rejects.toThrow();
+      expect({ projects: await database.project.count(), members: await database.projectManagerMember.count(), grants: await database.userRole.count() }).toEqual(counts);
+      const created = await request(app.getHttpServer()).post(`${path}/projects`).auth(companyToken, { type: "bearer" }).send({ ...fields, managerProfileIds: [manager.id, unbound.id] }).expect(201);
+      const newProjectId: string = created.body.id;
+      const members = await database.projectManagerMember.findMany({ where: { projectId: newProjectId } });
+      expect(members).toHaveLength(2);
+      expect(members.every(member => member.roleCode === "PROJECT_ADMIN" && member.status === "ACTIVE" && member.teamScopeId === null)).toBe(true);
+      expect(await database.userRole.count({ where: { scopeId: newProjectId, userId: managerUser, role: { code: "PROJECT_ADMIN" } } })).toBe(1);
+      expect(await database.userRole.count({ where: { scopeId: newProjectId, userId: companyUser } })).toBe(0);
+      expect(await database.projectManagerMember.count({ where: { projectId: bootstrap.body.id, managerId: manager.id } })).toBe(1);
+      const selectedToken = await tokenFor(managerUser);
+      await request(app.getHttpServer()).get(`/management/projects/${newProjectId}/participants`).auth(selectedToken, { type: "bearer" }).expect(200);
+      await request(app.getHttpServer()).get(`/management/projects/${newProjectId}/participants`).auth(otherToken, { type: "bearer" }).expect(403);
+      const team = await request(app.getHttpServer()).post(`/management/projects/${newProjectId}/teams`).auth(selectedToken, { type: "bearer" }).send({ name: "新项目班组", status: "ACTIVE" }).expect(201);
+      expect(team.body.projectId).toBe(newProjectId);
+      expect(await database.auditLog.count({ where: { entityId: newProjectId, action: "project.create" } })).toBe(1);
+    });
+
+    test("keeps one person while assigning concurrent project and team roles, including binding and revocation", async (): Promise<void> => {
+      const companyRole = await database.role.findUniqueOrThrow({ where: { code: "COMPANY_ADMIN" } });
+      const actorGrant = await database.userRole.create({ data: { userId: actorId, roleId: companyRole.id, scopeType: "COMPANY", scopeId: companyId } });
+      try {
+        const phone = "13800000901";
+        const foreignTeam = await database.team.create({ data: { projectId: otherProjectId, name: "兼任目标班组", status: "ACTIVE" } });
+        const created = await request(app.getHttpServer()).post(`/management/projects/${projectId}/participants`).auth(adminToken, { type: "bearer" })
+          .send({ ...newPerson(phone), displayName: "兼任测试人员", projectRoleLabel: "PROJECT_ADMIN", teamId: null,
+            additionalRoles: [{ roleCode: "WORKER", teamId: null }, { roleCode: "TEAM_LEADER", teamId }, { roleCode: "TEAM_LEADER", teamId: secondTeamId }] }).expect(201);
+        let person: ManagedParticipantResponse = created.body;
+        expect(person.additionalRoles).toHaveLength(3);
+        const profileId = person.profileId;
+        const user = await database.user.create({ data: { openid: "multi-role-test", phone, nickname: "兼任测试人员", avatarObjectKey: "test/avatar.jpg", avatarContentType: "image/jpeg", encryptedRealName: encryptPersonnelName("兼任测试人员", "ab".repeat(32), randomBytes(12)) } });
+        const memberToken = await tokenFor(user.id);
+        const invite = await request(app.getHttpServer()).post(`/bindings/projects/${projectId}/invitations`).auth(adminToken, { type: "bearer" }).send({ targetType: "WORKER", profileId }).expect(201);
+        await request(app.getHttpServer()).post("/auth/bind").auth(memberToken, { type: "bearer" }).send({ invitationCode: invite.body.code }).expect(201);
+        await database.workerProfile.update({ where: { id: profileId }, data: { registrationCompletedAt: new Date() } });
+        person = (await request(app.getHttpServer()).get(`/management/projects/${projectId}/participants/${person.memberId}`).auth(adminToken, { type: "bearer" }).expect(200)).body;
+        const companyPeople = await request(app.getHttpServer()).get(`/management/companies/${companyId}/participants`).auth(adminToken, { type: "bearer" }).expect(200);
+        expect(companyPeople.body.find((row: { memberId: string }) => row.memberId === person.memberId).additionalRoles).toHaveLength(3);
+        const currentGrants = await database.userRole.findMany({ where: { userId: user.id }, include: { role: true } });
+        expect(currentGrants.map(grant => `${grant.role.code}:${grant.scopeId}`).sort()).toEqual([`PROJECT_ADMIN:${projectId}`, `WORKER:${projectId}`, `TEAM_LEADER:${teamId}`, `TEAM_LEADER:${secondTeamId}`].sort());
+        const scopes = await request(app.getHttpServer()).get("/management/my-role-scopes").auth(memberToken, { type: "bearer" }).expect(200);
+        expect(scopes.body).toHaveLength(4);
+        expect(scopes.body.every((scope: { scopeName: string }) => scope.scopeName.length > 0)).toBe(true);
+        for (const permissionRole of ["WORKER", "TEAM_LEADER", "PROJECT_ADMIN"]) {
+          const page = await request(app.getHttpServer()).get(`/management/projects/${projectId}/participant-page?page=1&pageSize=50&search=${phone}&permissionRole=${permissionRole}`).auth(adminToken, { type: "bearer" }).expect(200);
+          expect(page.body.items.map((row: ManagedParticipantResponse) => row.memberId)).toEqual([person.memberId]);
+        }
+        const candidates = await request(app.getHttpServer()).get(`/management/companies/${companyId}/project-manager-candidates?search=${phone}`).auth(adminToken, { type: "bearer" }).expect(200);
+        expect(candidates.body.some((row: { profileId: string }) => row.profileId === profileId)).toBe(true);
+        const newProject = await request(app.getHttpServer()).post(`/management/companies/${companyId}/projects`).auth(adminToken, { type: "bearer" })
+          .send({ name: "工人档案兼任项目负责人", address: "测试地址", centerLatitude: "31", centerLongitude: "121", geofenceRadiusM: 300, plannedStartDate: "2026-10-30", plannedEndDate: null, status: "PREPARING", managerProfileIds: [profileId] }).expect(201);
+        expect(await database.projectWorkerMember.count({ where: { projectId: newProject.body.id, workerId: profileId } })).toBe(1);
+        expect(await database.managerProfile.count({ where: { userId: user.id } })).toBe(0);
+        const report = await request(app.getHttpServer()).get(`/reports/projects/${projectId}/daily?date=2026-10-30`).auth(adminToken, { type: "bearer" }).expect(200);
+        expect(report.body.participants.filter((row: { participantId: string }) => row.participantId === profileId)).toHaveLength(1);
+        const memberPath = `/management/projects/${projectId}/participants/${person.memberId}`;
+        for (const additionalRoles of [[{ roleCode: "TEAM_LEADER", teamId: foreignTeam.id }], [{ roleCode: "WORKER", teamId: null }, { roleCode: "WORKER", teamId: null }]]) {
+          await request(app.getHttpServer()).put(memberPath).auth(adminToken, { type: "bearer" }).send({ ...editPerson(person), additionalRoles }).expect(400);
+        }
+        await request(app.getHttpServer()).put(memberPath).auth(memberToken, { type: "bearer" }).send({ ...editPerson(person), additionalRoles: [] }).expect(409);
+        const team = await request(app.getHttpServer()).get(`/management/projects/${projectId}/teams/${secondTeamId}`).auth(adminToken, { type: "bearer" }).expect(200);
+        await request(app.getHttpServer()).put(`/management/projects/${projectId}/teams/${secondTeamId}`).auth(adminToken, { type: "bearer" })
+          .send({ name: team.body.name, workType: team.body.workType, remark: team.body.remark, status: "ACTIVE", expectedUpdatedAt: team.body.updatedAt, leader: { memberId: person.memberId, participantType: "WORKER" } }).expect(200);
+        const unchanged = await request(app.getHttpServer()).put(memberPath).auth(adminToken, { type: "bearer" }).send(editPerson(person)).expect(200);
+        person = unchanged.body;
+        expect(person.additionalRoles).toHaveLength(3);
+        await request(app.getHttpServer()).post(`/management/projects/${otherProjectId}/reused-participants`).auth(adminToken, { type: "bearer" })
+          .send({ sourceProjectId: projectId, sourceMemberId: person.memberId, participantType: "WORKER", expectedSourceUpdatedAt: person.updatedAt, expectedProfileUpdatedAt: person.profileUpdatedAt, projectRoleLabel: "TEAM_LEADER", teamId: foreignTeam.id, enteredAt: person.enteredAt, requiresAttendance: true, additionalRoles: [{ roleCode: "WORKER", teamId: null }] }).expect(201);
+        const changed = await request(app.getHttpServer()).put(memberPath).auth(adminToken, { type: "bearer" })
+          .send({ ...editPerson(person), projectRoleLabel: "TEAM_LEADER", teamId, additionalRoles: [{ roleCode: "WORKER", teamId: null }] }).expect(200);
+        await request(app.getHttpServer()).put(memberPath).auth(adminToken, { type: "bearer" }).send(editPerson(person)).expect(409);
+        person = changed.body;
+        expect(person.profileId).toBe(profileId);
+        expect((await database.team.findUniqueOrThrow({ where: { id: secondTeamId } })).leaderWorkerMemberId).toBeNull();
+        await request(app.getHttpServer()).get(`/management/teams/${teamId}/participants`).auth(memberToken, { type: "bearer" }).expect(200);
+        await request(app.getHttpServer()).get(`/management/teams/${secondTeamId}/participants`).auth(memberToken, { type: "bearer" }).expect(403);
+        await request(app.getHttpServer()).get(`/management/projects/${projectId}/participants`).auth(memberToken, { type: "bearer" }).expect(403);
+        await request(app.getHttpServer()).get(`/management/teams/${foreignTeam.id}/participants`).auth(memberToken, { type: "bearer" }).expect(200);
+        await request(app.getHttpServer()).put(memberPath).auth(adminToken, { type: "bearer" }).send({ ...editPerson(person), status: "SUSPENDED" }).expect(200);
+        expect(await database.userRole.count({ where: { userId: user.id, scopeId: { in: [projectId, teamId, secondTeamId] } } })).toBe(0);
+        expect(await database.userRole.count({ where: { userId: user.id, scopeId: foreignTeam.id } })).toBe(1);
+        expect(await database.workerProfile.count({ where: { userId: user.id } })).toBe(1);
+      } finally { await database.userRole.delete({ where: { id: actorGrant.id } }); }
+    });
+
+    test("binds all duties on a manager profile and can retain that profile after removing management duties", async (): Promise<void> => {
+      const phone = "13800000902";
+      let person: ManagedParticipantResponse = (await request(app.getHttpServer()).post(`/management/projects/${projectId}/participants`).auth(adminToken, { type: "bearer" })
+        .send({ ...newPerson(phone), displayName: "管理兼任测试", participantType: "MANAGER", workType: "施工管理", projectRoleLabel: "PROJECT_ADMIN", teamId: null,
+          additionalRoles: [{ roleCode: "WORKER", teamId: null }, { roleCode: "TEAM_LEADER", teamId }] }).expect(201)).body;
+      const user = await database.user.create({ data: { openid: "manager-multi-role-test", phone, nickname: "管理兼任测试", avatarObjectKey: "test/avatar.jpg", avatarContentType: "image/jpeg", encryptedRealName: encryptPersonnelName("管理兼任测试", "ab".repeat(32), randomBytes(12)) } });
+      const memberToken = await tokenFor(user.id);
+      const invite = await request(app.getHttpServer()).post(`/bindings/projects/${projectId}/invitations`).auth(adminToken, { type: "bearer" }).send({ targetType: "MANAGER", profileId: person.profileId }).expect(201);
+      await request(app.getHttpServer()).post("/auth/bind").auth(memberToken, { type: "bearer" }).send({ invitationCode: invite.body.code }).expect(201);
+      expect(await database.userRole.count({ where: { userId: user.id } })).toBe(3);
+      const path = `/management/projects/${projectId}/participants/${person.memberId}`;
+      person = (await request(app.getHttpServer()).get(path).auth(adminToken, { type: "bearer" }).expect(200)).body;
+      person = (await request(app.getHttpServer()).put(path).auth(adminToken, { type: "bearer" }).send({ ...editPerson(person), projectRoleLabel: "WORKER", teamId, additionalRoles: [] }).expect(200)).body;
+      expect(person.participantType).toBe("MANAGER");
+      expect(person.additionalRoles).toHaveLength(0);
+      const grants = await database.userRole.findMany({ where: { userId: user.id }, include: { role: true } });
+      expect(grants.map(grant => grant.role.code)).toEqual(["WORKER"]);
+      expect(await database.managerProfile.count({ where: { userId: user.id } })).toBe(1);
+      expect(await database.workerProfile.count({ where: { userId: user.id } })).toBe(0);
     });
 
     test("creates encrypted personnel with a work type, binds an account, transfers and exits without losing history", async (): Promise<void> => {

@@ -74,6 +74,7 @@ export type AttendanceTodayPoint = {
 };
 
 export type AttendanceTodayGeofence = {
+  readonly locationAccuracyLimitM: number | null;
   readonly centerLatitude: string;
   readonly centerLongitude: string;
   readonly radiusM: number;

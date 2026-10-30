@@ -2,8 +2,11 @@ export default defineAppConfig({
   pages: [
     "pages/login/index",
     "pages/complete-profile/index",
+    "pages/worker-registration/index",
     "pages/bind/index",
     "pages/home/index",
+    "pages/my-projects/index",
+    "pages/my-project-detail/index",
     "pages/participants/index",
     "pages/reports/index",
     "pages/invitation/index",
@@ -19,6 +22,7 @@ export default defineAppConfig({
     "pages/create-project/index",
     "pages/company-reports/index",
     "pages/punch/index",
+    "pages/punch-test/index",
     "pages/workspace/index",
     "pages/profile/index",
     "pages/permission-levels/index",
@@ -36,10 +40,10 @@ export default defineAppConfig({
   ],
   permission: {
     "scope.userLocation": {
-      desc: "用于判断您是否位于所参与项目的考勤范围内，完成现场考勤打卡。",
+      desc: "用于在地图上设置工地位置与考勤范围，并核对现场打卡位置。",
     },
   },
-  requiredPrivateInfos: ["getLocation"],
+  requiredPrivateInfos: ["getLocation", "chooseLocation"],
   window: {
     backgroundColor: "#f5f6f8",
     backgroundTextStyle: "dark",

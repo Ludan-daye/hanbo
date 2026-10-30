@@ -195,6 +195,96 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
           .auth(token, { type: "bearer" })
           .send({ invitationCode: id })
           .expect(201);
+        if (targetType === "WORKER") {
+          const registration = {
+            idNumber: "11010519491231002X",
+            residentialAddress: "测试市测试街道 1 号",
+            emergencyContactName: "测试联系人",
+            emergencyContactPhone: "13800000883",
+            hasLongTermMedication: false,
+            medicationDetails: "",
+            hasPersonalInsurance: false,
+            insuranceDetails: "",
+            payrollBankCard: "6222020000000000000",
+          };
+          const blockedWorker = await request(server)
+            .get("/me/projects")
+            .auth(token, { type: "bearer" })
+            .expect(403);
+          expect(blockedWorker.body.message).toBe(
+            "WORKER_REGISTRATION_REQUIRED",
+          );
+          const account = await request(server)
+            .get("/account/profile")
+            .auth(token, { type: "bearer" })
+            .expect(200);
+          expect(account.body.workerRegistration).toBe("REQUIRED");
+          expect(JSON.stringify(account.body)).not.toContain("payrollBankCard");
+          for (const partial of [
+            {},
+            { ...registration, idNumber: "110105194912310021" },
+            { ...registration, residentialAddress: "" },
+            { ...registration, hasLongTermMedication: null },
+            { ...registration, hasLongTermMedication: true },
+            { ...registration, hasPersonalInsurance: true },
+            { ...registration, payrollBankCard: "123" },
+          ])
+            await request(server)
+              .put("/account/worker-registration")
+              .auth(token, { type: "bearer" })
+              .send(partial)
+              .expect(400);
+          const submitted = await request(server)
+            .put("/account/worker-registration")
+            .auth(token, { type: "bearer" })
+            .send(registration)
+            .expect(200);
+          expect(submitted.body.workerRegistration).toBe("COMPLETE");
+          const readback = await request(server)
+            .get("/account/worker-registration")
+            .auth(token, { type: "bearer" })
+            .expect(200);
+          expect(readback.headers["cache-control"]).toBe("no-store");
+          expect(readback.body).toEqual(registration);
+          const stored = await database.workerProfile.findUniqueOrThrow({
+            where: { id: profile.id },
+          });
+          expect(stored.registrationCompletedAt).not.toBeNull();
+          expect(stored.encryptedIdNumber).not.toContain(registration.idNumber);
+          expect(stored.encryptedResidentialAddress).not.toContain(
+            registration.residentialAddress,
+          );
+          expect(stored.encryptedPayrollBankCard).not.toContain(
+            registration.payrollBankCard,
+          );
+          expect(stored.hasLongTermMedication).toBe(false);
+          const declared = {
+            ...registration,
+            hasLongTermMedication: true,
+            medicationDetails: "测试健康申报",
+            hasPersonalInsurance: true,
+            insuranceDetails: "测试保险，2026 年至 2027 年",
+          };
+          await request(server)
+            .put("/account/worker-registration")
+            .auth(token, { type: "bearer" })
+            .send(declared)
+            .expect(200);
+          const secured = await database.workerProfile.findUniqueOrThrow({
+            where: { id: profile.id },
+          });
+          expect(secured.encryptedMedicationDetails).not.toContain(
+            declared.medicationDetails,
+          );
+          expect(secured.encryptedInsuranceDetails).not.toContain(
+            declared.insuranceDetails,
+          );
+        } else {
+          await request(server)
+            .get("/account/worker-registration")
+            .auth(token, { type: "bearer" })
+            .expect(403);
+        }
         await request(server)
           .get("/me/projects")
           .auth(token, { type: "bearer" })

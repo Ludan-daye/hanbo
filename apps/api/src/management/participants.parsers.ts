@@ -12,18 +12,26 @@ const validManagementAssignment = (
     ParticipantWriteRequest,
     "participantType" | "projectRoleLabel" | "teamId"
   >,
-): boolean =>
-  (body.participantType === "WORKER" &&
-    !["PROJECT_ADMIN", "COMPANY_ADMIN", "SYSTEM_ADMIN"].includes(
-      body.projectRoleLabel,
-    ) &&
-    (body.projectRoleLabel !== "TEAM_LEADER" || body.teamId !== null)) ||
-  (body.participantType === "MANAGER" &&
-    ((body.projectRoleLabel === "TEAM_LEADER" && body.teamId !== null) ||
-      (body.projectRoleLabel === "PROJECT_ADMIN" && body.teamId === null)));
+): boolean => {
+  if (["COMPANY_ADMIN", "SYSTEM_ADMIN"].includes(body.projectRoleLabel))
+    return false;
+  if (body.projectRoleLabel === "PROJECT_ADMIN") return body.teamId === null;
+  if (body.projectRoleLabel === "TEAM_LEADER") return body.teamId !== null;
+  return (
+    body.participantType === "WORKER" || body.projectRoleLabel === "WORKER"
+  );
+};
+
+const additionalRoleSchema = z.discriminatedUnion("roleCode", [
+  z.object({ roleCode: z.literal("WORKER"), teamId: z.null() }).strict(),
+  z
+    .object({ roleCode: z.literal("TEAM_LEADER"), teamId: z.string().min(1) })
+    .strict(),
+]);
 
 const participantWriteSchema = z
   .object({
+    additionalRoles: z.array(additionalRoleSchema).max(20).optional(),
     displayName: z.string().trim().min(1).max(30),
     phone: z.string().regex(/^1\d{10}$/),
     participantType: z.enum(["WORKER", "MANAGER"]),
@@ -77,6 +85,7 @@ export const parseReuseParticipant = (
   const result = participantWriteSchema
     .innerType()
     .pick({
+      additionalRoles: true,
       participantType: true,
       projectRoleLabel: true,
       teamId: true,

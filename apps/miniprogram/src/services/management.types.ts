@@ -1,7 +1,22 @@
 export type ParticipantType = "WORKER" | "MANAGER";
 export type MemberStatus = "ACTIVE" | "EXITED" | "SUSPENDED";
 
+export type MemberRoleAssignment = {
+  readonly roleCode: "WORKER" | "TEAM_LEADER" | "PROJECT_ADMIN";
+  readonly teamId: string | null;
+  readonly teamName?: string | null;
+};
+export type AdditionalMemberRole = MemberRoleAssignment & { readonly roleCode: "WORKER" | "TEAM_LEADER" };
+export type WorkRoleScope = {
+  readonly roleCode: "WORKER" | "TEAM_LEADER" | "PROJECT_ADMIN" | "COMPANY_ADMIN" | "SYSTEM_ADMIN";
+  readonly scopeType: "GLOBAL" | "COMPANY" | "PROJECT" | "TEAM";
+  readonly scopeId: string;
+  readonly scopeName: string;
+  readonly projectId: string | null;
+};
+
 export type ProjectParticipant = {
+  readonly additionalRoles?: readonly AdditionalMemberRole[];
   readonly displayName: string | null;
   readonly memberId: string;
   readonly participantType: ParticipantType;
@@ -55,6 +70,9 @@ export type ReportTotals = {
 };
 
 export type ReportParticipantBase = {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly evaluation: ProjectEvaluation | null;
   readonly displayName: string | null;
   readonly memberId: string;
   readonly memberStatus: MemberStatus;
@@ -159,6 +177,7 @@ export type TeamForm = {
 };
 export type ReuseProject = { readonly id: string; readonly name: string };
 export type ReusePersonForm = {
+  readonly additionalRoles?: readonly AdditionalMemberRole[];
   readonly sourceProjectId: string;
   readonly sourceMemberId: string;
   readonly participantType: ParticipantType;
@@ -217,6 +236,7 @@ export type DefaultAttendanceConfiguration = {
 };
 
 export type CreateProjectBody = {
+  readonly managerProfileIds: readonly string[];
   readonly name: string;
   readonly address: string;
   readonly centerLatitude: string;
@@ -225,4 +245,58 @@ export type CreateProjectBody = {
   readonly status: ProjectStatus;
   readonly plannedStartDate: string;
   readonly plannedEndDate: string | null;
+};
+
+export type ProjectManagerCandidate = {
+  readonly profileId: string;
+  readonly name: string;
+  readonly phone: string;
+  readonly isBound: boolean;
+};
+
+export type ProjectEvaluation = {
+  readonly id: string;
+  readonly score: number;
+  readonly comment: string | null;
+  readonly reviewerName: string;
+  readonly reviewedAt: string;
+  readonly updatedAt: string;
+};
+export type ReportPersonDay = {
+  readonly date: string;
+  readonly teamName: string | null;
+  readonly planName: string;
+  readonly isScheduled: boolean;
+  readonly workedMinutes: number;
+  readonly flags: readonly string[];
+  readonly points: readonly {
+    readonly code: string;
+    readonly label: string;
+    readonly time: string;
+    readonly graceMins: number;
+  }[];
+  readonly records: readonly {
+    readonly id: string;
+    readonly pointCode: string;
+    readonly occurredAt: string;
+    readonly isValid: boolean;
+    readonly source: string;
+  }[];
+  readonly makeups: readonly {
+    readonly id: string;
+    readonly pointLabel: string;
+    readonly requestedOccurredAt: string;
+    readonly status: string;
+    readonly reason: string;
+    readonly approvalReason: string | null;
+    readonly approverName: string | null;
+    readonly approvedAt: string | null;
+  }[];
+};
+export type ReportPersonDetail = {
+  readonly person: ReportParticipantBase;
+  readonly canEvaluate: boolean;
+  readonly startDate: string;
+  readonly endDate: string;
+  readonly days: readonly ReportPersonDay[];
 };

@@ -76,7 +76,7 @@ export const PrivacyAuthorization = (): JSX.Element | null => {
       <View className="privacy-authorization__dialog">
         <View className="privacy-authorization__title">请确认隐私授权</View>
         <View className="privacy-authorization__body">
-          头像和昵称用于账号展示，位置信息用于核对项目考勤范围，照片用于本人及现场考勤记录，摄像头录像用于腾讯云活体检测和本人比对。
+          头像和昵称用于账号展示，位置信息用于地图选址、设置和核对项目考勤范围，照片用于本人及现场考勤记录，摄像头录像用于腾讯云活体检测和本人比对。
           请先阅读用户隐私保护指引，再选择是否同意授权。
         </View>
         <Text className="privacy-authorization__link" onClick={openContract}>

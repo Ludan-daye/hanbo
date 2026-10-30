@@ -1,7 +1,7 @@
-import { workerRole } from "../attendance/member-history.js";
-import { createHash, randomBytes } from "node:crypto";
+import { membershipGrants, readAdditionalRoles, synchronizeMembershipGrants } from "../management/membership-roles.js";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import type { BindingInvitation, ManagerProfile, User, WorkerProfile } from "@prisma/client";
 import { Prisma } from "@prisma/client";
@@ -14,6 +14,7 @@ import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import { WechatCodeSessionConnector } from "../infrastructure/wechat/wechat-code-session.connector.js";
+import { TEST_ACCOUNTS, type TestAccountCode } from "./test-accounts.js";
 
 import type {
   AccessTokenPayload,
@@ -148,6 +149,28 @@ export class AuthService {
           })
         : await this.updateActiveLoginUser(existingUser.id, wechatSession.openid, unionidData, now);
 
+    return this.issueSession(user, metadata, now);
+  }
+
+  async loginTestAccount(account: TestAccountCode, passcode: string, metadata: RequestMetadata): Promise<LoginResponse> {
+    if (this.env.DEPLOYMENT_ENV !== "test" || this.env.TEST_LOGIN_SECRET_HASH.length === 0)
+      throw new NotFoundException({ message: "TEST_LOGIN_DISABLED" });
+    const digest: Buffer = createHash("sha256").update(passcode).digest();
+    if (!timingSafeEqual(digest, Buffer.from(this.env.TEST_LOGIN_SECRET_HASH, "hex")))
+      throw new UnauthorizedException({ message: "TEST_LOGIN_INVALID_CREDENTIALS" });
+    const user = await this.prisma.user.findUnique({ where: { openid: account }, include: { roles: { include: { role: true } } } });
+    if (user === null || !user.isBound || user.status !== "ACTIVE" ||
+        getHighestRoleCode(user.roles.map((assignment) => ({ roleCode: assignment.role.code }))) !== TEST_ACCOUNTS[account].roleCode)
+      throw new ConflictException({ message: "TEST_ACCOUNT_NOT_READY" });
+    assertAccountProfileComplete(user);
+    await this.prisma.auditLog.create({ data: {
+      actorUserId: user.id, action: "TEST_ACCOUNT_LOGIN", entityType: "User", entityId: user.id,
+      metadata: { account, ipAddress: metadata.ipAddress },
+    } });
+    return this.issueSession(user, metadata, new Date());
+  }
+
+  private async issueSession(user: User, metadata: RequestMetadata, now: Date): Promise<LoginResponse> {
     const refreshToken = createRefreshToken();
     const refreshTokenExpiresAt = getDateAfterSeconds(now, this.env.AUTH_REFRESH_TOKEN_TTL_SECONDS);
     const session = await this.prisma.userSession.create({
@@ -537,55 +560,14 @@ export class AuthService {
     });
   }
 
-  private async grantWorkerMembershipRoles(
-    transaction: Prisma.TransactionClient,
-    userId: string,
-    workerProfileId: string
-  ): Promise<void> {
-    const memberships = await transaction.projectWorkerMember.findMany({
-      where: { status: "ACTIVE", workerId: workerProfileId }
-    });
-    if (memberships.length === 0) {
-      return;
-    }
-    for (const membership of memberships) {
-      const code = workerRole(membership.projectRoleLabel);
-      const role = await transaction.role.findUnique({ where: { code } });
-      if (role === null) throw new ConflictException({ message: "MEMBERSHIP_ROLE_NOT_FOUND", code });
-      const assignment = { roleId: role.id, userId, scopeType: code === "TEAM_LEADER" ? "TEAM" as const : "PROJECT" as const,
-        scopeId: code === "TEAM_LEADER" ? membership.teamId! : membership.projectId };
-      await transaction.userRole.upsert({ create: assignment, update: {}, where: { userId_roleId_scopeType_scopeId: assignment } });
-    }
+  private async grantWorkerMembershipRoles(transaction: Prisma.TransactionClient, userId: string, workerProfileId: string): Promise<void> {
+    const memberships = await transaction.projectWorkerMember.findMany({ where: { status: "ACTIVE", workerId: workerProfileId }, include: { additionalRoles: true } });
+    for (const member of memberships) await synchronizeMembershipGrants(transaction, userId, [], membershipGrants(member.projectId, member.projectRoleLabel, member.teamId, readAdditionalRoles(member.additionalRoles)));
   }
 
-  private async grantManagerMembershipRoles(
-    transaction: Prisma.TransactionClient,
-    userId: string,
-    managerProfileId: string
-  ): Promise<void> {
-    const memberships = await transaction.projectManagerMember.findMany({
-      where: { managerId: managerProfileId, status: "ACTIVE" }
-    });
-    for (const membership of memberships) {
-      const role = await transaction.role.findUnique({ where: { code: membership.roleCode } });
-      if (role === null) {
-        throw new ConflictException({ message: "MANAGER_ROLE_NOT_FOUND", roleCode: membership.roleCode });
-      }
-      const scopeType = membership.teamScopeId !== null ? "TEAM" : "PROJECT";
-      const scopeId = membership.teamScopeId !== null ? membership.teamScopeId : membership.projectId;
-      await transaction.userRole.upsert({
-        create: { roleId: role.id, scopeId, scopeType, userId },
-        update: {},
-        where: {
-          userId_roleId_scopeType_scopeId: {
-            roleId: role.id,
-            scopeId,
-            scopeType,
-            userId
-          }
-        }
-      });
-    }
+  private async grantManagerMembershipRoles(transaction: Prisma.TransactionClient, userId: string, managerProfileId: string): Promise<void> {
+    const memberships = await transaction.projectManagerMember.findMany({ where: { status: "ACTIVE", managerId: managerProfileId }, include: { additionalRoles: true } });
+    for (const member of memberships) await synchronizeMembershipGrants(transaction, userId, [], membershipGrants(member.projectId, member.roleCode, member.teamScopeId, readAdditionalRoles(member.additionalRoles)));
   }
 
   private async createAccessToken(user: User, sessionId: string): Promise<string> {

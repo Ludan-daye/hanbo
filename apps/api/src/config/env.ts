@@ -11,6 +11,8 @@ const envSchema = z
     API_PORT: z.coerce.number().int().positive(),
     CORS_ALLOWED_ORIGINS: z.string().default(""),
     DATABASE_URL: z.string().min(1),
+    DEPLOYMENT_ENV: z.enum(["production", "test"]).default("production"),
+    TEST_LOGIN_SECRET_HASH: z.string().regex(/^$|^[a-f0-9]{64}$/).default(""),
     FACE_DEV_STUB: booleanStringSchema,
     FACE_DEV_STUB_SCORE: z.coerce.number().min(0).max(100).default(95),
     FACE_SCORE_THRESHOLD: z.coerce.number().min(0).max(100).default(80),
@@ -35,6 +37,9 @@ const envSchema = z
     WECHAT_DEV_LOGIN: booleanStringSchema
   })
   .superRefine((env, ctx): void => {
+    if (env.TEST_LOGIN_SECRET_HASH.length > 0 && env.DEPLOYMENT_ENV !== "test") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["TEST_LOGIN_SECRET_HASH"], message: "Test login is only allowed in an explicitly designated test deployment" });
+    }
     if ((env.TENCENT_SECRET_ID.length > 0) !== (env.TENCENT_SECRET_KEY.length > 0)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["TENCENT_SECRET_KEY"], message: "Configure both Tencent server credentials together" });
     }

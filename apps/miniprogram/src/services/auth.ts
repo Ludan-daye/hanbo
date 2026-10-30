@@ -4,6 +4,7 @@ import {
   ACCESS_TOKEN_KEY,
   FRONTEND_DEMO,
   REFRESH_TOKEN_KEY,
+  TEST_LOGIN_ENABLED,
 } from "../config/env";
 import { apiClient as client } from "./client";
 import type { LoginResponse, MeResponse } from "./auth.types";
@@ -14,6 +15,10 @@ const exchangeWechatCode = async (code: string): Promise<void> => {
     data: { code },
     method: "POST",
   });
+  storeLogin(res);
+};
+
+const storeLogin = (res: LoginResponse): void => {
   if (
     typeof res.accessToken !== "string" ||
     res.accessToken.length === 0 ||
@@ -24,6 +29,17 @@ const exchangeWechatCode = async (code: string): Promise<void> => {
   }
   Taro.setStorageSync(ACCESS_TOKEN_KEY, res.accessToken);
   Taro.setStorageSync(REFRESH_TOKEN_KEY, res.refreshToken);
+};
+
+export type TestAccountCode = "dev-worker" | "dev-team" | "dev-project" | "dev-company" | "dev-system";
+
+export const loginTestAccount = async (account: TestAccountCode, passcode: string): Promise<void> => {
+  if (!TEST_LOGIN_ENABLED) throw new Error("当前版本未启用测试登录。");
+  if (passcode.trim().length === 0) throw new Error("请先输入测试口令。");
+  const response = await client.request<LoginResponse>("/auth/test/login", {
+    auth: false, method: "POST", data: { account, passcode },
+  });
+  storeLogin(response);
 };
 
 export const devLogin = async (code: string): Promise<void> => {

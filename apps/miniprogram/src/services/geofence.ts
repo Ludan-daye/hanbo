@@ -13,7 +13,10 @@ export type GeofenceCheck = {
 const toRadians = (value: number): number => (value * Math.PI) / 180;
 
 export const checkAttendanceGeofence = (
-  geofence: AttendanceToday["geofence"],
+  geofence: Pick<
+    AttendanceToday["geofence"],
+    "centerLatitude" | "centerLongitude" | "radiusM"
+  >,
   position: AttendanceLocation,
 ): GeofenceCheck => {
   const fromLat: number = Number(geofence.centerLatitude);

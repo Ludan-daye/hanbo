@@ -169,6 +169,7 @@ describe("management service URLs and methods", () => {
     const calls = recordRequests();
     const body = {
       name: "新工地",
+      managerProfileIds: ["manager-1"],
       address: "示例地址",
       centerLatitude: "31.0",
       centerLongitude: "121.0",

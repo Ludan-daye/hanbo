@@ -47,8 +47,8 @@ export const PERMISSION_LEVELS: readonly PermissionLevel[] = [
     category: "MANAGEMENT",
     scope: "被分配的项目",
     functions:
-      "项目人员、班组与班组长、邀请绑定、人脸底照审核、排班、考勤围栏、项目报表",
-    planned: "项目人员评分、月度 Excel 导出",
+      "项目人员、班组与班组长、邀请绑定、人脸底照审核、排班、考勤围栏、项目报表、人员评分、月度 Excel 导出",
+    planned: null,
   },
   {
     roleCode: "COMPANY_ADMIN",
@@ -57,8 +57,8 @@ export const PERMISSION_LEVELS: readonly PermissionLevel[] = [
     name: "公司负责人／公司管理员",
     category: "MANAGEMENT",
     scope: "本公司及所属项目",
-    functions: "公司项目、创建项目、跨项目人员复用、公司考勤汇总",
-    planned: "分配项目管理员、人员历史评分、公司 Excel 汇总",
+    functions: "公司项目、创建项目、跨项目人员复用、公司考勤汇总、项目评分、公司 Excel 汇总",
+    planned: "分配项目管理员、人员历史评分",
   },
   {
     roleCode: "SYSTEM_ADMIN",
@@ -89,11 +89,11 @@ export const permissionCategoryLabel = (
 export const participantPermissionRole = (
   person: Pick<ProjectParticipant, "participantType" | "projectRoleLabel">,
 ): ProjectPermissionRole => {
-  if (person.participantType === "WORKER") return person.projectRoleLabel === "TEAM_LEADER" ? "TEAM_LEADER" : "WORKER";
   if (
     person.projectRoleLabel === "TEAM_LEADER" ||
     person.projectRoleLabel === "PROJECT_ADMIN"
   )
     return person.projectRoleLabel;
+  if (person.participantType === "WORKER" || person.projectRoleLabel === "WORKER") return "WORKER";
   throw new Error("人员权限配置无效，请联系管理员核对项目岗位。");
 };

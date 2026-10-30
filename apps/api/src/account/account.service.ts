@@ -43,6 +43,7 @@ export class AccountService {
         avatarContentType: true,
         isBound: true,
         phone: true,
+        workerProfile: { select: { registrationCompletedAt: true } },
       },
     });
     if (user === null)
@@ -55,6 +56,12 @@ export class AccountService {
         ? null
         : `data:${user.avatarContentType};base64,${(await this.storage.get(user.avatarObjectKey)).toString("base64")}`;
     return {
+      workerRegistration:
+        user.workerProfile === null
+          ? "NOT_APPLICABLE"
+          : user.workerProfile.registrationCompletedAt === null
+            ? "REQUIRED"
+            : "COMPLETE",
       realName:
         user.encryptedRealName === null
           ? null

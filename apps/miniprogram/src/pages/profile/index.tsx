@@ -24,6 +24,7 @@ import { displayProjectRole } from "../../routing/features";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { PANEL_LABELS } from "../../routing/features";
 import { roleHomePanel } from "../../routing/roleHome";
+import { myProjectDetailUrl } from "../../services/project-attendance";
 import { fetchMyProjects } from "../../services/me";
 import type { MyProjectMembership } from "../../services/me.types";
 import { useSession } from "../../store/session";
@@ -108,7 +109,25 @@ export default function Profile(): JSX.Element {
           onRetry={refreshAccount}
         />
       ) : null}
+      <ListItem
+        primary="打卡流程测试"
+        secondary="测试定位、拍照和活体人脸识别，不计入考勤"
+        chip="开始测试"
+        onClick={() => {
+          void Taro.navigateTo({ url: "/pages/punch-test/index" });
+        }}
+      />
       <Section title="个人资料">
+        {account && account.workerRegistration !== "NOT_APPLICABLE" ? (
+          <ListItem
+            primary="用工登记资料"
+            secondary="身份证、住址、紧急联系人、健康、保险及工资银行卡"
+            chip="查看／修改"
+            onClick={() => {
+              void Taro.navigateTo({ url: "/pages/worker-registration/index" });
+            }}
+          />
+        ) : null}
         {!editingProfile ? (
           <ListItem
             primary="头像与本人资料"
@@ -169,7 +188,10 @@ export default function Profile(): JSX.Element {
             key={project.projectId}
             primary={project.projectName}
             secondary={`${displayProjectRole(project.projectRoleLabel)} · ${project.teamName ?? "未分配班组"}`}
-            chip="已加入"
+            chip="进入项目"
+            onClick={() => {
+              void Taro.navigateTo({ url: myProjectDetailUrl(project.projectId) });
+            }}
           />
         ))}
         {projects?.length === 0 ? (

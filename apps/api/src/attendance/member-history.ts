@@ -15,8 +15,8 @@ export type MemberState = {
   readonly projectRoleLabel: string;
 };
 
-export const workerRole = (label: string): "WORKER" | "TEAM_LEADER" =>
-  label === "TEAM_LEADER" ? "TEAM_LEADER" : "WORKER";
+export const workerRole = (label: string): "WORKER" | "TEAM_LEADER" | "PROJECT_ADMIN" =>
+  label === "PROJECT_ADMIN" ? "PROJECT_ADMIN" : label === "TEAM_LEADER" ? "TEAM_LEADER" : "WORKER";
 
 const chinaDay = (date: Date): string =>
   new Date(date.getTime() + 8 * 3600_000).toISOString().slice(0, 10);

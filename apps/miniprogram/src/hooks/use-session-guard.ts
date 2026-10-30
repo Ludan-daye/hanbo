@@ -13,7 +13,14 @@ export const useSessionGuard = (): void => {
       return;
     }
     const url = sessionEntryUrl(phase);
-    if (url !== null && url !== "/pages/home/index") void Taro.reLaunch({ url });
+    const pages = Taro.getCurrentPages();
+    const currentRoute: string | undefined = pages[pages.length - 1]?.route;
+    if (
+      url !== null &&
+      url !== "/pages/home/index" &&
+      url.split("?")[0].replace(/^\/+/, "") !== currentRoute?.replace(/^\/+/, "")
+    )
+      void Taro.reLaunch({ url });
   };
   useDidShow(guard);
   useEffect(guard, [phase]);

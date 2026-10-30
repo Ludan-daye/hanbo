@@ -1,4 +1,8 @@
 import Taro from "@tarojs/taro";
+import type {
+  WorkerRegistration,
+  WorkerRegistrationStatus,
+} from "@construction/domain";
 
 import { ACCESS_TOKEN_KEY, API_BASE_URL, FRONTEND_DEMO } from "../config/env";
 import { fetchMe } from "./auth";
@@ -6,6 +10,7 @@ import { apiClient } from "./client";
 import { readDemoPhoto } from "./demo/photo";
 
 export type AccountProfile = {
+  readonly workerRegistration: WorkerRegistrationStatus;
   readonly realName: string | null;
   readonly phone: string | null;
   readonly nickname: string | null;
@@ -16,6 +21,19 @@ export type AccountProfile = {
 
 export const fetchAccountProfile = async (): Promise<AccountProfile> =>
   apiClient.request<AccountProfile>("/account/profile", { method: "GET" });
+
+export const fetchWorkerRegistration = async (): Promise<WorkerRegistration> =>
+  apiClient.request<WorkerRegistration>("/account/worker-registration", {
+    method: "GET",
+  });
+
+export const saveWorkerRegistration = async (
+  value: WorkerRegistration,
+): Promise<AccountProfile> =>
+  apiClient.request<AccountProfile>("/account/worker-registration", {
+    method: "PUT",
+    data: value,
+  });
 
 export type AccountProfileInput = {
   readonly nickname: string;

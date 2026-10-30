@@ -316,14 +316,14 @@ class AuthPrismaTestDouble {
     findMany: async (args: ProjectWorkerMemberFindManyArgs): Promise<ProjectWorkerMemberRecord[]> =>
       this.workerMemberships.filter(
         (m: ProjectWorkerMemberRecord): boolean => m.workerId === args.where.workerId && m.status === args.where.status
-      )
+      ).map((member) => ({ ...member, additionalRoles: [] }))
   };
 
   readonly projectManagerMember = {
     findMany: async (args: ProjectManagerMemberFindManyArgs): Promise<ProjectManagerMemberRecord[]> =>
       this.managerMemberships.filter(
         (m: ProjectManagerMemberRecord): boolean => m.managerId === args.where.managerId && m.status === args.where.status
-      )
+      ).map((member) => ({ ...member, additionalRoles: [] }))
   };
 
   readonly userRole = {

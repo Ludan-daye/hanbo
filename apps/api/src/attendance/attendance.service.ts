@@ -60,6 +60,8 @@ import { PrismaService } from "../infrastructure/database/prisma.service.js";
 
 import type {
   AttendanceRecordResponse,
+  AttendancePosition,
+  FaceVerificationStartRequest,
   AttendanceRecordStatusValue,
   AttendanceResultResponse,
   AttendanceTodayGeofence,
@@ -373,10 +375,10 @@ export class AttendanceService {
   async createNativeFaceSession(
     projectId: string,
     userId: string,
-    pointCode: AttendancePointCode,
+    request: FaceVerificationStartRequest,
   ): Promise<IssuedFaceSession> {
     return this.faces.startSession(
-      await this.nativeFaceContext(projectId, userId, pointCode),
+      await this.faceStartContext(projectId, userId, request),
     );
   }
 
@@ -395,10 +397,10 @@ export class AttendanceService {
   async createVideoFaceSession(
     projectId: string,
     userId: string,
-    pointCode: AttendancePointCode,
+    request: FaceVerificationStartRequest,
   ): Promise<IssuedVideoFaceSession> {
     return this.faces.startVideoSession(
-      await this.nativeFaceContext(projectId, userId, pointCode),
+      await this.faceStartContext(projectId, userId, request),
     );
   }
 
@@ -426,6 +428,17 @@ export class AttendanceService {
       await this.nativeFaceContext(projectId, userId, pointCode),
       sessionId,
     );
+  }
+
+  private async faceStartContext(
+    projectId: string,
+    userId: string,
+    request: FaceVerificationStartRequest,
+  ): Promise<FaceSessionContext> {
+    const context = await this.nativeFaceContext(projectId, userId, request.pointCode);
+    const project = await this.getProjectOrThrow(projectId);
+    this.requireAttendanceLocation(project, request);
+    return context;
   }
 
   private async nativeFaceContext(
@@ -646,28 +659,7 @@ export class AttendanceService {
         message: "ATTENDANCE_POINT_NOT_SCHEDULED",
       });
 
-    const geofenceDecision = this.createGeofenceDecision(
-      project,
-      request.latitude,
-      request.longitude,
-    );
-    if (!geofenceDecision.isInside) {
-      throw new BadRequestException({
-        message: "OUTSIDE_GEOFENCE",
-        projectId,
-        distanceM: Math.round(geofenceDecision.distanceM),
-        radiusM: project.geofenceRadiusM,
-      });
-    }
-    if (
-      project.locationAccuracyLimitM !== null &&
-      (request.locationAccuracyM === null ||
-        Number(request.locationAccuracyM) > project.locationAccuracyLimitM)
-    )
-      throw new BadRequestException({
-        message: "定位精度不足，请到开阔位置重新定位。",
-        limitM: project.locationAccuracyLimitM,
-      });
+    const geofenceDecision = this.requireAttendanceLocation(project, request);
     await this.uploads.requireOwnedImage(
       userId,
       request.sitePhotoObjectKey,
@@ -782,6 +774,7 @@ export class AttendanceService {
     const attendanceDateText = getChinaDateOnly(new Date());
     const attendanceDate = dateOnlyToDate(attendanceDateText);
     const geofence: AttendanceTodayGeofence = {
+      locationAccuracyLimitM: project.locationAccuracyLimitM,
       centerLatitude: String(project.centerLatitude),
       centerLongitude: String(project.centerLongitude),
       radiusM: project.geofenceRadiusM,
@@ -1138,6 +1131,18 @@ export class AttendanceService {
       projectId,
       userId,
     });
+  }
+
+  private requireAttendanceLocation(project: Project, position: AttendancePosition): GeofenceDecision {
+    const decision = this.createGeofenceDecision(project, position.latitude, position.longitude);
+    if (!decision.isInside) throw new BadRequestException({
+      message: "OUTSIDE_GEOFENCE", projectId: project.id,
+      distanceM: Math.round(decision.distanceM), radiusM: project.geofenceRadiusM,
+    });
+    if (project.locationAccuracyLimitM !== null &&
+        (position.locationAccuracyM === null || Number(position.locationAccuracyM) > project.locationAccuracyLimitM))
+      throw new BadRequestException({ message: "LOCATION_ACCURACY_INSUFFICIENT", limitM: project.locationAccuracyLimitM });
+    return decision;
   }
 
   private createGeofenceDecision(

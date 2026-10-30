@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import type { ProjectMemberRole } from "@prisma/client";
+import { additionalRoleView } from "./membership-roles.js";
 import type {
   Company,
   ManagerProfile,
@@ -12,7 +14,7 @@ import type {
 
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
-import { decryptPersonnelName } from "./personnel-name.js";
+import { decryptPersonnelName, personnelSearchHash } from "./personnel-name.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import type { BindingTargetTypeValue } from "../bindings/bindings.types.js";
 import type { BindingInvitationListItem } from "./management-invitation.types.js";
@@ -27,6 +29,7 @@ import type {
   CreateTeamRequest,
   MemberStatusValue,
   ProjectManagerRoleCode,
+  ProjectManagerCandidate,
   ProjectManagerMemberResponse,
   ProjectParticipantResponse,
   ProjectResponse,
@@ -34,20 +37,42 @@ import type {
   ProjectWorkerMemberResponse,
   ManagedProjectResponse,
   UpdateProjectRequest,
-  TeamResponse
+  TeamResponse,
+  WorkRoleScope
 } from "./management.types.js";
 
 type WorkerMemberWithProfileAndTeam = ProjectWorkerMember & {
   readonly team: Team | null;
+  readonly additionalRoles: readonly (ProjectMemberRole & { team: Team | null })[];
   readonly worker: WorkerProfile;
 };
 
 type ManagerMemberWithProfileAndTeam = ProjectManagerMember & {
   readonly manager: ManagerProfile;
   readonly teamScope: Team | null;
+  readonly additionalRoles: readonly (ProjectMemberRole & { team: Team | null })[];
 };
 
 const dateOnlyToDate = (value: string): Date => new Date(`${value}T00:00:00.000Z`);
+
+const eligibleProjectManagers = (companyId: string): Prisma.ManagerProfileWhereInput => ({
+  status: "ACTIVE",
+  AND: [
+    { OR: [{ userId: null }, { user: { status: "ACTIVE" } }] },
+    { OR: [
+      { projectMemberships: { some: { status: "ACTIVE", project: { companyId } } } },
+      { user: { roles: { some: { scopeType: "COMPANY", scopeId: companyId, role: { code: "COMPANY_ADMIN" } } } } }
+    ] }
+  ]
+});
+
+const eligibleWorkerManagers = (companyId: string): Prisma.WorkerProfileWhereInput => ({
+  employmentStatus: "ACTIVE", encryptedName: { startsWith: "name-v1:" },
+  OR: [{ userId: null }, { user: { status: "ACTIVE" } }],
+  projectMemberships: { some: { status: "ACTIVE", project: { companyId }, OR: [
+    { projectRoleLabel: { in: ["PROJECT_ADMIN", "TEAM_LEADER"] } }, { additionalRoles: { some: { roleCode: "TEAM_LEADER" } } }
+  ] } }
+});
 
 const toDateOnly = (value: Date): string => value.toISOString().slice(0, 10);
 
@@ -142,6 +167,7 @@ const createManagerMemberResponse = (
 
 const createWorkerParticipantResponse = (member: WorkerMemberWithProfileAndTeam, keyHex: string): ProjectParticipantResponse => ({
   displayName: member.worker.encryptedName.startsWith("name-v1:") ? decryptPersonnelName(member.worker.encryptedName, keyHex) : null,
+  additionalRoles: member.additionalRoles.map(additionalRoleView),
   memberId: member.id,
   participantType: "WORKER",
   phone: member.worker.phone,
@@ -156,6 +182,7 @@ const createWorkerParticipantResponse = (member: WorkerMemberWithProfileAndTeam,
 
 const createManagerParticipantResponse = (member: ManagerMemberWithProfileAndTeam): ProjectParticipantResponse => ({
   displayName: member.manager.name,
+  additionalRoles: member.additionalRoles.map(additionalRoleView),
   memberId: member.id,
   participantType: "MANAGER",
   phone: member.manager.phone,
@@ -187,6 +214,24 @@ const throwConflictForUniqueError = (
 @Injectable()
 export class ManagementService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(API_ENV) private readonly env: ApiEnv) {}
+
+  async listMyRoleScopes(userId: string): Promise<readonly WorkRoleScope[]> {
+    const assignments = await this.prisma.userRole.findMany({ where: { userId }, include: { role: true }, orderBy: [{ role: { level: "desc" } }, { createdAt: "asc" }] });
+    const idsFor = (scopeType: WorkRoleScope["scopeType"]): string[] => assignments.filter((row) => row.scopeType === scopeType).map((row) => row.scopeId);
+    const [companies, projects, teams] = await Promise.all([
+      this.prisma.company.findMany({ where: { id: { in: idsFor("COMPANY") } }, select: { id: true, name: true } }),
+      this.prisma.project.findMany({ where: { id: { in: idsFor("PROJECT") } }, select: { id: true, name: true } }),
+      this.prisma.team.findMany({ where: { id: { in: idsFor("TEAM") } }, select: { id: true, name: true, project: { select: { id: true, name: true } } } })
+    ]);
+    return assignments.map((assignment): WorkRoleScope => {
+      const company = companies.find((row) => row.id === assignment.scopeId);
+      const project = projects.find((row) => row.id === assignment.scopeId);
+      const team = teams.find((row) => row.id === assignment.scopeId);
+      const scopeName = assignment.scopeType === "GLOBAL" ? "平台" : assignment.scopeType === "COMPANY" ? company?.name : assignment.scopeType === "PROJECT" ? project?.name : team === undefined ? undefined : `${team.project.name} / ${team.name}`;
+      if (scopeName === undefined) throw new NotFoundException({ message: "ROLE_SCOPE_NOT_FOUND", scopeId: assignment.scopeId, scopeType: assignment.scopeType });
+      return { roleCode: assignment.role.code, scopeType: assignment.scopeType, scopeId: assignment.scopeId, scopeName, projectId: assignment.scopeType === "PROJECT" ? assignment.scopeId : team?.project.id ?? null };
+    });
+  }
 
   async getManagedProject(projectId: string): Promise<ManagedProjectResponse> {
     const project = await this.getProjectOrThrow(projectId);
@@ -252,6 +297,29 @@ export class ManagementService {
     return createCompanyResponse(company);
   }
 
+  async listProjectManagerCandidates(companyId: string, search: string): Promise<readonly ProjectManagerCandidate[]> {
+    const managers = await this.prisma.managerProfile.findMany({
+      where: {
+        ...eligibleProjectManagers(companyId),
+        OR: [{ name: { contains: search, mode: "insensitive" } }, { phone: { contains: search } }]
+      },
+      select: { id: true, name: true, phone: true, user: { select: { isBound: true } } },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      take: 50
+    });
+    const workers = await this.prisma.workerProfile.findMany({
+      where: { ...eligibleWorkerManagers(companyId), ...(search.length === 0 ? {} : { AND: [{ OR: [
+        { phone: { contains: search } }, { nameSearchHashes: { has: personnelSearchHash(search, this.env.PERSONNEL_ENCRYPTION_KEY) } }
+      ] }] }) },
+      select: { id: true, encryptedName: true, phone: true, user: { select: { isBound: true } } }, orderBy: { id: "asc" }, take: 50
+    });
+    return [...managers.map((manager): ProjectManagerCandidate => ({
+      profileId: manager.id, name: manager.name, phone: manager.phone, isBound: manager.user?.isBound === true
+    })), ...workers.map((worker): ProjectManagerCandidate => ({
+      profileId: worker.id, name: decryptPersonnelName(worker.encryptedName, this.env.PERSONNEL_ENCRYPTION_KEY), phone: worker.phone, isBound: worker.user?.isBound === true
+    }))].sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || a.profileId.localeCompare(b.profileId)).slice(0, 50);
+  }
+
   async createProject(
     companyId: string,
     actorUserId: string,
@@ -271,6 +339,17 @@ export class ManagementService {
     }
 
     return this.prisma.$transaction(async (transaction): Promise<ProjectResponse> => {
+      // Serialize profile changes and account binding while assigning the new membership.
+      await transaction.$queryRaw`SELECT "id" FROM "manager_profiles" WHERE "id" IN (${Prisma.join(request.managerProfileIds)}) ORDER BY "id" FOR SHARE`;
+      await transaction.$queryRaw`SELECT "id" FROM "worker_profiles" WHERE "id" IN (${Prisma.join(request.managerProfileIds)}) ORDER BY "id" FOR SHARE`;
+      const workers = await transaction.workerProfile.findMany({ where: { ...eligibleWorkerManagers(companyId), id: { in: [...request.managerProfileIds] } }, select: { id: true, userId: true } });
+      const managers = await transaction.managerProfile.findMany({
+        where: { ...eligibleProjectManagers(companyId), id: { in: [...request.managerProfileIds] } },
+        select: { id: true, userId: true }
+      });
+      if (managers.length + workers.length === 0 || managers.length + workers.length !== request.managerProfileIds.length) {
+        throw new BadRequestException({ message: "PROJECT_MANAGERS_NOT_ELIGIBLE", companyId });
+      }
       const project = await transaction.project.create({
         data: {
           address: request.address,
@@ -296,12 +375,27 @@ export class ManagementService {
         });
       }
 
-      await transaction.userRole.create({
+      for (const manager of managers) {
+        await transaction.projectManagerMember.create({
+          data: {
+            projectId: project.id, managerId: manager.id, roleCode: "PROJECT_ADMIN",
+            teamScopeId: null, status: "ACTIVE", requiresAttendance: true
+          }
+        });
+        if (manager.userId !== null) {
+          await transaction.userRole.create({
+            data: { roleId: projectAdminRole.id, scopeId: project.id, scopeType: "PROJECT", userId: manager.userId }
+          });
+        }
+      }
+      for (const worker of workers) {
+        await transaction.projectWorkerMember.create({ data: { projectId: project.id, workerId: worker.id, projectRoleLabel: "PROJECT_ADMIN", teamId: null, status: "ACTIVE", requiresAttendance: true, enteredAt: new Date() } });
+        if (worker.userId !== null) await transaction.userRole.create({ data: { roleId: projectAdminRole.id, scopeId: project.id, scopeType: "PROJECT", userId: worker.userId } });
+      }
+      await transaction.auditLog.create({
         data: {
-          roleId: projectAdminRole.id,
-          scopeId: project.id,
-          scopeType: "PROJECT",
-          userId: actorUserId
+          actorUserId, action: "project.create", entityType: "project", entityId: project.id,
+          metadata: { companyId, managerProfileIds: [...request.managerProfileIds] }
         }
       });
 
@@ -439,12 +533,12 @@ export class ManagementService {
     const projectNamesById = new Map(projects.map((p) => [p.id, p.name]));
     const [workerMembers, managerMembers] = await Promise.all([
       this.prisma.projectWorkerMember.findMany({
-        include: { team: true, worker: true },
+        include: { team: true, worker: true, additionalRoles: { include: { team: true } } },
         orderBy: { createdAt: "asc" },
         where: { projectId: { in: projectIds } }
       }),
       this.prisma.projectManagerMember.findMany({
-        include: { manager: true, teamScope: true },
+        include: { manager: true, teamScope: true, additionalRoles: { include: { team: true } } },
         orderBy: { createdAt: "asc" },
         where: { projectId: { in: projectIds } }
       })
@@ -469,12 +563,12 @@ export class ManagementService {
 
     const [workerMembers, managerMembers] = await Promise.all([
       this.prisma.projectWorkerMember.findMany({
-        include: { team: true, worker: true },
+        include: { team: true, worker: true, additionalRoles: { include: { team: true } } },
         orderBy: { createdAt: "asc" },
         where: { projectId: team.projectId, teamId }
       }),
       this.prisma.projectManagerMember.findMany({
-        include: { manager: true, teamScope: true },
+        include: { manager: true, teamScope: true, additionalRoles: { include: { team: true } } },
         orderBy: { createdAt: "asc" },
         where: { projectId: team.projectId, teamScopeId: teamId }
       })
@@ -492,7 +586,8 @@ export class ManagementService {
       this.prisma.projectWorkerMember.findMany({
         include: {
           team: true,
-          worker: true
+          worker: true,
+          additionalRoles: { include: { team: true } }
         },
         orderBy: {
           createdAt: "asc"
@@ -504,7 +599,8 @@ export class ManagementService {
       this.prisma.projectManagerMember.findMany({
         include: {
           manager: true,
-          teamScope: true
+          teamScope: true,
+          additionalRoles: { include: { team: true } }
         },
         orderBy: {
           createdAt: "asc"

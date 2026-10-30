@@ -81,6 +81,7 @@ type WorkerProfileRecord = {
 };
 
 type ManagerProfileRecord = {
+  readonly userId?: string;
   readonly id: string;
   readonly name: string;
   readonly phone: string;
@@ -520,6 +521,7 @@ class ManagementPrismaTestDouble {
   };
 
   readonly workerProfile = {
+    findMany: async (): Promise<readonly { id: string; userId: string | null }[]> => [],
     create: async (args: WorkerProfileCreateArgs): Promise<WorkerProfileRecord> => {
       this.workerSequence += 1;
       const worker: WorkerProfileRecord = {
@@ -538,7 +540,14 @@ class ManagementPrismaTestDouble {
     }
   };
 
+  readonly $queryRaw = async (): Promise<readonly { id: string }[]> => [];
+
+  readonly auditLog = { create: async (): Promise<{ id: string }> => ({ id: "audit-project" }) };
+
   readonly managerProfile = {
+    findMany: async (args: { where: { id: { in: readonly string[] } } }): Promise<readonly { id: string; userId: string | null }[]> =>
+      Array.from(this.managerProfiles.values()).filter((profile) => args.where.id.in.includes(profile.id))
+        .map((profile) => ({ id: profile.id, userId: profile.userId ?? null })),
     create: async (args: ManagerProfileCreateArgs): Promise<ManagerProfileRecord> => {
       this.managerSequence += 1;
       const manager: ManagerProfileRecord = {
@@ -598,7 +607,7 @@ class ManagementPrismaTestDouble {
       if (args.select?.workerId === true) {
         return filtered.map((m): { workerId: string } => ({ workerId: m.workerId }));
       }
-      return filtered;
+      return filtered.map(member => ({ ...member, additionalRoles: [] }));
     }
   };
 
@@ -649,7 +658,7 @@ class ManagementPrismaTestDouble {
       if (args.select?.managerId === true) {
         return filtered.map((m): { managerId: string } => ({ managerId: m.managerId }));
       }
-      return filtered;
+      return filtered.map(member => ({ ...member, additionalRoles: [] }));
     }
   };
 
@@ -823,6 +832,8 @@ describe("ManagementModule", (): void => {
     app = await createApp(prisma);
     const accessToken = await createAccessToken(app, "user-1", "session-1");
 
+    prisma.managerProfiles.set("manager-creator", { id: "manager-creator", userId: "user-1", name: "Creator", phone: "13800000001", status: "ACTIVE" });
+
     const projectResponse = await request(app.getHttpServer())
       .post("/management/companies/company-1/projects")
       .set("Authorization", `Bearer ${accessToken}`)
@@ -832,6 +843,7 @@ describe("ManagementModule", (): void => {
         centerLongitude: "121.4737000",
         geofenceRadiusM: 300,
         name: "North Gate Site",
+        managerProfileIds: ["manager-creator"],
         plannedEndDate: "2026-12-31",
         plannedStartDate: "2026-06-03",
         status: "ACTIVE"
@@ -858,6 +870,8 @@ describe("ManagementModule", (): void => {
         userId: "user-1"
       })
     );
+
+    expect(Array.from(prisma.managerMembers.values())).toContainEqual(expect.objectContaining({ managerId: "manager-creator", projectId: "project-1", roleCode: "PROJECT_ADMIN" }));
 
     const teamResponse = await request(app.getHttpServer())
       .post("/management/projects/project-1/teams")

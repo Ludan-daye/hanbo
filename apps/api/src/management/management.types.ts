@@ -2,8 +2,16 @@ import type { RoleCode } from "@construction/domain/roles.js";
 
 export type ProjectStatusValue = "ACTIVE" | "COMPLETED" | "PREPARING" | "SUSPENDED";
 export type MemberStatusValue = "ACTIVE" | "EXITED" | "SUSPENDED";
-export type ProjectManagerRoleCode = Extract<RoleCode, "PROJECT_ADMIN" | "TEAM_LEADER">;
+export type ProjectManagerRoleCode = Extract<RoleCode, "WORKER" | "PROJECT_ADMIN" | "TEAM_LEADER">;
 export type ParticipantTypeValue = "MANAGER" | "WORKER";
+
+export type WorkRoleScope = {
+  readonly roleCode: RoleCode;
+  readonly scopeType: "GLOBAL" | "COMPANY" | "PROJECT" | "TEAM";
+  readonly scopeId: string;
+  readonly scopeName: string;
+  readonly projectId: string | null;
+};
 
 export type CreateCompanyRequest = {
   readonly name: string;
@@ -16,7 +24,7 @@ export type CompanyResponse = {
   readonly status: string;
 };
 
-export type CreateProjectRequest = {
+export type ProjectWriteFields = {
   readonly address: string;
   readonly centerLatitude: string;
   readonly centerLongitude: string;
@@ -25,6 +33,17 @@ export type CreateProjectRequest = {
   readonly plannedEndDate: string | null;
   readonly plannedStartDate: string;
   readonly status: ProjectStatusValue;
+};
+
+export type CreateProjectRequest = ProjectWriteFields & {
+  readonly managerProfileIds: readonly string[];
+};
+
+export type ProjectManagerCandidate = {
+  readonly profileId: string;
+  readonly name: string;
+  readonly phone: string;
+  readonly isBound: boolean;
 };
 
 export type ProjectResponse = {
@@ -48,7 +67,7 @@ export type ManagedProjectResponse = ProjectResponse & {
   readonly updatedAt: string;
 };
 
-export type UpdateProjectRequest = CreateProjectRequest & {
+export type UpdateProjectRequest = ProjectWriteFields & {
   readonly id: string;
   readonly companyId: string;
   readonly code: string | null;
@@ -124,6 +143,7 @@ export type ProjectManagerMemberResponse = {
 };
 
 export type ProjectParticipantResponse = {
+  readonly additionalRoles?: readonly { readonly roleCode: "WORKER" | "TEAM_LEADER"; readonly teamId: string | null; readonly teamName: string | null }[];
   readonly displayName: string | null;
   readonly memberId: string;
   readonly participantType: ParticipantTypeValue;

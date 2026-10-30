@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import type { MyProjectDetail } from "@construction/domain";
 import type {
   AttendanceRecord,
   MyAttendanceDay,
@@ -18,6 +19,9 @@ export const fetchMyMakeups = async (): Promise<ReadonlyArray<Makeup>> =>
 
 export const fetchMyProjects = async (): Promise<ReadonlyArray<MyProjectMembership>> =>
   apiClient.request<ReadonlyArray<MyProjectMembership>>(`/me/projects`, { method: "GET" });
+
+export const fetchMyProjectDetail = async (projectId: string): Promise<MyProjectDetail> =>
+  apiClient.request<MyProjectDetail>(`/me/projects/${encodeURIComponent(projectId)}`, { method: "GET" });
 
 export const submitMakeup = async (projectId: string, body: SubmitMakeupBody): Promise<unknown> =>
   apiClient.request<unknown>(`/makeups/projects/${projectId}/requests`, { data: body, method: "POST" });

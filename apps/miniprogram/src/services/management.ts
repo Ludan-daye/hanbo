@@ -9,9 +9,14 @@ import type {
   DefaultShiftBody,
   ProjectInvitation,
   ProjectParticipant,
+  ProjectManagerCandidate,
   ProjectTeam,
+  WorkRoleScope,
   RangeReport,
 } from "./management.types";
+
+export const fetchMyRoleScopes = (): Promise<readonly WorkRoleScope[]> =>
+  apiClient.request("/management/my-role-scopes", { method: "GET" });
 
 export const fetchParticipants = async (
   projectId: string,
@@ -149,6 +154,15 @@ export const createCompanyProject = async (
   apiClient.request<CompanyProject>(
     `/management/companies/${companyId}/projects`,
     { data: body, method: "POST" },
+  );
+
+export const fetchProjectManagerCandidates = async (
+  companyId: string,
+  search: string,
+): Promise<readonly ProjectManagerCandidate[]> =>
+  apiClient.request<readonly ProjectManagerCandidate[]>(
+    `/management/companies/${companyId}/project-manager-candidates?search=${encodeURIComponent(search)}`,
+    { method: "GET" },
   );
 
 export const fetchCompanyDailyReport = async (

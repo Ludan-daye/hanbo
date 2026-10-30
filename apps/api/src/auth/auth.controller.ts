@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Inject, Post, Req, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Header, Inject, Post, Req, UseGuards } from "@nestjs/common";
+import { z } from "zod";
+import { TEST_ACCOUNT_CODES } from "./test-accounts.js";
 
 import { AllowIncompleteAccount } from "./account-onboarding.js";
 import { AccessTokenGuard } from "./access-token.guard.js";
@@ -43,19 +45,30 @@ export class AuthController {
   constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
   @Post("wechat/login")
+  @Header("Cache-Control", "no-store")
   async login(@Body() body: unknown, @Req() request: RequestWithAuthenticatedUser): Promise<LoginResponse> {
     return this.authService.loginWithWechatCode(parseWechatLoginRequest(body), getRequestMetadata(request));
   }
 
   @Post("refresh")
+  @Header("Cache-Control", "no-store")
   async refresh(@Body() body: unknown, @Req() request: RequestWithAuthenticatedUser): Promise<RefreshResponse> {
     return this.authService.refreshAccessToken(parseRefreshTokenRequest(body), getRequestMetadata(request));
   }
 
   @Get("me")
+  @Header("Cache-Control", "no-store")
   @UseGuards(AccessTokenGuard)
   async me(@CurrentUser() currentUser: AuthenticatedUser): Promise<MeResponse> {
     return this.authService.getMe(currentUser.userId);
+  }
+
+  @Post("test/login")
+  @Header("Cache-Control", "no-store")
+  async testLogin(@Body() body: unknown, @Req() request: RequestWithAuthenticatedUser): Promise<LoginResponse> {
+    const parsed = z.object({ account: z.enum(TEST_ACCOUNT_CODES), passcode: z.string().min(1).max(128) }).strict().safeParse(body);
+    if (!parsed.success) throw new BadRequestException({ message: "INVALID_TEST_LOGIN_REQUEST" });
+    return this.authService.loginTestAccount(parsed.data.account, parsed.data.passcode, getRequestMetadata(request));
   }
 
   @Post("logout")

@@ -6,18 +6,26 @@ export type SessionState = {
   readonly refreshToken: string | null;
   readonly me: MeResponse | null;
   readonly accountProfile: AccountProfile | null;
+  readonly faceEnrollmentRequired: boolean;
 };
 
 export type SessionAction =
   | { type: "SET_TOKENS"; accessToken: string; refreshToken: string }
   | { type: "SET_ACCESS_TOKEN"; accessToken: string }
-  | { type: "SET_ME"; me: MeResponse; accountProfile: AccountProfile }
+  | {
+      type: "SET_ME";
+      me: MeResponse;
+      accountProfile: AccountProfile;
+      faceEnrollmentRequired: boolean;
+    }
   | { type: "CLEAR" };
 
 export type SessionPhase =
   | "anonymous"
   | "loading"
   | "profile-required"
+  | "worker-registration-required"
+  | "face-enrollment-required"
   | "unbound"
   | "norole"
   | "ready";
@@ -27,6 +35,7 @@ export const initialSessionState: SessionState = {
   me: null,
   accountProfile: null,
   refreshToken: null,
+  faceEnrollmentRequired: false,
 };
 
 export const sessionReducer = (
@@ -43,7 +52,12 @@ export const sessionReducer = (
     case "SET_ACCESS_TOKEN":
       return { ...state, accessToken: action.accessToken };
     case "SET_ME":
-      return { ...state, me: action.me, accountProfile: action.accountProfile };
+      return {
+        ...state,
+        me: action.me,
+        accountProfile: action.accountProfile,
+        faceEnrollmentRequired: action.faceEnrollmentRequired,
+      };
     case "CLEAR":
       return initialSessionState;
     default:
@@ -69,5 +83,8 @@ export const sessionPhase = (state: SessionState): SessionPhase => {
   if (!state.me.user.isBound) {
     return "unbound";
   }
+  if (state.accountProfile.workerRegistration === "REQUIRED")
+    return "worker-registration-required";
+  if (state.faceEnrollmentRequired) return "face-enrollment-required";
   return state.me.roles.highestRoleCode === null ? "norole" : "ready";
 };

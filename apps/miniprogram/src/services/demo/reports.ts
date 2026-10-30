@@ -112,6 +112,15 @@ export const dailyPerson = (
   const result = demoDaySummary(state, historical, date);
   const isScheduled = scheduled(state, person, date);
   return {
+    projectId: person.projectId,
+    projectName: state.projects.find(
+      (project) => project.id === person.projectId,
+    )!.name,
+    evaluation:
+      state.evaluations?.find(
+        (e) =>
+          e.projectId === person.projectId && e.memberId === person.memberId,
+      )?.evaluation ?? null,
     displayName: person.displayName,
     memberId: person.memberId,
     memberStatus: historical.status,

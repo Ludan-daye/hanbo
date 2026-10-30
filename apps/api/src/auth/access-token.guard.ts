@@ -1,6 +1,16 @@
-import { CanActivate, ExecutionContext, Inject, Injectable, ForbiddenException, UnauthorizedException } from "@nestjs/common";
+import {
+  CanActivate,
+  ExecutionContext,
+  Inject,
+  Injectable,
+  ForbiddenException,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { ALLOW_INCOMPLETE_ACCOUNT, assertAccountProfileComplete } from "./account-onboarding.js";
+import {
+  ALLOW_INCOMPLETE_ACCOUNT,
+  assertAccountProfileComplete,
+} from "./account-onboarding.js";
 import { JwtService } from "@nestjs/jwt";
 import { z } from "zod";
 
@@ -8,17 +18,20 @@ import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 
-import type { AccessTokenPayload, RequestWithAuthenticatedUser } from "./auth.types.js";
+import type {
+  AccessTokenPayload,
+  RequestWithAuthenticatedUser,
+} from "./auth.types.js";
 
 const accessTokenPayloadSchema = z.object({
   sid: z.string().min(1),
   sub: z.string().min(1),
-  sv: z.number().int().positive()
+  sv: z.number().int().positive(),
 });
 
 const getHeaderValue = (
   headers: Record<string, string | string[] | undefined>,
-  headerName: string
+  headerName: string,
 ): string | undefined => {
   const value = headers[headerName];
 
@@ -29,19 +42,26 @@ const getHeaderValue = (
   return value;
 };
 
-export const extractBearerToken = (authorizationHeader: string | undefined): string => {
+export const extractBearerToken = (
+  authorizationHeader: string | undefined,
+): string => {
   if (authorizationHeader === undefined) {
     throw new UnauthorizedException({
-      message: "MISSING_AUTHORIZATION_HEADER"
+      message: "MISSING_AUTHORIZATION_HEADER",
     });
   }
 
   const [scheme, token, extra] = authorizationHeader.split(" ");
 
-  if (scheme !== "Bearer" || token === undefined || token.length === 0 || extra !== undefined) {
+  if (
+    scheme !== "Bearer" ||
+    token === undefined ||
+    token.length === 0 ||
+    extra !== undefined
+  ) {
     throw new UnauthorizedException({
       authorizationHeaderPresent: true,
-      message: "INVALID_AUTHORIZATION_HEADER"
+      message: "INVALID_AUTHORIZATION_HEADER",
     });
   }
 
@@ -54,7 +74,7 @@ const parseAccessTokenPayload = (payload: unknown): AccessTokenPayload => {
   if (!result.success) {
     throw new UnauthorizedException({
       issues: result.error.issues,
-      message: "INVALID_ACCESS_TOKEN_PAYLOAD"
+      message: "INVALID_ACCESS_TOKEN_PAYLOAD",
     });
   }
 
@@ -67,62 +87,86 @@ export class AccessTokenGuard implements CanActivate {
     @Inject(JwtService) private readonly jwtService: JwtService,
     @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(API_ENV) private readonly env: ApiEnv
+    @Inject(API_ENV) private readonly env: ApiEnv,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<RequestWithAuthenticatedUser>();
-    const token = extractBearerToken(getHeaderValue(request.headers, "authorization"));
+    const request = context
+      .switchToHttp()
+      .getRequest<RequestWithAuthenticatedUser>();
+    const token = extractBearerToken(
+      getHeaderValue(request.headers, "authorization"),
+    );
     const payload = await this.verifyToken(token);
     const session = await this.prisma.userSession.findUnique({
       include: {
-        user: true
+        user: {
+          include: {
+            workerProfile: { select: { registrationCompletedAt: true } },
+          },
+        },
       },
       where: {
-        id: payload.sid
-      }
+        id: payload.sid,
+      },
     });
 
     if (session === null) {
       throw new UnauthorizedException({
         message: "SESSION_NOT_FOUND",
         sessionId: payload.sid,
-        userId: payload.sub
+        userId: payload.sub,
       });
     }
 
-    if (session.userId !== payload.sub || session.user.sessionVersion !== payload.sv) {
+    if (
+      session.userId !== payload.sub ||
+      session.user.sessionVersion !== payload.sv
+    ) {
       throw new UnauthorizedException({
         message: "ACCESS_TOKEN_SESSION_MISMATCH",
         sessionId: payload.sid,
-        userId: payload.sub
+        userId: payload.sub,
       });
     }
 
-    if (session.revokedAt !== null || session.expiresAt.getTime() <= Date.now()) {
+    if (
+      session.revokedAt !== null ||
+      session.expiresAt.getTime() <= Date.now()
+    ) {
       throw new UnauthorizedException({
         message: "SESSION_INACTIVE",
         sessionId: payload.sid,
-        userId: payload.sub
+        userId: payload.sub,
       });
     }
 
     if (session.user.status !== "ACTIVE") {
       throw new UnauthorizedException({
         message: "USER_DISABLED",
-        userId: payload.sub
+        userId: payload.sub,
       });
     }
 
-    if (!this.reflector.getAllAndOverride<boolean>(ALLOW_INCOMPLETE_ACCOUNT, [context.getHandler(), context.getClass()])) {
+    if (
+      !this.reflector.getAllAndOverride<boolean>(ALLOW_INCOMPLETE_ACCOUNT, [
+        context.getHandler(),
+        context.getClass(),
+      ])
+    ) {
       assertAccountProfileComplete(session.user);
-      if (!session.user.isBound) throw new ForbiddenException({ message: "ACCOUNT_BINDING_REQUIRED" });
+      if (!session.user.isBound)
+        throw new ForbiddenException({ message: "ACCOUNT_BINDING_REQUIRED" });
+      if (session.user.workerProfile?.registrationCompletedAt === null)
+        throw new ForbiddenException({
+          message: "WORKER_REGISTRATION_REQUIRED",
+        });
     }
 
     request.user = {
       sessionId: payload.sid,
       sessionVersion: payload.sv,
-      userId: payload.sub
+      userId: payload.sub,
     };
 
     return true;
@@ -130,8 +174,10 @@ export class AccessTokenGuard implements CanActivate {
 
   private async verifyToken(token: string): Promise<AccessTokenPayload> {
     try {
-      const payload = await this.jwtService.verifyAsync<Record<string, unknown>>(token, {
-        secret: this.env.JWT_ACCESS_TOKEN_SECRET
+      const payload = await this.jwtService.verifyAsync<
+        Record<string, unknown>
+      >(token, {
+        secret: this.env.JWT_ACCESS_TOKEN_SECRET,
       });
       return parseAccessTokenPayload(payload);
     } catch (error: unknown) {
@@ -141,7 +187,7 @@ export class AccessTokenGuard implements CanActivate {
 
       throw new UnauthorizedException({
         errorName: error instanceof Error ? error.name : "UnknownError",
-        message: "INVALID_ACCESS_TOKEN"
+        message: "INVALID_ACCESS_TOKEN",
       });
     }
   }

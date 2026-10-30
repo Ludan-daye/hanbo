@@ -1,6 +1,15 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { PrismaClient, type RoleCode, type UserRoleScopeType } from "@prisma/client";
+
+import { encryptPersonnelName, personnelNameSearchHashes } from "../src/management/personnel-name.js";
+import { TEST_ACCOUNTS, type TestAccountCode } from "../src/auth/test-accounts.js";
+
+const nameData = (name: string): { readonly encryptedName: string; readonly nameSearchHashes: string[] } => {
+  const key: string | undefined = process.env.PERSONNEL_ENCRYPTION_KEY;
+  if (key === undefined) throw new Error("PERSONNEL_ENCRYPTION_KEY is required for development seed identities.");
+  return { encryptedName: encryptPersonnelName(name, key, randomBytes(12)), nameSearchHashes: [...personnelNameSearchHashes(name, key)] };
+};
 
 const prisma = new PrismaClient();
 
@@ -10,7 +19,7 @@ const DEV_BIND_CODE = "DEV-BIND-CODE";
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
 
 type DemoManager = {
-  readonly openid: string;
+  readonly openid: TestAccountCode;
   readonly name: string;
   readonly roleCode: RoleCode;
   readonly scopeType: UserRoleScopeType;
@@ -127,7 +136,7 @@ const main = async (): Promise<void> => {
   for (const manager of managers) {
     const userId = await upsertUser(manager.openid, true);
     await prisma.managerProfile.upsert({
-      create: { name: manager.name, phone: `138${manager.openid}`, status: "ACTIVE", userId },
+      create: { name: manager.name, phone: TEST_ACCOUNTS[manager.openid].phone, status: "ACTIVE", userId },
       update: { name: manager.name, userId },
       where: { userId }
     });
@@ -138,10 +147,8 @@ const main = async (): Promise<void> => {
   await prisma.workerProfile.upsert({
     create: {
       employmentStatus: "ACTIVE",
-      encryptedIdNumber: "dev-encrypted-id",
-      encryptedName: "dev-encrypted-name",
+      ...nameData("测试工人"),
       faceProfileStatus: "PENDING",
-      idNumberHash: hash("dev-worker-id"),
       phone: "13800000001",
       realNameStatus: "PENDING",
       userId: workerUserId,
@@ -235,19 +242,19 @@ const main = async (): Promise<void> => {
 
   const creatorUserId = await upsertUser("dev-project", true);
   await upsertUser("dev-unbound", false);
+  const existingUnboundWorker = await prisma.workerProfile.findFirst({ where: { phone: "13800000002" } });
   const unboundWorker = await prisma.workerProfile.upsert({
     create: {
+      id: "dev-unbound-worker-profile",
       employmentStatus: "ACTIVE",
-      encryptedIdNumber: "dev-encrypted-id-2",
-      encryptedName: "dev-encrypted-name-2",
+      ...nameData("待绑定测试工人"),
       faceProfileStatus: "PENDING",
-      idNumberHash: hash("dev-unbound-worker-id"),
       phone: "13800000002",
       realNameStatus: "PENDING",
       workType: "木工"
     },
     update: {},
-    where: { idNumberHash: hash("dev-unbound-worker-id") }
+    where: { id: existingUnboundWorker?.id ?? "dev-unbound-worker-profile" }
   });
   // Make the unbound worker a project member so the invitation page can demo
   // generating an invitation against an existing, not-yet-bound participant.
@@ -329,17 +336,15 @@ const main = async (): Promise<void> => {
     const profile = await prisma.workerProfile.upsert({
       create: {
         employmentStatus: "ACTIVE",
-        encryptedIdNumber: `enc-${openid}`,
-        encryptedName: `enc-${name}`,
+        ...nameData(name),
         faceProfileStatus: "PENDING",
-        idNumberHash: hash(`${openid}-id`),
         phone,
         realNameStatus: "PENDING",
         userId,
         workType
       },
       update: { phone, userId, workType },
-      where: { idNumberHash: hash(`${openid}-id`) }
+      where: { userId }
     });
     await prisma.projectWorkerMember.upsert({
       create: {

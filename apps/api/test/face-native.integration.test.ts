@@ -19,6 +19,11 @@ import {
   vi,
 } from "vitest";
 
+import { AttendanceService } from "../src/attendance/attendance.service.js";
+import {
+  parseConfigureDefaultScheduleRequest,
+  parseConfigureDefaultShiftRequest,
+} from "../src/attendance/attendance-body.parsers.js";
 import { AppModule } from "../src/app.module.js";
 import { FACE_CONSENT_VERSION } from "../src/face/face.types.js";
 import { PrismaService } from "../src/infrastructure/database/prisma.service.js";
@@ -68,6 +73,7 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
     let otherProjectId: string;
     let projectAdminRoleId: string;
     let attendanceDate: string;
+    let sitePhoto: { readonly objectKey: string; readonly hash: string };
     const cloud = new Map<string, CloudResult>();
     const photo = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
@@ -212,7 +218,14 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
       projectAdminRoleId = adminRole.id;
       const createLogin = async (code: string): Promise<Login> => {
         const user = await prisma.user.create({
-          data: { openid: code, isBound: true, nickname: "Test", phone: "13800000000", encryptedRealName: "test-encrypted-name", avatarObjectKey: "test/avatar.png" },
+          data: {
+            openid: code,
+            isBound: true,
+            nickname: "Test",
+            phone: "13800000000",
+            encryptedRealName: "test-encrypted-name",
+            avatarObjectKey: "test/avatar.png",
+          },
         });
         const session = await prisma.userSession.create({
           data: {
@@ -244,6 +257,7 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
         centerLatitude: "31.2304",
         centerLongitude: "121.4737",
         geofenceRadiusM: 300,
+        locationAccuracyLimitM: 50,
         status: "ACTIVE" as const,
         plannedStartDate: new Date("2000-01-01"),
       };
@@ -301,10 +315,9 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
         month: "2-digit",
         day: "2-digit",
       }).format(new Date());
-      await request(app.getHttpServer())
-        .put(`/attendance/projects/${projectId}/default-shift`)
-        .auth(reviewer.token, { type: "bearer" })
-        .send({
+      await app.get(AttendanceService).configureDefaultShift(
+        projectId,
+        parseConfigureDefaultShiftRequest({
           name: "Integration shift",
           segments: [
             {
@@ -322,17 +335,28 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
               lateGraceMins: 0,
             },
           ],
-        })
-        .expect(200);
-      await request(app.getHttpServer())
-        .put(`/attendance/projects/${projectId}/default-schedule`)
-        .auth(reviewer.token, { type: "bearer" })
-        .send({
+        }),
+      );
+      await app.get(AttendanceService).configureDefaultSchedule(
+        projectId,
+        parseConfigureDefaultScheduleRequest({
           startsOn: "2000-01-01",
           endsOn: null,
           workdays: [1, 2, 3, 4, 5, 6, 7],
+        }),
+      );
+      const uploaded = await request(app.getHttpServer())
+        .post("/uploads")
+        .auth(worker.token, { type: "bearer" })
+        .attach("file", photo, {
+          filename: "site.png",
+          contentType: "image/png",
         })
-        .expect(200);
+        .expect(201);
+      sitePhoto = {
+        objectKey: String(uploaded.body.objectKey),
+        hash: String(uploaded.body.hash),
+      };
     }, 30_000);
 
     beforeEach(async (): Promise<void> => {
@@ -378,7 +402,12 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
       const response = await request(app.getHttpServer())
         .post(`/attendance/projects/${projectId}${sessionRoute}`)
         .auth(worker.token, { type: "bearer" })
-        .send({ pointCode: "SEGMENT_1_START" })
+        .send({
+          pointCode: "SEGMENT_1_START",
+          latitude: "31.2304",
+          longitude: "121.4737",
+          locationAccuracyM: "5",
+        })
         .expect(201);
       if (videoMode) {
         expect(response.body.actionSequence).toEqual(["2", "1"]);
@@ -420,8 +449,8 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
           latitude: "31.2304",
           longitude: "121.4737",
           locationAccuracyM: "5",
-          sitePhotoObjectKey: "integration-site.png",
-          sitePhotoHash: "integration-site-hash",
+          sitePhotoObjectKey: sitePhoto.objectKey,
+          sitePhotoHash: sitePhoto.hash,
           selfieObjectKey: "client-forged.png",
           selfieHash: "client-forged-hash",
           facePassed: true,
@@ -473,10 +502,82 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
       await request(app.getHttpServer())
         .post(`/attendance/projects/${projectId}${sessionRoute}`)
         .auth(worker.token, { type: "bearer" })
-        .send({ pointCode: "SEGMENT_1_START" })
+        .send({
+          pointCode: "SEGMENT_1_START",
+          latitude: "31.2304",
+          longitude: "121.4737",
+          locationAccuracyM: "5",
+        })
         .expect(400);
       await punch(randomUUID()).expect(404);
       expect(await prisma.attendanceRecord.count()).toBe(0);
+    });
+
+    test("blocks missing, outside and inaccurate GPS before creating a billable face session", async (): Promise<void> => {
+      await approve(await enroll());
+      for (const [position, message] of [
+        [{}, "FACE_LOCATION_REQUIRED"],
+        [
+          { latitude: "0", longitude: "0", locationAccuracyM: "5" },
+          "OUTSIDE_GEOFENCE",
+        ],
+        [
+          {
+            latitude: "31.2304",
+            longitude: "121.4737",
+            locationAccuracyM: "100",
+          },
+          "LOCATION_ACCURACY_INSUFFICIENT",
+        ],
+        [
+          {
+            latitude: "31.2304",
+            longitude: "121.4737",
+            locationAccuracyM: null,
+          },
+          "LOCATION_ACCURACY_INSUFFICIENT",
+        ],
+      ] as const) {
+        const response = await request(app.getHttpServer())
+          .post(`/attendance/projects/${projectId}${sessionRoute}`)
+          .auth(worker.token, { type: "bearer" })
+          .send({ pointCode: "SEGMENT_1_START", ...position })
+          .expect(400);
+        expect(response.body.message).toBe(message);
+      }
+      expect(
+        faceid.v20180301.Client.prototype.GetActionSequence,
+      ).not.toHaveBeenCalled();
+      expect(
+        faceid.v20180301.Client.prototype.DetectAuth,
+      ).not.toHaveBeenCalled();
+      expect(await prisma.faceVerificationSession.count()).toBe(0);
+      expect(await prisma.attendanceRecord.count()).toBe(0);
+      await issue();
+      expect(await prisma.faceVerificationSession.count()).toBe(1);
+    });
+
+    test("rechecks GPS and requires a site photo after face verification without consuming a rejected proof", async (): Promise<void> => {
+      await approve(await enroll());
+      const issued = await issue();
+      await complete(issued).expect(201);
+      const outside = await punch(issued.id)
+        .send({ latitude: "0", longitude: "0" })
+        .expect(400);
+      expect(outside.body.message).toBe("OUTSIDE_GEOFENCE");
+      await punch(issued.id)
+        .send({ sitePhotoHash: "", sitePhotoObjectKey: "" })
+        .expect(400);
+      expect(await prisma.attendanceRecord.count()).toBe(0);
+      expect(
+        (
+          await prisma.faceVerificationSession.findUniqueOrThrow({
+            where: { id: issued.id },
+          })
+        ).status,
+      ).toBe("VERIFIED");
+      await punch(issued.id).expect(201);
+      expect(await prisma.attendanceRecord.count()).toBe(1);
     });
 
     test("stores provider evidence and a score of 100, then rejects replay", async (): Promise<void> => {
@@ -493,7 +594,10 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
       expect(Number(response.body.record.faceScore)).toBe(100);
       await punch(issued.id).expect(400);
       expect(await prisma.attendanceRecord.count()).toBe(1);
-      expect((await prisma.attendanceRecord.findFirstOrThrow()).faceVerificationSessionId).toBe(issued.id);
+      expect(
+        (await prisma.attendanceRecord.findFirstOrThrow())
+          .faceVerificationSessionId,
+      ).toBe(issued.id);
     });
 
     test.skipIf(videoMode)(
@@ -696,7 +800,12 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
           request(app.getHttpServer())
             .post(`/attendance/projects/${projectId}${sessionRoute}`)
             .auth(worker.token, { type: "bearer" })
-            .send({ pointCode: "SEGMENT_1_START" }),
+            .send({
+              pointCode: "SEGMENT_1_START",
+              latitude: "31.2304",
+              longitude: "121.4737",
+              locationAccuracyM: "5",
+            }),
         ),
       );
       expect(

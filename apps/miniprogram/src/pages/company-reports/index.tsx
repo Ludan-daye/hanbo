@@ -1,3 +1,4 @@
+import { MonthlyExport } from "../../components/monthly-export";
 import { Picker, View } from "@tarojs/components";
 import { useEffect, useState } from "react";
 import { ReportParticipants } from "../../components/report-participants";
@@ -150,7 +151,22 @@ export default function CompanyReports(): JSX.Element {
         </View>
       ) : null}
       {totals !== null ? <StatCards items={totalsStatItems(totals)} /> : null}
-      {report ? <ReportParticipants report={report} /> : null}
+      {period === "MONTHLY" && report !== null ? (
+        <MonthlyExport
+          key={`${companyId}:${month}`}
+          scope="COMPANY"
+          scopeId={companyId}
+          month={month}
+        />
+      ) : null}
+      {report ? (
+        <ReportParticipants
+          key={`${report.projectId}:${report.startDate}:${report.endDate}`}
+          report={report}
+          teamId={null}
+          onChanged={refresh}
+        />
+      ) : null}
     </Screen>
   );
 }

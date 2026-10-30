@@ -1,8 +1,12 @@
+import { memberRoleAssignments } from "../member-roles";
+import { ROLE_LEVEL } from "@construction/domain/roles.js";
+import type { ProjectEvaluation } from "../management.types";
 import type { DemoMemberHistory } from "./member-history";
 import { defaultAttendancePoints } from "@construction/domain/attendance.js";
 import type { DemoPlan } from "./plans";
-import type { MeResponse, RoleCode } from "../auth.types";
+import type { MeResponse } from "../auth.types";
 import type { AccountProfile } from "../account";
+import type { WorkerRegistration } from "@construction/domain";
 import type { FaceProfile } from "../face";
 import type {
   CompanyProject,
@@ -36,6 +40,11 @@ export type DemoTeam = ProjectTeam & {
   readonly leader?: TeamLeaderReference | null;
 };
 export type DemoState = {
+  readonly evaluations?: readonly {
+    readonly projectId: string;
+    readonly memberId: string;
+    readonly evaluation: ProjectEvaluation;
+  }[];
   readonly memberHistories?: readonly DemoMemberHistory[];
   readonly plans?: readonly DemoPlan[];
   readonly version: 2;
@@ -55,6 +64,7 @@ export type DemoState = {
   readonly audit: readonly AuditEntry[];
   readonly boundProfileId: string | null;
   readonly accountProfiles?: Readonly<Record<string, AccountProfile>>;
+  readonly workerRegistrations?: Readonly<Record<string, WorkerRegistration>>;
 };
 
 export type LegacyDemoState = Omit<
@@ -456,30 +466,19 @@ export const demoMe = (state: DemoState, userId: string): MeResponse => {
             "dev-team": "profile-team",
             "dev-project": "profile-project",
           } as Readonly<Record<string, string>>
-        )[userId] ?? null);
+        )[userId] ?? (account?.roleCode === "COMPANY_ADMIN" ? `profile-${account.id}` : null));
   const boundPerson: ProjectParticipant | undefined = state.people.find(
     (p) => p.profileId === profileId,
   );
-  const boundRole: RoleCode | null =
-    !boundPerson || boundPerson.status !== "ACTIVE"
-      ? null
-      : boundPerson.participantType === "WORKER"
-        ? boundPerson.projectRoleLabel === "TEAM_LEADER"
-          ? "TEAM_LEADER"
-          : "WORKER"
-        : boundPerson.projectRoleLabel === "TEAM_LEADER"
-          ? "TEAM_LEADER"
-          : "PROJECT_ADMIN";
-  const roleCode: RoleCode | null =
-    boundPerson === undefined ? (account?.roleCode ?? null) : boundRole;
-  const scopeType: string =
-    roleCode === "SYSTEM_ADMIN"
-      ? "GLOBAL"
-      : roleCode === "COMPANY_ADMIN"
-        ? "COMPANY"
-        : roleCode === "TEAM_LEADER"
-          ? "TEAM"
-          : "PROJECT";
+  const memberAssignments: MeResponse["roles"]["assignments"] = state.people
+    .filter((person) => person.profileId === profileId && person.status === "ACTIVE")
+    .flatMap((person) => memberRoleAssignments(person).map((role) => ({
+      roleCode: role.roleCode, scope: { scopeType: role.roleCode === "TEAM_LEADER" ? "TEAM" : "PROJECT", scopeId: role.roleCode === "TEAM_LEADER" ? role.teamId! : person.projectId }
+    })));
+  const accountAssignments: MeResponse["roles"]["assignments"] = account !== undefined &&
+    (account.roleCode === "COMPANY_ADMIN" || account.roleCode === "SYSTEM_ADMIN" || profileId === null)
+    ? [{ roleCode: account.roleCode, scope: { scopeType: account.roleCode === "SYSTEM_ADMIN" ? "GLOBAL" : account.roleCode === "COMPANY_ADMIN" ? "COMPANY" : account.roleCode === "TEAM_LEADER" ? "TEAM" : "PROJECT", scopeId: account.scopeId } }] : [];
+  const assignments = [...accountAssignments, ...memberAssignments].sort((a, b) => ROLE_LEVEL[b.roleCode] - ROLE_LEVEL[a.roleCode]);
   return {
     user: {
       id: userId,
@@ -487,25 +486,6 @@ export const demoMe = (state: DemoState, userId: string): MeResponse => {
       status: "ACTIVE",
     },
     profile: { id: profileId, type: boundPerson?.participantType ?? null },
-    roles: {
-      highestRoleCode: roleCode,
-      assignments:
-        roleCode === null
-          ? []
-          : [
-              {
-                roleCode,
-                scope: {
-                  scopeType,
-                  scopeId:
-                    (boundPerson === undefined ? account?.scopeId : null) ??
-                    (roleCode === "TEAM_LEADER"
-                      ? boundPerson?.teamId
-                      : boundPerson?.projectId) ??
-                    "demo-project",
-                },
-              },
-            ],
-    },
+    roles: { highestRoleCode: assignments[0]?.roleCode ?? null, assignments },
   };
 };

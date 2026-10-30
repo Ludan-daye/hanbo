@@ -2,7 +2,7 @@
   "miniprogramRoot": "dist-weapp/",
   "projectname": "miniprogram",
   "description": "Construction site personnel WeChat mini program",
-  "appid": "wx7f6fcc63cd40ddcd",
+  "appid": "wx963d4a4c8a6b9a45",
   "setting": {
     "swc": false,
     "disableSWC": true,
@@ -11,10 +11,10 @@
     "enhance": true,
     "compileHotReLoad": false,
     "postcss": false,
-    "minified": false,
+    "minified": true,
     "compileWorklet": false,
     "uglifyFileName": false,
-    "uploadWithSourceMap": true,
+    "uploadWithSourceMap": false,
     "packNpmManually": false,
     "packNpmRelationList": [],
     "minifyWXSS": true,
@@ -32,7 +32,7 @@
   "compileType": "miniprogram",
   "simulatorPluginLibVersion": {},
   "packOptions": {
-    "ignore": [],
+    "ignore": [{ "type": "suffix", "value": ".map" }],
     "include": []
   },
   "editorSetting": {}

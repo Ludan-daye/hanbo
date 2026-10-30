@@ -52,6 +52,16 @@ export type DefaultAttendanceConfiguration = {
   readonly schedule: DefaultScheduleResponse | null;
 };
 
+export type AttendancePosition = {
+  readonly latitude: string;
+  readonly longitude: string;
+  readonly locationAccuracyM: string | null;
+};
+
+export type FaceVerificationStartRequest = AttendancePosition & {
+  readonly pointCode: AttendancePointCode;
+};
+
 export type SubmitAttendanceRecordRequest = {
   readonly faceVerificationSessionId?: string | undefined;
   readonly attendanceDate: string;
@@ -122,6 +132,7 @@ export type AttendanceTodayPoint = {
 };
 
 export type AttendanceTodayGeofence = {
+  readonly locationAccuracyLimitM: number | null;
   readonly centerLatitude: string;
   readonly centerLongitude: string;
   readonly radiusM: number;

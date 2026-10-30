@@ -17,6 +17,8 @@ export type AttendanceReportTotals = {
 };
 
 export type AttendanceReportParticipantBase = {
+  readonly projectName: string;
+  readonly evaluation: ProjectEvaluation | null;
   readonly projectId: string;
   readonly displayName: string | null;
   readonly memberId: string;
@@ -31,15 +33,16 @@ export type AttendanceReportParticipantBase = {
   readonly workType: string | null;
 };
 
-export type DailyAttendanceReportParticipant = AttendanceReportParticipantBase & {
-  readonly abnormalRecordCount: number;
-  readonly approvedMakeupCount: number;
-  readonly isAbsent: boolean;
-  readonly isEarlyLeave: boolean;
-  readonly isLate: boolean;
-  readonly isMissingPunch: boolean;
-  readonly workedMinutes: number;
-};
+export type DailyAttendanceReportParticipant =
+  AttendanceReportParticipantBase & {
+    readonly abnormalRecordCount: number;
+    readonly approvedMakeupCount: number;
+    readonly isAbsent: boolean;
+    readonly isEarlyLeave: boolean;
+    readonly isLate: boolean;
+    readonly isMissingPunch: boolean;
+    readonly workedMinutes: number;
+  };
 
 export type RangeAttendanceReportParticipant = AttendanceReportParticipantBase &
   Omit<AttendanceReportTotals, "participantCount">;
@@ -60,4 +63,51 @@ export type RangeAttendanceReportResponse = {
   readonly projectId: string;
   readonly startDate: string;
   readonly totals: AttendanceReportTotals;
+};
+
+export type ProjectEvaluation = {
+  readonly id: string;
+  readonly score: number;
+  readonly comment: string | null;
+  readonly reviewerName: string;
+  readonly reviewedAt: string;
+  readonly updatedAt: string;
+};
+export type ReportPersonDay = {
+  readonly date: string;
+  readonly teamName: string | null;
+  readonly planName: string;
+  readonly isScheduled: boolean;
+  readonly workedMinutes: number;
+  readonly flags: readonly string[];
+  readonly points: readonly {
+    readonly code: string;
+    readonly label: string;
+    readonly time: string;
+    readonly graceMins: number;
+  }[];
+  readonly records: readonly {
+    readonly id: string;
+    readonly pointCode: string;
+    readonly occurredAt: string;
+    readonly isValid: boolean;
+    readonly source: string;
+  }[];
+  readonly makeups: readonly {
+    readonly id: string;
+    readonly pointLabel: string;
+    readonly requestedOccurredAt: string;
+    readonly status: string;
+    readonly reason: string;
+    readonly approvalReason: string | null;
+    readonly approverName: string | null;
+    readonly approvedAt: string | null;
+  }[];
+};
+export type ReportPersonDetail = {
+  readonly person: AttendanceReportParticipantBase;
+  readonly canEvaluate: boolean;
+  readonly startDate: string;
+  readonly endDate: string;
+  readonly days: readonly ReportPersonDay[];
 };

@@ -142,6 +142,13 @@ model WorkerProfile {
   employmentStatus      String
   emergencyContactName  String?
   emergencyContactPhone String?
+  encryptedResidentialAddress String?
+  hasLongTermMedication Boolean?
+  encryptedMedicationDetails String?
+  hasPersonalInsurance Boolean?
+  encryptedInsuranceDetails String?
+  encryptedPayrollBankCard String?
+  registrationCompletedAt DateTime?
   remark                String?
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
@@ -339,6 +346,7 @@ model Team {
   project               Project                @relation(fields: [projectId], references: [id])
   workers               ProjectWorkerMember[]  @relation("TeamWorkerMembers")
   managerScopedMembers  ProjectManagerMember[] @relation("TeamManagerScopeMembers")
+  memberRoles           ProjectMemberRole[]
   leaderWorkerMember    ProjectWorkerMember?   @relation("WorkerTeamLeadership", fields: [leaderWorkerMemberId, projectId], references: [id, projectId], onDelete: Restrict)
   leaderManagerMember   ProjectManagerMember?  @relation("ManagerTeamLeadership", fields: [leaderManagerMemberId, projectId], references: [id, projectId], onDelete: Restrict)
   memberHistories       ProjectMemberHistory[]
@@ -368,6 +376,7 @@ model ProjectWorkerMember {
   ledTeams           Team[]                   @relation("WorkerTeamLeadership")
   history            ProjectMemberHistory[]
   evaluation         ProjectMemberEvaluation?
+  additionalRoles    ProjectMemberRole[]
 
   @@unique([id, projectId])
   @@unique([projectId, workerId])
@@ -395,6 +404,7 @@ model ProjectManagerMember {
   ledTeams           Team[]                   @relation("ManagerTeamLeadership")
   history            ProjectMemberHistory[]
   evaluation         ProjectMemberEvaluation?
+  additionalRoles    ProjectMemberRole[]
 
   @@unique([id, projectId])
   @@unique([projectId, managerId])
@@ -403,6 +413,25 @@ model ProjectManagerMember {
   @@index([managerId, status])
   @@index([projectId, createdAt, id])
   @@map("project_manager_members")
+}
+
+model ProjectMemberRole {
+  id              String @id @default(uuid())
+  projectId       String
+  workerMemberId  String?
+  managerMemberId String?
+  roleCode        RoleCode
+  scopeId         String
+  teamId          String?
+  createdAt       DateTime @default(now())
+  workerMember    ProjectWorkerMember? @relation(fields: [workerMemberId, projectId], references: [id, projectId], onDelete: Cascade)
+  managerMember   ProjectManagerMember? @relation(fields: [managerMemberId, projectId], references: [id, projectId], onDelete: Cascade)
+  team            Team? @relation(fields: [teamId, projectId], references: [id, projectId], onDelete: Restrict)
+
+  @@unique([workerMemberId, roleCode, scopeId])
+  @@unique([managerMemberId, roleCode, scopeId])
+  @@index([projectId, roleCode, teamId])
+  @@map("project_member_roles")
 }
 
 model Shift {
@@ -721,6 +750,7 @@ model ReportExport {
   @@unique([scope, companyId, projectId, teamId, month, version])
   @@index([companyId, month, status])
   @@index([requestedByUserId, createdAt])
+  @@index([status, createdAt])
   @@map("report_exports")
 }
 

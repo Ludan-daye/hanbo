@@ -55,6 +55,10 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
     });
 
     afterAll(async (): Promise<void> => {
+      if (database !== undefined)
+        await database.reportExport.deleteMany({
+          where: { requestedByUserId: reviewerId },
+        });
       if (app !== undefined) await app.close();
     });
 
@@ -534,7 +538,11 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       await expect(
         database.reportExport.create({ data: companyExportData }),
       ).rejects.toThrow();
-      expect(await database.reportExport.count()).toBe(3);
+      expect(
+        await database.reportExport.count({
+          where: { requestedByUserId: reviewerId },
+        }),
+      ).toBe(3);
     });
   },
 );

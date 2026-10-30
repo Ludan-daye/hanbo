@@ -4,6 +4,7 @@ import type { AccountProfile } from "../src/services/account";
 import { initialSessionState, sessionPhase, sessionReducer } from "../src/store/sessionReducer";
 
 const accountProfile: AccountProfile = {
+  workerRegistration: "COMPLETE",
   realName: "张建国",
   phone: "13800000001",
   nickname: "张师傅",
@@ -30,19 +31,19 @@ describe("sessionReducer / sessionPhase", () => {
 
   test("bound user with a role is ready", () => {
     let s = sessionReducer(initialSessionState, { type: "SET_TOKENS", accessToken: "a", refreshToken: "r" });
-    s = sessionReducer(s, { type: "SET_ME", accountProfile, me: me({ isBound: true, highest: "WORKER" }) });
+    s = sessionReducer(s, { type: "SET_ME", faceEnrollmentRequired: false, accountProfile, me: me({ isBound: true, highest: "WORKER" }) });
     expect(sessionPhase(s)).toBe("ready");
   });
 
   test("bound user without a role is norole", () => {
     let s = sessionReducer(initialSessionState, { type: "SET_TOKENS", accessToken: "a", refreshToken: "r" });
-    s = sessionReducer(s, { type: "SET_ME", accountProfile, me: me({ isBound: true, highest: null }) });
+    s = sessionReducer(s, { type: "SET_ME", faceEnrollmentRequired: false, accountProfile, me: me({ isBound: true, highest: null }) });
     expect(sessionPhase(s)).toBe("norole");
   });
 
   test("unbound user goes to bind", () => {
     let s = sessionReducer(initialSessionState, { type: "SET_TOKENS", accessToken: "a", refreshToken: "r" });
-    s = sessionReducer(s, { type: "SET_ME", accountProfile, me: me({ isBound: false, highest: null }) });
+    s = sessionReducer(s, { type: "SET_ME", faceEnrollmentRequired: false, accountProfile, me: me({ isBound: false, highest: null }) });
     expect(sessionPhase(s)).toBe("unbound");
   });
 

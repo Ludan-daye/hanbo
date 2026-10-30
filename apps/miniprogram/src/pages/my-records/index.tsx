@@ -1,3 +1,4 @@
+import { useRouter } from "@tarojs/taro";
 import { Picker, View } from "@tarojs/components";
 import { useEffect, useState } from "react";
 import { useSessionGuard } from "../../hooks/use-session-guard";
@@ -29,12 +30,19 @@ const POINT_LABEL: Readonly<Record<AttendanceRecord["pointCode"], string>> = {
   SEGMENT_2_END: "下午下班",
   SEGMENT_2_START: "下午上班",
 };
-type Range = "TODAY" | "WEEK" | "CUSTOM";
+type Range = "TODAY" | "WEEK" | "MONTH" | "CUSTOM";
 export default function MyRecords(): JSX.Element {
   useSessionGuard();
+  const params = useRouter().params;
+  const projectId = params.projectId ?? null;
+  const initialRange: Range = params.range === "MONTH" ? "MONTH" : "WEEK";
   const { revision, refresh } = usePageRefresh();
-  const [range, setRange] = useState<Range>("WEEK");
-  const [from, setFrom] = useState<string>(chinaDaysAgo(6));
+  const [range, setRange] = useState<Range>(initialRange);
+  const [from, setFrom] = useState<string>(
+    initialRange === "MONTH"
+      ? `${chinaToday().slice(0, 7)}-01`
+      : chinaDaysAgo(6),
+  );
   const [to, setTo] = useState<string>(chinaToday());
   const [items, setItems] = useState<readonly AttendanceRecord[] | null>(null);
   const [days, setDays] = useState<readonly MyAttendanceDay[]>([]);
@@ -51,12 +59,21 @@ export default function MyRecords(): JSX.Element {
     ]).then(
       ([rows, summary, approved]) => {
         if (!cancelled) {
-          setItems(rows);
-          setDays(summary);
+          setItems(
+            rows.filter(
+              (row) => projectId === null || row.projectId === projectId,
+            ),
+          );
+          setDays(
+            summary.filter(
+              (row) => projectId === null || row.projectId === projectId,
+            ),
+          );
           setMakeups(
             approved.filter(
               (row) =>
                 row.status === "APPROVED" &&
+                (projectId === null || row.projectId === projectId) &&
                 row.attendanceDate >= from &&
                 row.attendanceDate <= to,
             ),
@@ -73,7 +90,7 @@ export default function MyRecords(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [from, to, revision]);
+  }, [from, to, revision, projectId]);
   const selectRange = (value: Range): void => {
     setRange(value);
     if (value === "TODAY") {
@@ -84,14 +101,19 @@ export default function MyRecords(): JSX.Element {
       setFrom(chinaDaysAgo(6));
       setTo(chinaToday());
     }
+    if (value === "MONTH") {
+      setFrom(`${chinaToday().slice(0, 7)}-01`);
+      setTo(chinaToday());
+    }
   };
   return (
     <Screen>
-      <PageHeader title="我的考勤" />
+      <PageHeader title={projectId === null ? "我的考勤" : "本项目考勤"} />
       <Segmented
         options={[
           { value: "TODAY", label: "今天" },
           { value: "WEEK", label: "近7天" },
+          { value: "MONTH", label: "本月" },
           { value: "CUSTOM", label: "自选日期" },
         ]}
         value={range}

@@ -2,10 +2,10 @@ import Taro from "@tarojs/taro";
 import { View } from "@tarojs/components";
 import { useEffect, useMemo, useState } from "react";
 import {
-  participantPermissionRole,
   permissionLevel,
   type PermissionCategory,
 } from "../../routing/permissionLevels";
+import { memberRoleAssignments, memberRoleLabels } from "../../services/member-roles";
 import { displayProjectRole } from "../../routing/features";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 
@@ -73,8 +73,8 @@ export default function CompanyPeople(): JSX.Element {
     return items.filter(
       (p) =>
         (filter === "ALL" ||
-          permissionLevel(participantPermissionRole(p)).category === filter) &&
-        `${p.displayName ?? ""} ${p.phone} ${p.teamName ?? ""} ${displayProjectRole(p.projectRoleLabel)}`.includes(
+          memberRoleAssignments(p).some((role) => permissionLevel(role.roleCode).category === filter)) &&
+        `${p.displayName ?? ""} ${p.phone} ${p.teamName ?? ""} ${displayProjectRole(p.projectRoleLabel)} ${memberRoleLabels(p)}`.includes(
           search.trim(),
         ),
     );
@@ -119,7 +119,7 @@ export default function CompanyPeople(): JSX.Element {
           <ListItem
             key={p.memberId}
             primary={p.displayName ?? `成员 · ${p.phone.slice(-4)}`}
-            secondary={`${permissionLevel(participantPermissionRole(p)).label} · ${displayProjectRole(p.projectRoleLabel)} · ${p.teamName ?? "无班组"} · ${p.phone}`}
+            secondary={`${memberRoleLabels(p)} · ${displayProjectRole(p.projectRoleLabel)} · ${p.teamName ?? "无班组"} · ${p.phone}`}
             chip={p.projectName}
             onClick={() => {
               void Taro.navigateTo({

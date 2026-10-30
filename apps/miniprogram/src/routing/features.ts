@@ -7,11 +7,11 @@ export type Feature = {
   readonly icon: IconName;
   readonly url: string;
 };
-const PUNCH: Feature = {
-  title: "考勤打卡",
-  sub: "定位、活体核验与现场照片",
-  icon: "clock",
-  url: "/pages/punch/index",
+const MY_PROJECTS: Feature = {
+  title: "我的项目",
+  sub: "按项目查看安排与打卡",
+  icon: "building",
+  url: "/pages/my-projects/index",
 };
 const RECORDS: Feature = {
   title: "我的考勤",
@@ -35,7 +35,7 @@ export const PANEL_LABELS: Readonly<Record<PanelKey, string>> = {
   none: "待分配角色",
 };
 export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
-  worker: [PUNCH, RECORDS, MAKEUPS],
+  worker: [MY_PROJECTS, RECORDS, MAKEUPS],
   teamLeader: [
     { title: "打卡安排", sub: "设置本班组下级的打卡要求", icon: "calendar", url: "/pages/schedules/index" },
     {
@@ -50,7 +50,7 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       icon: "chart",
       url: "/pages/team-attendance/index",
     },
-    PUNCH,
+    MY_PROJECTS,
     RECORDS,
     MAKEUPS,
   ],
@@ -92,7 +92,7 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       icon: "settings",
       url: "/pages/project-detail/index",
     },
-    PUNCH,
+    MY_PROJECTS,
     RECORDS,
     MAKEUPS,
   ],

@@ -1,0 +1,117 @@
+.registration-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 160rpx;
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border-radius: 12rpx;
+  background: var(--surface-sunk);
+  color: var(--ink);
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+.registration-note {
+  color: var(--ink-soft);
+  font-size: 24rpx;
+  line-height: 1.7;
+  margin: 24rpx 0;
+}
+
+.registration-field {
+  margin: 24rpx 0;
+}
+.registration-input {
+  box-sizing: border-box;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.registration-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  box-sizing: border-box;
+  min-height: 88rpx;
+  padding: 20rpx 24rpx;
+  border: 1rpx solid var(--line);
+  border-radius: 12rpx;
+  font-size: 27rpx;
+}
+.registration-placeholder,
+.registration-chevron {
+  color: var(--ink-soft);
+}
+.registration-chevron {
+  flex-shrink: 0;
+  font-size: 34rpx;
+}
+.registration-hint,
+.registration-error {
+  margin-top: 12rpx;
+  font-size: 23rpx;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+.registration-error {
+  color: var(--danger);
+}
+.registration-input--error {
+  border-color: var(--danger);
+}
+.registration-phone-row,
+.registration-date-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+.registration-phone-row > .registration-field:first-child {
+  flex: 0 0 160rpx;
+}
+.registration-phone-row > .registration-field:last-child {
+  flex: 1;
+  min-width: 0;
+}
+.registration-date-row > picker,
+.registration-date-row > taro-picker-core {
+  flex: 1;
+  min-width: 0;
+}
+.registration-date-row .registration-select {
+  padding: 20rpx 16rpx;
+  font-size: 25rpx;
+}
+.registration-date-divider {
+  color: var(--ink-soft);
+  font-size: 24rpx;
+}
+.registration-insurance-fields {
+  margin-top: 28rpx;
+}
+.registration-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin: -8rpx 0 24rpx;
+}
+.registration-suggestion {
+  padding: 12rpx 18rpx;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunk);
+  border: 1rpx solid transparent;
+  color: var(--ink-soft);
+  font-size: 23rpx;
+}
+.registration-suggestion--active {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.registration-card-preview {
+  padding: 24rpx;
+  margin-top: -8rpx;
+  border-radius: 12rpx;
+  background: var(--surface-sunk);
+  font-size: 31rpx;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 2rpx;
+  word-break: break-all;
+}
