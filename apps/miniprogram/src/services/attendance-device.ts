@@ -11,6 +11,18 @@ export const readAttendanceLocation = async (): Promise<AttendanceLocation> => {
 };
 
 export const chooseAttendancePhoto = async (): Promise<string> => {
+  if (process.env.TARO_ENV === "weapp") {
+    const result = await Taro.chooseMedia({
+      count: 1,
+      mediaType: ["image"],
+      sizeType: ["compressed"],
+      sourceType: ["camera"],
+    });
+    const file = result.tempFiles[0];
+    if (!file?.tempFilePath) throw new Error("未读取到照片，请重新拍摄。");
+    if (file.size > 5 * 1024 * 1024) throw new Error("照片超过 5MB，请重新拍摄。");
+    return file.tempFilePath;
+  }
   const result = await Taro.chooseImage({
     count: 1,
     sizeType: ["compressed"],

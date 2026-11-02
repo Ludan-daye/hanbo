@@ -3,18 +3,27 @@ import Taro, { useDidShow } from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
 import {
-  AppHeader,
   AppIcon,
   Button,
   Notice,
-  Screen,
   Subtitle,
   type IconName,
 } from "../../components/ui/index";
-import { ACCESS_TOKEN_KEY, FRONTEND_DEMO, TEST_LOGIN_ENABLED } from "../../config/env";
-import { devLogin, loginWithWechat, loginTestAccount, type TestAccountCode } from "../../services/auth";
+import { FlowScreen } from "../../components/worker-flow";
+import {
+  ACCESS_TOKEN_KEY,
+  FRONTEND_DEMO,
+  TEST_LOGIN_ENABLED,
+} from "../../config/env";
+import {
+  devLogin,
+  loginWithWechat,
+  loginTestAccount,
+  type TestAccountCode,
+} from "../../services/auth";
 import { useSession } from "../../store/session";
 import { sessionEntryUrl } from "../../routing/session";
+import { prepareDemoWorkerPreview } from "../../services/demo/client";
 
 import "./index.scss";
 
@@ -90,15 +99,36 @@ export default function Login(): JSX.Element {
     }
   };
   return (
-    <Screen>
-      <AppHeader title="瀚渤" />
+    <FlowScreen title="瀚渤" enabled root>
       <View className="login-intro">
-        <View className="login-logo">H</View>
+        <View className="login-logo">
+          <AppIcon name="building" />
+        </View>
         <View className="login-title">欢迎使用瀚渤</View>
         <Subtitle>项目、人员与考勤，一个入口。</Subtitle>
       </View>
       <View className="login-wechat">
+        {FRONTEND_DEMO ? (
+          <View className="login-demo-preview">
+            <Button
+              loading={busy === "worker-preview"}
+              disabled={busy !== null}
+              onClick={() => {
+                void signIn(async () => {
+                  prepareDemoWorkerPreview();
+                  await devLogin("dev-worker");
+                }, "worker-preview");
+              }}
+            >
+              直接体验工人端
+            </Button>
+            <View className="login-wechat__note">
+              使用虚构资料直接进入首页，无需填写。数据仅保存在本机。
+            </View>
+          </View>
+        ) : null}
         <Button
+          variant={FRONTEND_DEMO ? "outline" : "primary"}
           loading={busy !== null}
           disabled={!FRONTEND_DEMO && !nativeWechatLogin}
           onClick={() => {
@@ -126,15 +156,24 @@ export default function Login(): JSX.Element {
       {FRONTEND_DEMO || TEST_LOGIN_ENABLED ? (
         <>
           <View className="login-section login-section--demo">
-            <View className="login-section__title">{FRONTEND_DEMO ? "选择演示身份" : "测试人员登录"}</View>
+            <View className="login-section__title">
+              {FRONTEND_DEMO ? "选择演示身份" : "测试人员登录"}
+            </View>
           </View>
           {TEST_LOGIN_ENABLED ? (
             <View className="ui-field-wrap">
               <View className="ui-field-label">测试口令</View>
-              <Input className="ui-field" password value={testPasscode} maxlength={128}
+              <Input
+                className="ui-field"
+                password
+                value={testPasscode}
+                maxlength={128}
                 placeholder="输入口令后，点击下方测试身份"
-                onInput={(event) => setTestPasscode(event.detail.value)} />
-              <View className="login-wechat__note">共用测试账号，操作会保存到云端测试库。</View>
+                onInput={(event) => setTestPasscode(event.detail.value)}
+              />
+              <View className="login-wechat__note">
+                共用测试账号，操作会保存到云端测试库。
+              </View>
             </View>
           ) : null}
           <View className="login-roles">
@@ -143,7 +182,13 @@ export default function Login(): JSX.Element {
                 key={role.code}
                 className={`login-role ${busy === role.code ? "login-role--busy" : ""}`}
                 onClick={() => {
-                  void signIn(() => FRONTEND_DEMO ? devLogin(role.code) : loginTestAccount(role.code, testPasscode), role.code);
+                  void signIn(
+                    () =>
+                      FRONTEND_DEMO
+                        ? devLogin(role.code)
+                        : loginTestAccount(role.code, testPasscode),
+                    role.code,
+                  );
                 }}
               >
                 <View className="login-role__icon">
@@ -171,6 +216,6 @@ export default function Login(): JSX.Element {
           "人员档案与岗位权限由管理员统一分配，请使用本人微信登录。"
         )}
       </View>
-    </Screen>
+    </FlowScreen>
   );
 }

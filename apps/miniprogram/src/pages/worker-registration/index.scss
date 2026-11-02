@@ -115,3 +115,33 @@
   letter-spacing: 2rpx;
   word-break: break-all;
 }
+
+.worker-flow {
+  .registration-step-heading { margin: 20Px 0 24Px; }
+  .registration-step-progress { margin-bottom: 10Px; color: #626d78; font-size: 14Px; }
+  .registration-step-title { color: #101820; font-size: 24Px; line-height: 1.4; font-weight: 650; }
+  .registration-group .ui-section { margin: 0 0 24Px; padding: 0; background: transparent; border: 0; box-shadow: none; }
+  .registration-group .ui-section__heading { display: none; }
+  .registration-group .ui-section > .ui-subtitle { font-size: 16Px; color: #101820; }
+  .registration-field { margin: 20Px 0; }
+  .registration-input,
+  .registration-select { min-height: 52Px; padding: 14Px 16Px; font-size: 16Px; border-radius: 9Px; background: #fff; }
+  .registration-input { height: 52Px; }
+  .registration-textarea { margin-top: 12Px; min-height: 100Px; padding: 14Px 16Px; border: 1Px solid #dce3ec; border-radius: 9Px; background: #fff; font-size: 16Px; }
+  .registration-hint,
+  .registration-error,
+  .registration-note { font-size: 14Px; line-height: 1.6; }
+  .registration-phone-row { gap: 12Px; }
+  .registration-phone-row > .registration-field:first-child { flex-basis: 100Px; }
+  .registration-date-row { gap: 8Px; }
+  .registration-date-row .registration-select { padding: 12Px 8Px; font-size: 14Px; }
+  .registration-date-divider { font-size: 14Px; }
+  .registration-suggestion { min-height: 44Px; box-sizing: border-box; display: flex; align-items: center; font-size: 14Px; padding: 10Px 12Px; border-radius: 8Px; }
+  .registration-suggestion--active { color: #1e6ee8; border-color: #c8dffc; background: #eaf4ff; }
+  .registration-card-preview { font-size: 18Px; padding: 16Px; letter-spacing: 1Px; }
+  .registration-review { margin-top: 28Px; }
+  .registration-review-title { font-size: 18Px; font-weight: 600; margin-bottom: 12Px; }
+  .registration-actions { display: flex; gap: 10Px; margin: 24Px 0 16Px; }
+  .registration-actions > .ui-btn { flex: 1; min-width: 0; margin: 0; }
+  .registration-actions .ui-btn--outline { flex: 0 0 38%; }
+}

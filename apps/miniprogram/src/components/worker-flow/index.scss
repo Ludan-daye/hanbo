@@ -1,0 +1,50 @@
+// Px intentionally bypasses Taro's 750-design-width conversion.
+.worker-flow {
+  font-size: 16Px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  .ui-title { font-size: 24Px; line-height: 1.4; letter-spacing: 0; }
+  .ui-subtitle, .ui-label { font-size: 14Px; color: #626d78; line-height: 1.65; }
+  .ui-section { margin-top: 28Px; }
+  .ui-section__heading { font-size: 18Px; margin-bottom: 12Px; }
+  .ui-btn {
+    min-height: 52Px; padding: 12Px 16Px; margin-top: 16Px;
+    border-radius: 28Px; font-size: 18Px; line-height: 1.5;
+    white-space: normal; box-sizing: border-box;
+  }
+  .ui-btn--primary { background: #101820; color: #fff; }
+  .ui-btn--outline { background: #fff; border: 1Px solid #dce1e5; color: #101820; }
+  .ui-btn[disabled] { background: #e9ecef; color: #78828b; border-color: #e9ecef; }
+  .ui-field-wrap { margin-top: 20Px; }
+  .ui-field-label { font-size: 16Px; margin-bottom: 8Px; color: #101820; }
+  .ui-field {
+    min-height: 52Px; height: 52Px; padding: 0 14Px; font-size: 16Px;
+    border: 1Px solid #dce1e5; border-radius: 10Px; background: #f6f7f8;
+  }
+  .ui-field[disabled] { color: #626d78; background: #f1f3f5; }
+  .ui-notice { padding: 14Px 16Px; margin-top: 16Px; font-size: 14Px; border-radius: 10Px; line-height: 1.7; }
+  .ui-state { padding: 32Px 0; margin-top: 12Px; }
+  .ui-state__title { font-size: 18Px; }
+  .ui-state__symbol { width: 44Px; height: 44Px; font-size: 24Px; margin-bottom: 12Px; }
+  .ui-state--loading .ui-state__symbol { width: 20Px; height: 20Px; font-size: 0; }
+  .ui-segmented { margin: 16Px 0; gap: 4Px; }
+  .ui-segmented__item { min-height: 44Px; padding: 11Px 2Px; font-size: 14Px; box-sizing: border-box; }
+  .ui-segmented__item--active { color: #101820; border-bottom-color: #101820; }
+  .ui-listitem { min-height: 56Px; padding: 16Px 0; gap: 12Px; box-sizing: border-box; }
+  .ui-listitem__primary { font-size: 16Px; font-weight: 500; }
+  .ui-listitem__secondary { margin-top: 4Px; font-size: 14Px; line-height: 1.65; }
+  .ui-listitem__chip { max-width: 110Px; font-size: 14Px; padding: 4Px 8Px; }
+  .ui-listitem__arrow { font-size: 22Px; }
+  .ui-badge, .text-count { font-size: 14Px; }
+  .ui-statcard__label { font-size: 14Px; white-space: normal; }
+  .ui-statcard__value { font-size: 28Px; }
+  .form-card { margin-top: 20Px; padding: 0; border: 0; border-radius: 0; }
+  .page-intro { margin: 24Px 0; }
+  .page-footnote { margin: 24Px 0 0; font-size: 14Px; line-height: 1.65; letter-spacing: 0; }
+  .reason-textarea { min-height: 130Px; padding: 14Px; font-size: 16Px; line-height: 1.6; border-radius: 10Px; }
+  // H5 uses an inner native textarea; without this it keeps the browser's 13px monospace default.
+  .taro-textarea { font: inherit; color: inherit; background: transparent; width: 100%; min-height: 96Px; box-sizing: border-box; }
+  .action-row { flex-wrap: wrap; gap: 10Px; }
+  .action-row > .ui-btn { flex-basis: 130Px; min-width: 0; }
+  .app-icon { width: 24Px; height: 24Px; }
+}

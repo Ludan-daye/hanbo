@@ -1,0 +1,99 @@
+// Worker opt-in only. Uppercase Px preserves logical pixels with designWidth 750.
+.worker-ui {
+  --worker-muted: #626d78;
+  padding: 0 38rpx calc(90Px + env(safe-area-inset-bottom));
+  background: #fff;
+  color: #101820;
+  font-size: 16Px;
+  line-height: 1.5;
+}
+.worker-ui .demo-mode-strip {
+  font-size: 14Px;
+  line-height: 1.5;
+  padding: 6Px 0;
+  color: var(--worker-muted);
+}
+.worker-header.ui-header {
+  position: relative;
+  margin: 0 -38rpx;
+  padding-left: 38rpx;
+  padding-right: 38rpx;
+  border: 0;
+  background: #fff;
+}
+.worker-header .ui-header__bar {
+  height: auto;
+  min-height: 48Px;
+}
+.worker-header .ui-header__brand {
+  font-size: 22Px;
+  line-height: 1.3;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+.worker-header .ui-header__title {
+  position: static;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  white-space: normal;
+  font-size: 22Px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.worker-header .ui-header__back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44Px;
+  min-height: 44Px;
+  margin-left: -12Px;
+  font-size: 32Px;
+  line-height: 1;
+}
+.worker-button.ui-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 52Px;
+  height: auto;
+  padding: 12Px 16Px;
+  margin: 0;
+  border-radius: 28Px;
+  font-size: 18Px;
+  font-weight: 650;
+  line-height: 1.5;
+  background: #101820;
+  color: #fff;
+  box-shadow: none;
+}
+.worker-button.ui-btn--outline {
+  background: transparent;
+  color: #101820;
+  border: 1Px solid #cbd2d9;
+}
+.worker-button.ui-btn[disabled] {
+  background: #dce2e9;
+  color: #626d78;
+}
+.worker-nav.ui-bottom-nav {
+  padding: 8Px 12Px calc(8Px + env(safe-area-inset-bottom));
+  border-top: 1Px solid #e5e8eb;
+}
+.worker-nav .ui-bottom-nav__item {
+  min-height: 52Px;
+  padding: 4Px 0;
+  font-size: 14Px;
+  gap: 2Px;
+}
+.worker-nav .app-icon {
+  width: 26Px;
+  height: 26Px;
+}
+@media (max-width: 360Px) {
+  .worker-header .ui-header__brand {
+    font-size: 20Px;
+  }
+}

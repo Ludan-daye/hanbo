@@ -46,3 +46,13 @@
   line-height: 1.6;
   margin: 20px 0;
 }
+
+.account-form--worker {
+  .account-avatar-button { min-height: 72Px; padding: 12Px 0 20Px; gap: 14Px; margin-bottom: 20Px; }
+  .account-avatar-button .profile-avatar { width: 56Px; height: 56Px; }
+  .account-avatar-button__title { font-size: 16Px; }
+  .account-avatar-button__sub { font-size: 14Px; margin-top: 4Px; }
+  .account-avatar-button__arrow { font-size: 22Px; }
+  .account-identity-note { color: #626d78; font-size: 14Px; margin: 16Px 0; line-height: 1.65; }
+  .account-saved { font-size: 14Px; margin: 12Px 0; }
+}

@@ -2,17 +2,9 @@ import { View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
-import {
-  AppHeader,
-  AppIcon,
-  Button,
-  Notice,
-  Screen,
-  Section,
-  Subtitle,
-  Title,
-} from "../../components/ui/index";
+import { Button, Notice, Subtitle, Title } from "../../components/ui/index";
 import { AccountProfileForm } from "../../components/account-profile-form";
+import { FlowScreen } from "../../components/worker-flow";
 import { ACCESS_TOKEN_KEY, FRONTEND_DEMO } from "../../config/env";
 import { sessionEntryUrl } from "../../routing/session";
 import { useSession } from "../../store/session";
@@ -47,18 +39,15 @@ export default function CompleteProfile(): JSX.Element {
   };
 
   return (
-    <Screen>
-      <AppHeader title="完善账号资料" />
+    <FlowScreen title="完善本人资料" enabled root>
       <View className="complete-profile-intro">
-        <View className="complete-profile-icon">
-          <AppIcon name="user" />
-        </View>
         <Title>先认识一下你</Title>
-        <Subtitle>完成本人资料后，绑定档案并进入项目。</Subtitle>
+        <Subtitle>完善资料后，继续绑定本人档案。</Subtitle>
       </View>
-      <Section title="本人资料" sub="头像、昵称、真实姓名和手机号均为必填">
+      <View className="complete-profile-form">
         {state.accountProfile !== null ? (
           <AccountProfileForm
+            appearance="worker"
             profile={state.accountProfile}
             submitLabel="保存并继续"
             onSaved={async (): Promise<void> => {
@@ -66,11 +55,11 @@ export default function CompleteProfile(): JSX.Element {
             }}
           />
         ) : null}
-      </Section>
+      </View>
       <View className="complete-profile-note">
         {FRONTEND_DEMO
           ? "当前为演示账号，资料只保存在本机。"
-          : "请使用本人微信，并填写本人真实姓名和手机号。资料用于关联人员档案；头像不作为考勤人脸核验依据。"}
+          : "请填写本人资料以关联人员档案。头像不作为考勤人脸核验依据。"}
       </View>
       {error ? <Notice>{error}</Notice> : null}
       <Button
@@ -82,6 +71,6 @@ export default function CompleteProfile(): JSX.Element {
       >
         退出登录
       </Button>
-    </Screen>
+    </FlowScreen>
   );
 }

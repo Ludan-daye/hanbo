@@ -24,8 +24,10 @@ const ITEMS: readonly NavItem[] = [
 
 export const BottomNav = ({
   active,
+  appearance,
 }: {
   readonly active: NavKey;
+  readonly appearance?: "worker";
 }): JSX.Element => {
   const { state } = useSession();
   const isWorker = state.me?.roles.highestRoleCode === "WORKER";
@@ -40,7 +42,9 @@ export const BottomNav = ({
       : item,
   );
   return (
-    <View className="ui-bottom-nav">
+    <View
+      className={`ui-bottom-nav${appearance === "worker" ? " worker-nav" : ""}`}
+    >
       {items.map((item) => (
         <Button
           key={item.key}

@@ -15,6 +15,7 @@ import {
   Title,
 } from "../../components/ui/index";
 import { AccountProfileForm } from "../../components/account-profile-form";
+import { FlowScreen } from "../../components/worker-flow";
 import { ACCESS_TOKEN_KEY, FRONTEND_DEMO } from "../../config/env";
 import { bindByInvitation } from "../../services/auth";
 import { useSession } from "../../store/session";
@@ -29,6 +30,9 @@ export default function Bind(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [bindingComplete, setBindingComplete] = useState<boolean>(false);
   const bound: boolean = bindingComplete || state.me?.user.isBound === true;
+  const workerFlow =
+    !state.me?.roles.highestRoleCode ||
+    state.me.roles.highestRoleCode === "WORKER";
   const guard = (): void => {
     if (phase === "anonymous" || !Taro.getStorageSync(ACCESS_TOKEN_KEY)) {
       void Taro.reLaunch({ url: "/pages/login/index" });
@@ -107,6 +111,129 @@ export default function Bind(): JSX.Element {
       await Taro.reLaunch({ url: "/pages/login/index" });
     }
   };
+  if (workerFlow)
+    return (
+      <FlowScreen title="邀请码绑定" enabled root>
+        {bound ? (
+          <>
+            <View className="worker-binding-result">
+              <View className="worker-binding-result-icon">
+                <AppIcon name="check" />
+              </View>
+              <Title>本人档案已绑定</Title>
+              <ListItem
+                primary="人员档案"
+                secondary={state.me?.profile.type === "WORKER" ? "工人档案" : "档案关联成功"}
+              />
+              <ListItem
+                primary="姓名"
+                secondary={state.accountProfile?.realName ?? "本人档案"}
+              />
+              <ListItem
+                primary="手机号"
+                secondary={state.accountProfile?.phoneMasked ?? "已登记"}
+              />
+              {state.me?.roles.highestRoleCode ? (
+                <ListItem
+                  primary="权限等级"
+                  secondary={permissionLabel(state.me.roles.highestRoleCode)}
+                />
+              ) : null}
+            </View>
+            {error ? <Notice>{error}</Notice> : null}
+            <Button
+              loading={busy}
+              onClick={() => {
+                void enterProject();
+              }}
+            >
+              {state.accountProfile?.workerRegistration === "COMPLETE" ? "查看用工资料" : "继续完善用工资料"}
+            </Button>
+          </>
+        ) : (
+          <>
+            <View className="worker-binding-intro">
+              <Title>绑定本人档案</Title>
+              <Subtitle>
+                输入管理员提供的邀请码，关联项目中的本人档案。
+              </Subtitle>
+            </View>
+            <View className="worker-binding-card">
+              <Field
+                label="邀请码"
+                value={code}
+                placeholder="请输入邀请码"
+                disabled={busy}
+                onInput={(next) => {
+                  setCode(next);
+                  setError(null);
+                }}
+              />
+              {error ? <Notice>{error}</Notice> : null}
+              <Button
+                loading={busy}
+                disabled={editingProfile}
+                onClick={() => {
+                  void submit();
+                }}
+              >
+                {error ? "重新绑定" : "确认绑定"}
+              </Button>
+            </View>
+            <View className="worker-binding-profile">
+              <View className="worker-binding-section-title">本人资料</View>
+              <ListItem
+                primary={state.accountProfile?.realName ?? "未填写姓名"}
+                secondary={state.accountProfile?.phoneMasked ?? "未填写手机号"}
+                chip={editingProfile ? "收起" : "修改资料"}
+                onClick={() => {
+                  if (!busy) setEditingProfile(!editingProfile);
+                }}
+              />
+              {editingProfile && state.accountProfile !== null ? (
+                <AccountProfileForm
+                  appearance="worker"
+                  profile={state.accountProfile}
+                  submitLabel="保存本人资料"
+                  onSaved={async () => {
+                    await refreshMe();
+                    setEditingProfile(false);
+                    setError(null);
+                  }}
+                />
+              ) : null}
+            </View>
+          </>
+        )}
+        {FRONTEND_DEMO ? (
+          <View className="worker-binding-demo">
+            <View>演示绑定仅保存在本机，不关联真实微信。</View>
+            {!bound ? (
+              <>
+                <View>预置姓名：待入场成员</View>
+                <View>手机号：13800000006</View>
+                <View>邀请码：HANBO-DEMO</View>
+                <View>请先在“修改资料”中填写匹配信息，再绑定。</View>
+              </>
+            ) : null}
+          </View>
+        ) : null}
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => {
+            void signOut();
+          }}
+        >
+          退出登录
+        </Button>
+        <View className="worker-binding-footnote">
+          {bound
+            ? "资料有误请联系管理员核实。"
+            : "邀请码仅供本人使用，失效请联系管理员重新获取。"}
+        </View>
+      </FlowScreen>
+    );
   return (
     <Screen>
       <AppHeader title={bound ? "账号绑定" : "绑定本人档案"} />

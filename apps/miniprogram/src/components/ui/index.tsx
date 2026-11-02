@@ -1,16 +1,24 @@
 import { Button as TaroButton, Input, View } from "@tarojs/components";
-import type { PropsWithChildren } from "react";
+import type { PropsWithChildren, ReactNode } from "react";
 
 import { FRONTEND_DEMO } from "../../config/env";
 import { useSession } from "../../store/session";
 import { PrivacyAuthorization } from "../privacy-authorization";
 
 import "./ui.scss";
+import "./worker.scss";
 
-export const Screen = ({ children }: PropsWithChildren): JSX.Element => {
+export const Screen = ({
+  children,
+  appearance,
+  header,
+}: PropsWithChildren<{
+  readonly appearance?: "worker";
+  readonly header?: ReactNode;
+}>): JSX.Element => {
   const { phase } = useSession();
   return (
-    <View className="ui-screen">
+    <View className={`ui-screen${appearance === "worker" ? " worker-ui" : ""}`}>
       {phase === "loading" ? (
         <View className="session-loading">
           <View className="ui-btn__spinner" />
@@ -18,6 +26,7 @@ export const Screen = ({ children }: PropsWithChildren): JSX.Element => {
         </View>
       ) : (
         <>
+          {header}
           {FRONTEND_DEMO ? (
             <View className="demo-mode-strip">
               演示模式 · 本机数据 · 定位与人脸为模拟
@@ -62,6 +71,7 @@ type ButtonProps = PropsWithChildren<{
   readonly variant?: "primary" | "outline" | "danger";
   readonly disabled?: boolean;
   readonly loading?: boolean;
+  readonly appearance?: "worker";
 }>;
 
 export const Button = ({
@@ -70,9 +80,10 @@ export const Button = ({
   variant,
   disabled,
   loading,
+  appearance,
 }: ButtonProps): JSX.Element => (
   <TaroButton
-    className={`ui-btn ui-btn--${variant ?? "primary"}`}
+    className={`ui-btn ui-btn--${variant ?? "primary"}${appearance === "worker" ? " worker-button" : ""}`}
     onClick={onClick}
     disabled={disabled === true || loading === true ? true : undefined}
   >

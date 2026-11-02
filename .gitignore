@@ -3,6 +3,7 @@ dist/
 apps/miniprogram/dist-weapp/
 apps/miniprogram/src/verify_mpsdk/
 coverage/
+/output/
 .env
 .env.local
 .env.*

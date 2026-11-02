@@ -19,12 +19,14 @@ type AccountProfileFormProps = {
   readonly profile: AccountProfile;
   readonly submitLabel: string;
   readonly onSaved: (profile: AccountProfile) => Promise<void>;
+  readonly appearance?: "worker";
 };
 
 export const AccountProfileForm = ({
   profile,
   submitLabel,
   onSaved,
+  appearance,
 }: AccountProfileFormProps): JSX.Element => {
   const [realName, setRealName] = useState<string>(profile.realName ?? "");
   const [phone, setPhone] = useState<string>(profile.phone ?? "");
@@ -132,7 +134,13 @@ export const AccountProfileForm = ({
   };
 
   return (
-    <>
+    <View
+      className={
+        appearance === "worker"
+          ? "account-form account-form--worker"
+          : "account-form"
+      }
+    >
       <NativeButton
         className="account-avatar-button"
         openType={nativeAvatarPicker ? "chooseAvatar" : undefined}
@@ -226,6 +234,6 @@ export const AccountProfileForm = ({
       {savedMessage ? (
         <View className="account-saved">{savedMessage}</View>
       ) : null}
-    </>
+    </View>
   );
 };

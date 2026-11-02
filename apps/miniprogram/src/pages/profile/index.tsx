@@ -1,5 +1,5 @@
 import { permissionLabel } from "../../routing/permissionLevels";
-import { View } from "@tarojs/components";
+import { Button as NativeButton, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
@@ -28,6 +28,7 @@ import { myProjectDetailUrl } from "../../services/project-attendance";
 import { fetchMyProjects } from "../../services/me";
 import type { MyProjectMembership } from "../../services/me.types";
 import { useSession } from "../../store/session";
+import { FlowScreen } from "../../components/worker-flow";
 
 import "./index.scss";
 
@@ -46,6 +47,7 @@ export default function Profile(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const [editingProfile, setEditingProfile] = useState<boolean>(false);
+  const [auxiliaryOpen, setAuxiliaryOpen] = useState<boolean>(false);
   const panel = roleHomePanel(state.me?.roles.highestRoleCode ?? null);
   useEffect(() => {
     if (state.me === null) return;
@@ -75,6 +77,100 @@ export default function Profile(): JSX.Element {
       await Taro.reLaunch({ url: "/pages/login/index" });
     }
   };
+  const resetDemo = async (): Promise<void> => {
+    if (busy || !FRONTEND_DEMO) return;
+    const result = await Taro.showModal({
+      title: "重置前端演示数据",
+      content: "将删除本机的演示人员、照片和操作记录，并恢复初始场景。",
+      confirmText: "重置",
+    });
+    if (!result.confirm) return;
+    setBusy(true);
+    try {
+      await clear();
+      resetDemoState();
+      await Taro.reLaunch({ url: "/pages/login/index" });
+    } catch (failure: unknown) {
+      setError(failure instanceof Error ? failure.message : "重置失败");
+      setBusy(false);
+    }
+  };
+  if (state.me?.roles.highestRoleCode === "WORKER") {
+    const go = (url: string): void => { void Taro.navigateTo({ url }); };
+    return (
+      <FlowScreen title="我的" root>
+        <View className="worker-profile">
+          <View className="worker-profile__identity">
+            <View className="worker-profile__avatar"><AccountAvatar src={account?.avatarDataUrl ?? null} /></View>
+            <View className="worker-profile__identity-body">
+              <View className="worker-profile__name">
+                {account?.nickname ?? (account === null ? accountError === null ? "资料读取中…" : "资料未加载" : "未设置昵称")}
+              </View>
+              <View className="worker-profile__muted">普通工人 · {state.me.user.isBound ? "档案已绑定" : "待绑定本人档案"}</View>
+              {account?.realName ? <View className="worker-profile__muted">本人姓名：{account.realName}</View> : null}
+              {account?.phoneMasked ? <View className="worker-profile__muted">{account.phoneMasked}</View> : null}
+              <View className="worker-profile__muted">{FRONTEND_DEMO ? "本机演示账号 · 不关联真实微信" : "微信登录 · 已关联"}</View>
+            </View>
+          </View>
+          {accountError ? <StateView title="账号资料读取失败" sub={accountError} onRetry={refreshAccount} /> : null}
+          <View className="worker-profile__group">
+            <NativeButton className="worker-profile__row" onClick={() => setEditingProfile(!editingProfile)}>
+              <View>本人资料</View><View className="worker-profile__row-hint">{editingProfile ? "收起编辑" : "编辑"}</View>
+            </NativeButton>
+            {editingProfile && account ? (
+              <View className="worker-profile__editor">
+                <AccountProfileForm appearance="worker" profile={account} submitLabel="保存资料" onSaved={async () => {
+                  await refreshMe(); refreshAccount(); setEditingProfile(false);
+                }} />
+                <Button appearance="worker" variant="outline" onClick={() => setEditingProfile(false)}>取消编辑</Button>
+              </View>
+            ) : null}
+            {account && account.workerRegistration !== "NOT_APPLICABLE" ? (
+              <NativeButton className="worker-profile__row" onClick={() => go("/pages/worker-registration/index")}>
+                <View>用工登记</View><View className="worker-profile__row-hint">查看 / 修改</View>
+              </NativeButton>
+            ) : null}
+            {state.me.profile.id ? (
+              <NativeButton className="worker-profile__row" onClick={() => go("/pages/face-profile/index")}>
+                <View>人脸档案</View><View className="worker-profile__row-hint">查看审核状态</View>
+              </NativeButton>
+            ) : null}
+            <NativeButton className="worker-profile__row" onClick={() => go("/pages/bind/index")}>
+              <View>账号绑定</View><View className="worker-profile__row-hint">{state.me.user.isBound ? "已绑定" : "待绑定"}</View>
+            </NativeButton>
+          </View>
+          <View className="worker-profile__group">
+            <NativeButton className="worker-profile__row" onClick={() => go("/pages/my-records/index?range=MONTH")}><View>我的考勤</View><View className="worker-profile__row-hint">查看</View></NativeButton>
+            <NativeButton className="worker-profile__row" onClick={() => go("/pages/my-makeups/index")}><View>补卡记录</View><View className="worker-profile__row-hint">查看</View></NativeButton>
+            <NativeButton className="worker-profile__row" onClick={() => go("/pages/my-projects/index")}>
+              <View>我的项目</View><View className="worker-profile__row-hint">{projects === null ? "查看全部" : `${projects.length} 个项目`}</View>
+            </NativeButton>
+            {error ? <StateView title="项目信息读取失败" sub={error} onRetry={refresh} /> : null}
+          </View>
+          <View className="worker-profile__group">
+            <NativeButton className="worker-profile__row" onClick={() => go("/pages/permission-levels/index")}><View>权限与范围</View><View className="worker-profile__row-hint">查看</View></NativeButton>
+            <NativeButton className="worker-profile__row worker-profile__aux-toggle" onClick={() => setAuxiliaryOpen(!auxiliaryOpen)}>
+              <View>辅助测试</View><View className="worker-profile__row-hint">{auxiliaryOpen ? "收起" : "展开"}</View>
+            </NativeButton>
+            {auxiliaryOpen ? (
+              <View className="worker-profile__auxiliary">
+                <NativeButton className="worker-profile__row" onClick={() => go("/pages/punch-test/index")}><View>打卡流程测试</View><View className="worker-profile__row-hint">查看</View></NativeButton>
+                {state.me.profile.id ? <NativeButton className="worker-profile__row" onClick={() => go("/pages/face-profile/index?test=1")}><View>活体测试</View><View className="worker-profile__row-hint">查看</View></NativeButton> : null}
+                <View className="worker-profile__muted">测试不计考勤。{FRONTEND_DEMO ? "演示环境不可进行真实测试。" : "可用条件以测试页为准。"}</View>
+              </View>
+            ) : null}
+          </View>
+          <View className="worker-profile__help">人脸核验以服务端结果为准。无法刷脸时，请联系管理员办理人工考勤或补卡。</View>
+          <NativeButton className="worker-profile__account-action" disabled={busy} onClick={() => { void signOut(); }}>
+            {busy ? "正在处理…" : FRONTEND_DEMO ? "退出并切换演示身份" : "退出登录"}
+          </NativeButton>
+          {FRONTEND_DEMO ? <NativeButton className="worker-profile__account-action" disabled={busy} onClick={() => { void resetDemo(); }}>重置演示数据</NativeButton> : null}
+          <View className="worker-profile__version">瀚渤智慧工地 · v0.1</View>
+          <BottomNav active="profile" appearance="worker" />
+        </View>
+      </FlowScreen>
+    );
+  }
   return (
     <Screen>
       <AppHeader title="我的" />

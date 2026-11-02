@@ -12,6 +12,9 @@ import {
   StatCards,
 } from "../../components/ui/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
+import { useSession } from "../../store/session";
+import { WorkerRecords } from "../../components/worker-records";
+import { summarizeWorkerMonth } from "../../services/worker-home";
 import {
   fetchMyAttendanceRecords,
   fetchMyAttendanceDays,
@@ -33,15 +36,31 @@ const POINT_LABEL: Readonly<Record<AttendanceRecord["pointCode"], string>> = {
 type Range = "TODAY" | "WEEK" | "MONTH" | "CUSTOM";
 export default function MyRecords(): JSX.Element {
   useSessionGuard();
+  const { state } = useSession();
+  return state.me?.roles.highestRoleCode === "WORKER" ? (
+    <WorkerRecords key={state.me.user.id} />
+  ) : (
+    <LegacyMyRecords />
+  );
+}
+function LegacyMyRecords(): JSX.Element {
+  const { state } = useSession();
   const params = useRouter().params;
   const projectId = params.projectId ?? null;
-  const initialRange: Range = params.range === "MONTH" ? "MONTH" : "WEEK";
+  const initialRange: Range =
+    params.range === "MONTH"
+      ? "MONTH"
+      : params.range === "TODAY"
+        ? "TODAY"
+        : "WEEK";
   const { revision, refresh } = usePageRefresh();
   const [range, setRange] = useState<Range>(initialRange);
   const [from, setFrom] = useState<string>(
     initialRange === "MONTH"
       ? `${chinaToday().slice(0, 7)}-01`
-      : chinaDaysAgo(6),
+      : initialRange === "TODAY"
+        ? chinaToday()
+        : chinaDaysAgo(6),
   );
   const [to, setTo] = useState<string>(chinaToday());
   const [items, setItems] = useState<readonly AttendanceRecord[] | null>(null);
@@ -106,6 +125,10 @@ export default function MyRecords(): JSX.Element {
       setTo(chinaToday());
     }
   };
+  const workerSummary =
+    state.me?.roles.highestRoleCode === "WORKER" && items !== null
+      ? summarizeWorkerMonth(days, items, makeups, from, to)
+      : null;
   return (
     <Screen>
       <PageHeader title={projectId === null ? "我的考勤" : "本项目考勤"} />
@@ -148,6 +171,20 @@ export default function MyRecords(): JSX.Element {
           {from} — {to}
         </View>
       )}
+      {workerSummary ? (
+        <StatCards
+          items={[
+            {
+              label: "实际出勤 / 天",
+              value: String(workerSummary.attendedDays),
+            },
+            {
+              label: "已记录工时 / 小时",
+              value: (workerSummary.workedMinutes / 60).toFixed(1),
+            },
+          ]}
+        />
+      ) : null}
       {items ? (
         <StatCards
           items={[

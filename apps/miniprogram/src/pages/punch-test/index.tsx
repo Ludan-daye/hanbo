@@ -1,4 +1,4 @@
-import { Image, Picker } from "@tarojs/components";
+import { Button as NativeButton, Image, Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -11,7 +11,11 @@ import {
   Section,
   StateView,
   Subtitle,
+  AppIcon,
 } from "../../components/ui";
+import { FlowScreen } from "../../components/worker-flow";
+import { useSession } from "../../store/session";
+import "./index.scss";
 import {
   VideoFaceCapture,
   type VideoFaceFlow,
@@ -59,6 +63,7 @@ const errorText = (reason: unknown): string => {
 
 export default function PunchTest(): JSX.Element {
   useSessionGuard();
+  const { state } = useSession();
   const { revision, refresh } = usePageRefresh();
   const [projects, setProjects] = useState<
     readonly MyProjectMembership[] | null
@@ -74,6 +79,7 @@ export default function PunchTest(): JSX.Element {
   const [finished, setFinished] = useState<boolean>(false);
   const [phase, setPhase] = useState<Phase>("IDLE");
   const [error, setError] = useState<string | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState<boolean>(false);
   const lock = useRef<boolean>(false);
   const phoneAvailable = process.env.TARO_ENV === "weapp" && !FRONTEND_DEMO;
   const inside = location?.isInside === true && location.accuracyPassed;
@@ -217,6 +223,89 @@ export default function PunchTest(): JSX.Element {
       setPhase("IDLE");
     }
   };
+
+  if (state.me?.roles.highestRoleCode === "WORKER") {
+    const selectedProject = projects?.find((row) => row.projectId === projectId);
+    const primaryText = phase === "LOCATING" ? "正在定位…" : phase === "PHOTO" ? "正在拍照上传…" : phase === "PREPARING" ? "正在准备核验…" : phase === "VERIFYING" ? "核验中…" : finished ? "重新测试" : !inside ? location ? "重新定位" : "开始定位" : upload === null ? "拍照并上传" : !faceReady ? "查看人脸档案" : "开始活体核验";
+    const runCurrentStep = (): void => {
+      if (busy || !phoneAvailable) return;
+      if (finished || !inside) void locate();
+      else if (upload === null) void takePhoto();
+      else if (!faceReady) void Taro.navigateTo({ url: "/pages/face-profile/index" });
+      else void startFace();
+    };
+    return (
+      <FlowScreen title="打卡流程测试">
+        <View className="worker-punch-test">
+          <View className="worker-punch-test__notice">
+            <View className="worker-punch-test__notice-title"><AppIcon name="shield" /><View>测试不计考勤</View></View>
+            <View className="worker-punch-test__muted">定位、现场照片上传、活体与本人比对的流程测试，无需排班，不生成考勤记录。</View>
+          </View>
+          {!phoneAvailable ? <View className="worker-punch-test__environment">{FRONTEND_DEMO ? "当前为本机演示，不能进行真实定位与人脸测试。请使用已配置服务的微信小程序手机预览。" : "请在微信小程序手机预览中测试摄像头与定位。"}</View> : null}
+          {error ? <View className="worker-punch-test__error" role="alert">{error}</View> : null}
+          {projects === null ? <StateView title={error ? "测试条件读取失败" : "加载中…"} onRetry={error ? refresh : undefined} /> : projects.length === 0 ? <StateView title="尚未加入项目" sub="请管理员将本人加入项目后，再测试范围和打卡设备。" /> : <>
+            <Picker mode="selector" disabled={busy} range={projects.map((row) => row.projectName)} value={Math.max(0, projects.findIndex((row) => row.projectId === projectId))} onChange={(event) => {
+              if (lock.current) return;
+              const selected = projects[Number(event.detail.value)];
+              if (!selected) return;
+              setProjectId(selected.projectId); setLocation(null); setPhotoPath(null); setUpload(null); setFaceResult(null); setFinished(false); setError(null); setDiagnosticsOpen(false);
+            }}>
+              <View className="worker-punch-test__project">
+                <View className="worker-punch-test__muted">测试项目</View>
+                <View className="worker-punch-test__project-row"><View>{selectedProject?.projectName ?? "请选择项目"}</View><View className="worker-punch-test__muted">切换</View></View>
+                <View className="worker-punch-test__muted">{selectedProject?.teamName ?? "未分配班组"}</View>
+              </View>
+            </Picker>
+            {finished ? <View className="worker-punch-test__complete"><AppIcon name="check" /><View>流程测试完成</View></View> : null}
+            <View className="worker-punch-test__steps">
+              <View className="worker-punch-test__step">
+                <View className="worker-punch-test__number">{inside ? <AppIcon name="check" /> : "1"}</View>
+                <View className="worker-punch-test__step-body">
+                  <View className="worker-punch-test__step-title">定位{inside ? "通过" : ""}</View>
+                  <View className="worker-punch-test__muted">{phase === "LOCATING" ? "正在获取位置" : location === null ? "待开始 · 获取当前位置，确认在项目现场" : inside ? `在项目范围内 · 距中心${Math.round(location.distanceM)}米` : "定位未通过，请根据提示重试"}</View>
+                  {location ? <View className="worker-punch-test__muted">允许半径：{location.geofence.radiusM}米；{location.accuracyPassed ? "定位精度符合要求" : "定位精度不足"}</View> : null}
+                  {location && !finished ? <NativeButton className="worker-punch-test__text-button" disabled={busy || !phoneAvailable} onClick={() => { void locate(); }}>重新定位并开始</NativeButton> : null}
+                </View>
+              </View>
+              <View className="worker-punch-test__step">
+                <View className="worker-punch-test__number">{upload ? <AppIcon name="check" /> : "2"}</View>
+                <View className="worker-punch-test__step-body">
+                  <View className="worker-punch-test__step-title">现场照片{upload ? "已上传" : ""}</View>
+                  <View className="worker-punch-test__muted">{phase === "PHOTO" ? "正在拍摄并上传" : upload ? `已上传${Math.round(upload.sizeBytes / 1024)}KB` : "拍摄现场照片后上传测试服务器，范围外不能继续。"}</View>
+                  {photoPath ? <Image className="worker-punch-test__photo" src={photoPath} mode="aspectFit" /> : null}
+                  {photoPath && !finished ? <NativeButton className="worker-punch-test__text-button" disabled={busy || !inside || !phoneAvailable} onClick={() => { void takePhoto(); }}>重新拍照并上传</NativeButton> : null}
+                </View>
+              </View>
+              <View className="worker-punch-test__step">
+                <View className="worker-punch-test__number">{faceResult?.status === "VERIFIED" ? <AppIcon name="check" /> : "3"}</View>
+                <View className="worker-punch-test__step-body">
+                  <View className="worker-punch-test__step-title">活体核验{faceResult ? faceResult.status === "VERIFIED" ? "通过" : "未通过" : ""}</View>
+                  <View className="worker-punch-test__muted">按提示录制动作视频，发送云端与本人登记底照比对。</View>
+                  {face?.profile?.status === "PENDING" ? <View className="worker-punch-test__muted">待审核底照可测试，正式打卡仍须审核通过。</View> : null}
+                  {!faceReady ? <NativeButton className="worker-punch-test__face-link" disabled={busy} onClick={() => { void Taro.navigateTo({ url: "/pages/face-profile/index" }); }}>
+                    <View>查看人脸档案</View><View className="worker-punch-test__muted">{face?.profile ? faceStatusLabel(face.profile.status) : "尚未录入底照"}</View>
+                  </NativeButton> : null}
+                  {face !== null && face.mode !== "VIDEO_ACTION" ? <View className="worker-punch-test__muted">当前未启用视频动作活体，请管理员检查云端配置。</View> : null}
+                </View>
+              </View>
+            </View>
+            {(location !== null || faceResult !== null) ? <View className="worker-punch-test__diagnostics">
+              <NativeButton className="worker-punch-test__details-toggle" onClick={() => setDiagnosticsOpen(!diagnosticsOpen)}><View>定位与云端结果详情</View><View className="worker-punch-test__muted">{diagnosticsOpen ? "收起" : "展开"}</View></NativeButton>
+              {diagnosticsOpen ? <View className="worker-punch-test__muted">
+                {location ? <><View>纬度 {location.position.latitude} · 经度 {location.position.longitude}</View><View>定位精度：{location.position.accuracyM === null ? "未知" : `${location.position.accuracyM}米`}</View></> : null}
+                {faceResult?.score !== null && faceResult?.score !== undefined ? <View>人脸相似度：{faceResult.score.toFixed(2)}</View> : null}
+                {faceResult?.failureCode ? <View>失败原因：{faceResult.failureCode}</View> : null}
+                {faceResult?.requestId ? <View>核验编号：{faceResult.requestId}</View> : null}
+              </View> : null}
+            </View> : null}
+            <View className="worker-punch-test__primary"><Button appearance="worker" disabled={busy || !phoneAvailable} loading={busy} onClick={runCurrentStep}>{primaryText}</Button></View>
+            {finished ? <><View className="worker-punch-test__muted">定位、照片上传和核验均已通过。未生成考勤记录。</View><NativeButton className="worker-punch-test__text-button worker-punch-test__back" onClick={() => { void Taro.reLaunch({ url: "/pages/profile/index" }); }}>返回我的</NativeButton></> : null}
+          </>}
+          {phase === "VERIFYING" ? <VideoFaceCapture flow={flow} referenceDescription="本次仅测试，不生成考勤记录。请保持在项目范围内。" onCancel={() => { lock.current = false; setPhase("IDLE"); }} onResult={(result) => { void finishFace(result); }} /> : null}
+        </View>
+      </FlowScreen>
+    );
+  }
 
   return (
     <Screen>

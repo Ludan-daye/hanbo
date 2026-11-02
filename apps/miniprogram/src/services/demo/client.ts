@@ -4,6 +4,8 @@ import { demoReportPerson, saveDemoEvaluation } from "./report-details";
 import { demoProjectManagers } from "./project-managers";
 import { demoPlanRequest, effectiveDemoPlan, demoPlanLevel } from "./plans";
 import Taro from "@tarojs/taro";
+import { FRONTEND_DEMO } from "../../config/env";
+import workerPreviewAvatar from "../../assets/icons/user.png";
 
 import { demoMemberOn, demoMemberEligible } from "./member-history";
 import { ROLE_LEVEL } from "@construction/domain/roles.js";
@@ -85,6 +87,67 @@ export const readDemoState = (): DemoState => {
 };
 export const resetDemoState = (): void => {
   Taro.removeStorageSync(STORAGE_KEY);
+};
+
+/** Explicit Demo opt-in only: fill missing sample data without bypassing session guards. */
+export const prepareDemoWorkerPreview = (): void => {
+  if (!FRONTEND_DEMO) throw new Error("直接体验仅适用于演示模式。");
+  const state = readDemoState();
+  const me = demoMe(state, "dev-worker");
+  if (me.roles.highestRoleCode !== "WORKER" || me.profile.id !== "profile-worker")
+    throw new Error("演示工人身份不可用，请选择其他演示入口。");
+  const person = state.people.find((row) => row.profileId === "profile-worker");
+  if (!person) throw new Error("未找到演示工人档案。");
+  const previous = state.accountProfiles?.["dev-worker"];
+  const phone = previous?.phone || person.phone;
+  const accountProfile: AccountProfile = {
+    ...previous,
+    nickname: previous?.nickname || "演示工人",
+    realName: previous?.realName || person.displayName?.replace(/（演示）$/, "") || "张建国",
+    phone,
+    phoneMasked: previous?.phoneMasked || phone.replace(/^(\d{3})\d+(\d{4})$/, "$1****$2"),
+    avatarDataUrl: previous?.avatarDataUrl || workerPreviewAvatar,
+    isBound: true,
+    workerRegistration: "COMPLETE",
+  };
+  let registration = state.workerRegistrations?.["profile-worker"];
+  if (!registration) {
+    // 999999 is a fictional area code. Keep the checksum valid for existing form validation.
+    const usedIds = new Set(Object.values(state.workerRegistrations ?? {}).map((row) => row.idNumber));
+    let idNumber = "";
+    for (let sequence = 1; sequence <= 999; sequence += 1) {
+      const body = `99999919900101${String(sequence).padStart(3, "0")}`;
+      const sum = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
+        .reduce((total, weight, index) => total + Number(body[index]) * weight, 0);
+      const candidate = body + "10X98765432"[sum % 11];
+      if (!usedIds.has(candidate)) { idNumber = candidate; break; }
+    }
+    if (!idNumber) throw new Error("演示身份证号已用完，请使用完整登记入口。");
+    registration = {
+      idNumber,
+      residentialAddress: "地区：北京市 / 北京市 / 朝阳区\n详细地址：演示小区1号楼101室",
+      emergencyContactName: "测试联系人",
+      emergencyContactPhone: "13800000002",
+      hasLongTermMedication: false,
+      medicationDetails: "",
+      hasPersonalInsurance: false,
+      insuranceDetails: "",
+      payrollBankCard: "6222020000000000000",
+    };
+  }
+  const faces: readonly DemoFace[] = state.faces.some((row) => row.ownerId === "profile-worker")
+    ? state.faces
+    : [...state.faces, {
+        id: demoId("preview-face"), ownerId: "profile-worker", ownerType: "WORKER",
+        status: "PENDING", version: 1, reviewReason: null,
+        createdAt: new Date().toISOString(), reviewedAt: null, photo: workerPreviewAvatar,
+      }];
+  Taro.setStorageSync(STORAGE_KEY, {
+    ...state,
+    accountProfiles: { ...state.accountProfiles, "dev-worker": accountProfile },
+    workerRegistrations: { ...state.workerRegistrations, "profile-worker": registration },
+    faces,
+  });
 };
 const currentUser = (): string => {
   const token: string = String(Taro.getStorageSync("demoAccessToken") || "");

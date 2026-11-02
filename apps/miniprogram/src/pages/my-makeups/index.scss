@@ -1,0 +1,16 @@
+.worker-makeups { padding-top: 20Px; }
+.worker-makeups__hint { color: #626d78; font-size: 14Px; line-height: 1.6; padding: 12Px 0; min-height: 44Px; }
+.worker-makeups__item { border-bottom: 1Px solid #e5e8eb; }
+.worker-makeups__summary { padding: 20Px 0; }
+.worker-makeups__row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12Px; }
+.worker-makeups__date { color: #626d78; font-size: 14Px; line-height: 1.6; }
+.worker-makeups__status { font-size: 14Px; line-height: 1.5; flex-shrink: 0; padding: 4Px 10Px; border-radius: 999Px; }
+.worker-makeups__status--pending { color: #a34b20; background: #fff1dc; }
+.worker-makeups__status--approved { color: #14805e; background: #e8f5ed; }
+.worker-makeups__status--rejected { color: #c33845; background: #ffeded; }
+.worker-makeups__title { flex: 1; min-width: 0; font-size: 20Px; line-height: 1.5; font-weight: 650; margin: 4Px 0; overflow-wrap: anywhere; }
+.worker-makeups__expand { font-size: 14Px; color: #626d78; padding-top: 10Px; }
+.worker-makeups__meta { color: #626d78; font-size: 14Px; line-height: 1.6; overflow-wrap: anywhere; }
+.worker-makeups__review-preview { color: #626d78; font-size: 14Px; line-height: 1.6; margin-top: 12Px; overflow-wrap: anywhere; }
+.worker-makeups__details { padding-bottom: 12Px; border-top: 1Px solid #e5e8eb; }
+.worker-makeups__action { margin-top: 32Px; }

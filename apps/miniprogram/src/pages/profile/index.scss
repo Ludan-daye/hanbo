@@ -8,3 +8,38 @@
 .profile-card .profile-avatar {
   flex-shrink: 0;
 }
+
+.worker-profile {
+  padding-top: 20Px;
+  padding-bottom: 16Px;
+  &__identity { display: flex; align-items: center; gap: 16Px; padding-bottom: 24Px; }
+  &__avatar { flex-shrink: 0; width: 64Px; height: 64Px; border-radius: 50%; overflow: hidden; }
+  &__avatar .account-avatar-image, &__avatar .app-icon { width: 64Px; height: 64Px; }
+  &__identity-body { min-width: 0; flex: 1; }
+  &__name { font-size: 22Px; font-weight: 650; line-height: 1.4; margin-bottom: 6Px; }
+  &__muted, &__row-hint { font-size: 14Px; color: #626d78; line-height: 1.6; }
+  &__group { margin-bottom: 20Px; border-top: 1Px solid #e5e8eb; }
+  &__row {
+    width: 100%; margin: 0; padding: 16Px 0; min-height: 56Px; box-sizing: border-box;
+    display: flex; justify-content: space-between; align-items: center; gap: 16Px;
+    border: 0; border-bottom: 1Px solid #e5e8eb; border-radius: 0; background: #fff;
+    color: #101820; font-size: 16Px; font-weight: 400; line-height: 1.5; text-align: left;
+    &::after { border: 0; }
+    > view:first-child { min-width: 0; }
+    .app-icon { flex-shrink: 0; width: 18Px; height: 18Px; }
+  }
+  &__row-hint { flex-shrink: 0; max-width: 45%; text-align: right; white-space: normal; }
+  &__editor { padding: 4Px 0 20Px; border-bottom: 1Px solid #e5e8eb; }
+  &__auxiliary { padding: 0 16Px 16Px; background: #f5f7f9; border-radius: 10Px; }
+  &__auxiliary &__row { background: transparent; }
+  &__auxiliary &__muted { padding-top: 12Px; }
+  &__help { padding: 4Px 0 16Px; color: #626d78; font-size: 14Px; line-height: 1.7; }
+  &__account-action {
+    display: block; width: 100%; min-height: 48Px; margin: 8Px 0 0; padding: 12Px;
+    border: 0; border-radius: 0; background: transparent; color: #626d78;
+    font-size: 16Px; line-height: 1.5;
+    &::after { border: 0; }
+    &[disabled] { color: #89929b; }
+  }
+  &__version { margin: 16Px 0 0; color: #626d78; font-size: 14Px; text-align: center; }
+}

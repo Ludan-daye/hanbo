@@ -31,7 +31,7 @@
   gap: 16rpx;
   margin-bottom: 20rpx;
 }
-.worker-project-actions > * {
+.worker-project-actions > .ui-btn {
   flex: 1;
   min-width: 0;
   margin: 0;
@@ -102,3 +102,22 @@
   font-size: 24rpx;
   line-height: 1.7;
 }
+
+.worker-project-detail { padding-top: 20Px; }
+.worker-project-detail__hero { margin-bottom: 24Px; }
+.worker-project-detail__title-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12Px; }
+.worker-project-detail__name { flex: 1; min-width: 180Px; font-size: 22Px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.worker-project-detail__status { background: #eaf2fc; color: #0066d6; border-radius: 6Px; padding: 4Px 8Px; font-size: 14Px; line-height: 1.5; }
+.worker-project-detail__summary { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8Px 16Px; color: #626d78; font-size: 16Px; margin-top: 8Px; }
+.worker-project-detail__link { color: #0066d6; min-height: 44Px; display: flex; align-items: center; }
+.worker-project-detail__schedule { padding: 20Px; margin: 0 -8Px 32Px; background: #eaf2fc; border-radius: 22Px; }
+.worker-project-detail__section-title { font-size: 20Px; font-weight: 650; line-height: 1.4; margin-bottom: 8Px; }
+.worker-project-detail__muted { color: #626d78; font-size: 14Px; line-height: 1.6; }
+.worker-project-detail__point { display: flex; align-items: flex-start; gap: 20Px; padding: 16Px 0; border-bottom: 1Px solid #dce5ee; }
+.worker-project-detail__point-time { font-size: 20Px; line-height: 1.4; font-weight: 650; font-variant-numeric: tabular-nums; }
+.worker-project-detail__point-main { flex: 1; min-width: 0; }
+.worker-project-detail__point-title { font-size: 18Px; line-height: 1.5; font-weight: 650; margin-bottom: 4Px; }
+.worker-project-detail__danger { color: #c33845; font-size: 14Px; line-height: 1.6; }
+.worker-project-detail__current { padding: 16Px 0; }
+.worker-project-detail__current-label { font-size: 28Px; line-height: 1.4; font-weight: 650; margin-top: 4Px; }
+.worker-project-detail__map { width: 100%; height: 220Px; border-radius: 12Px; margin: 16Px 0; }

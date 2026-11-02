@@ -1,0 +1,10 @@
+.worker-makeup-form { padding: 20Px 0 24Px; }
+.worker-makeup-form__field { padding: 20Px 0; border-bottom: 1Px solid #e5e8eb; }
+.worker-makeup-form__label { color: #626d78; font-size: 16Px; line-height: 1.5; margin-bottom: 8Px; }
+.worker-makeup-form__value-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12Px; font-size: 18Px; line-height: 1.5; font-weight: 500; overflow-wrap: anywhere; }
+.worker-makeup-form__value-row > view:first-child, .worker-makeup-form__value-row > taro-view-core:first-child { flex: 1; min-width: 0; }
+.worker-makeup-form__change { color: #626d78; font-size: 14Px; font-weight: 400; flex-shrink: 0; padding-top: 3Px; }
+.worker-makeup-form__hint { color: #626d78; font-size: 14Px; line-height: 1.6; margin-top: 8Px; }
+.worker-makeup-form__reason { margin: 24Px 0; }
+.worker-makeup-form__textarea { box-sizing: border-box; width: 100%; min-height: 132Px; padding: 16Px; border: 1Px solid #e5e8eb; border-radius: 12Px; background: #f7f9fb; color: #101820; font-size: 16Px; line-height: 1.6; }
+.worker-makeup-form__count { color: #626d78; font-size: 14Px; line-height: 1.5; margin-top: 8Px; text-align: right; }

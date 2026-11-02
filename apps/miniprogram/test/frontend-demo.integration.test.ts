@@ -1,5 +1,5 @@
 import { memberRoleFields, memberRoleAssignments } from "../src/services/member-roles";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MyProjectDetail } from "@construction/domain";
 import Taro from "@tarojs/taro";
 
@@ -82,6 +82,7 @@ beforeEach(() => {
   resetDemoState();
   Taro.removeStorageSync("demoAccessToken");
 });
+afterEach(() => vi.useRealTimers());
 
 describe("standalone frontend workflows using persistent demo storage", () => {
   test("shows a member's project, duties and designated contacts without granting management access", async () => {
@@ -607,6 +608,10 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     );
   });
   test("worker makeup -> team approval -> worker result -> report", async () => {
+    // The legacy schedule rests on Sunday. Keep yesterday a scheduled Saturday,
+    // so this approval-flow test does not fail depending on the runner's weekday.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-01T12:00:00Z"));
     await login("dev-worker");
     const stored = readDemoState();
     Taro.setStorageSync("hanbo.frontend-demo.v1", { ...stored, makeups: [], records: stored.records.filter((row) => !(row.participantId === "profile-worker" && row.attendanceDate === chinaDaysAgo(1) && row.pointCode === "SEGMENT_1_START")) });

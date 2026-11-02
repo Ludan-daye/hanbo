@@ -7,3 +7,18 @@
   line-height: 1.5;
   margin-bottom: 10rpx;
 }
+
+.worker-projects { padding: 24Px 0 16Px; }
+.worker-projects__heading { font-size: 24Px; font-weight: 700; line-height: 1.35; margin-bottom: 8Px; }
+.worker-projects__pending { color: #626d78; font-size: 14Px; line-height: 1.5; margin: 12Px 0; }
+.worker-projects__card { border: 1Px solid #e5e8eb; border-radius: 22Px; padding: 20Px; margin: 16Px -8Px; }
+.worker-projects__card--primary { background: #eaf2fc; border-color: #eaf2fc; }
+.worker-projects__project { display: flex; align-items: center; justify-content: space-between; gap: 12Px; min-height: 44Px; }
+.worker-projects__name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 20Px; line-height: 1.4; font-weight: 650; }
+.worker-projects__detail-label { flex-shrink: 0; font-size: 14Px; color: #626d78; }
+.worker-projects__meta { font-size: 14Px; line-height: 1.6; color: #626d78; overflow-wrap: anywhere; }
+.worker-projects__status { display: inline-block; font-size: 14Px; line-height: 1.5; font-weight: 500; color: #14805e; background: #e8f5ed; border-radius: 999Px; padding: 4Px 12Px; margin: 12Px 0 8Px; }
+.worker-projects__status--attention { color: #a34b20; background: #fff1dc; }
+.worker-projects__time { font-size: 40Px; line-height: 1.15; font-weight: 700; font-variant-numeric: tabular-nums; margin: 8Px 0 16Px; }
+.worker-projects__links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8Px 16Px; margin-top: 8Px; color: #0066d6; font-size: 16Px; }
+.worker-projects__links > view, .worker-projects__links > taro-view-core { min-height: 44Px; display: flex; align-items: center; }

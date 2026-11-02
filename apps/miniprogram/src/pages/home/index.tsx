@@ -15,6 +15,7 @@ import {
 } from "../../components/ui/index";
 import { RolePanel } from "../../components/role-panels/index";
 import { WorkerProjectOverview } from "../../components/worker-project-overview";
+import { WorkerHome } from "../../components/worker-home";
 import { AccountAvatar } from "../../components/account-avatar";
 import { useAccountProfile } from "../../hooks/use-account-profile";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
@@ -31,7 +32,7 @@ import {
 import { fetchPendingMakeups } from "../../services/makeups";
 import { chinaDateLabel, chinaToday } from "../../services/time";
 import type { ReportTotals } from "../../services/management.types";
-import { FRONTEND_DEMO } from "../../config/env";
+import { API_BASE_URL, FRONTEND_DEMO } from "../../config/env";
 import {
   fetchAppSettings,
   type SystemSettings,
@@ -96,6 +97,14 @@ export default function Home(): JSX.Element {
       cancelled = true;
     };
   }, [state.me, phase, revision, panel]);
+  if (state.me?.roles.highestRoleCode === "WORKER") {
+    return (
+      <WorkerHome
+        key={`${FRONTEND_DEMO}:${API_BASE_URL}:${state.me.user.id}:${phase}`}
+        userId={state.me.user.id}
+      />
+    );
+  }
   return (
     <Screen>
       <AppHeader title="瀚渤" />

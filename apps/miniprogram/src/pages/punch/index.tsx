@@ -54,19 +54,18 @@ import type {
   MyProjectMembership,
   SubmitAttendanceRecordBody,
 } from "../../services/me.types";
-import { formatChinaHm } from "../../services/time";
+import { chinaToday, formatChinaHm } from "../../services/time";
 import { useSession } from "../../store/session";
 import { uploadImage } from "../../services/uploads";
+import {
+  workerPunchFeedback,
+  workerPunchStep,
+  type WorkerPunchPhase,
+} from "./worker-view";
 
 import "./index.scss";
 
-type Phase =
-  | "IDLE"
-  | "LOCATING"
-  | "PHOTO"
-  | "PREPARING"
-  | "VERIFYING"
-  | "SUBMITTING";
+type Phase = WorkerPunchPhase;
 type DemoPosition = "INSIDE" | "OUTSIDE" | "DENIED";
 type LocationCheck = GeofenceCheck & {
   readonly context: string;
@@ -84,6 +83,8 @@ type FaceProof = PunchAttempt & {
   readonly expiresAt: string;
 };
 type PunchSuccess = {
+  readonly attendanceDate: string;
+  readonly scheduledTime: string | null;
   readonly label: string;
   readonly time: string;
   readonly abnormal: boolean;
@@ -127,7 +128,8 @@ const requireOpenPoint = (
 
 export default function Punch(): JSX.Element {
   useSessionGuard();
-  const { phase: sessionPhase } = useSession();
+  const { phase: sessionPhase, state: sessionState } = useSession();
+  const workerAppearance = sessionState.me?.roles.highestRoleCode === "WORKER";
   const requestedProjectId = useRouter().params.projectId ?? null;
   const { revision, refresh } = usePageRefresh();
   const [projects, setProjects] = useState<
@@ -149,11 +151,21 @@ export default function Punch(): JSX.Element {
   } | null>(null);
   const [phase, setPhase] = useState<Phase>("IDLE");
   const [error, setError] = useState<string | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [success, setSuccess] = useState<PunchSuccess | null>(null);
   const [attempt, setAttempt] = useState<PunchAttempt | null>(null);
   const [proof, setProof] = useState<FaceProof | null>(null);
   const [pendingNative, setPendingNative] = useState<FaceProof | null>(null);
   const [demoPosition, setDemoPosition] = useState<DemoPosition>("INSIDE");
+  const [showPoints, setShowPoints] = useState<boolean>(false);
+  const [currentDate, setCurrentDate] = useState<string>(chinaToday);
+  const [expiredProofContext, setExpiredProofContext] = useState<string | null>(
+    null,
+  );
+  const [deniedPermissions, setDeniedPermissions] = useState({
+    location: false,
+    camera: false,
+  });
   const busy = useRef<boolean>(false);
   const loadSeq = useRef<number>(0);
   const context = useRef<string>("");
@@ -184,7 +196,66 @@ export default function Punch(): JSX.Element {
     setPendingNative(null);
     setAttempt(null);
     setError(null);
+    setExpiredProofContext(null);
   };
+  Taro.useDidShow(() => {
+    if (workerAppearance) setCurrentDate(chinaToday());
+  });
+  useEffect(() => {
+    if (!workerAppearance) return;
+    const remaining = 86_400_000 - ((Date.now() + 8 * 3_600_000) % 86_400_000);
+    const timer = setTimeout(
+      () => setCurrentDate(chinaToday()),
+      remaining + 100,
+    );
+    return () => clearTimeout(timer);
+  }, [workerAppearance, currentDate]);
+  useEffect(() => {
+    if (
+      !workerAppearance ||
+      today === null ||
+      today.attendanceDate === currentDate
+    )
+      return;
+    // An in-flight verification keeps its existing server checks; old local evidence
+    // is never presented as usable for a new attendance date.
+    setLocation(null);
+    setSitePhoto(null);
+    setProof(null);
+    setPendingNative(null);
+    setSuccess(null);
+    setExpiredProofContext(null);
+  }, [workerAppearance, currentDate, today?.attendanceDate]);
+  useEffect(() => {
+    // Avoid a redundant mount-time render before the page's data-loading effect.
+    setDeniedPermissions((previous) =>
+      previous.location || previous.camera
+        ? { location: false, camera: false }
+        : previous,
+    );
+    if (
+      !workerAppearance ||
+      FRONTEND_DEMO ||
+      process.env.TARO_ENV !== "weapp" ||
+      (error === null && locationError === null)
+    )
+      return;
+    let cancelled = false;
+    void Taro.getSetting()
+      .then((settings) => {
+        if (!cancelled)
+          setDeniedPermissions({
+            location: settings.authSetting["scope.userLocation"] === false,
+            camera: settings.authSetting["scope.camera"] === false,
+          });
+      })
+      .catch(() => {
+        /* Without confirmed denial, offer retry rather than settings. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workerAppearance, error, locationError]);
   useEffect(() => {
     if (location === null) return;
     const timer = setTimeout(
@@ -196,13 +267,20 @@ export default function Punch(): JSX.Element {
   useEffect(() => {
     if (proof === null) return;
     const timer = setTimeout(
-      () => setProof(null),
+      () => {
+        setProof(null);
+        if (workerAppearance)
+          setExpiredProofContext(
+            contextKey(proof.projectId, proof.pointCode, proof.attendanceDate),
+          );
+      },
       Math.max(0, new Date(proof.expiresAt).getTime() - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [proof]);
+  }, [proof, workerAppearance]);
   const loadToday = useCallback(async (pid: string): Promise<void> => {
     const sequence = ++loadSeq.current;
+    setScheduleError(null);
     try {
       const data = await fetchAttendanceToday(pid);
       if (sequence !== loadSeq.current) return;
@@ -215,7 +293,11 @@ export default function Punch(): JSX.Element {
           : nextOpenPoint(data),
       );
     } catch (reason: unknown) {
-      if (sequence === loadSeq.current) setError(errorText(reason));
+      if (sequence === loadSeq.current) {
+        const message = errorText(reason);
+        setScheduleError(message);
+        setError(message);
+      }
     }
   }, []);
   useEffect(() => {
@@ -382,6 +464,7 @@ export default function Punch(): JSX.Element {
       setProof(null);
       setPendingNative(null);
       setSuccess(null);
+      setExpiredProofContext(null);
     } catch (reason: unknown) {
       if (!errorText(reason).toLowerCase().includes("cancel"))
         setError(errorText(reason));
@@ -409,6 +492,8 @@ export default function Punch(): JSX.Element {
     );
     if (selected?.record !== null && selected?.record !== undefined) {
       setSuccess({
+        attendanceDate: fresh.attendanceDate,
+        scheduledTime: selected.scheduledTime,
         label: selected.label,
         time: formatChinaHm(selected.record.occurredAt),
         abnormal: selected.record.status !== "VALID",
@@ -433,6 +518,8 @@ export default function Punch(): JSX.Element {
         ...evidence,
       });
       setSuccess({
+        attendanceDate: fresh.attendanceDate,
+        scheduledTime: selected?.scheduledTime ?? null,
         label: selected?.label ?? current.pointCode,
         time: formatChinaHm(response.record.occurredAt),
         abnormal: response.record.status !== "VALID",
@@ -453,6 +540,7 @@ export default function Punch(): JSX.Element {
       expiresAt: result.expiresAt,
     };
     setProof(verified);
+    setExpiredProofContext(null);
     setAttempt(null);
     setPendingNative(null);
     try {
@@ -620,6 +708,597 @@ export default function Punch(): JSX.Element {
                       : pendingNative !== null
                         ? "确认刷脸结果并打卡"
                         : "刷脸并打卡";
+  // Keep derived view values in the same lexical scope as the loader's inputs.
+  // Reusing minified names in a nested block can overwrite captured values after
+  // WeChat's ES6 compilation, leaving the ready-session guard stuck in loading.
+  const feedback = workerPunchFeedback({
+    hasSchedule: today !== null,
+    scheduleError,
+    error,
+  });
+  const staleDate = today !== null && today.attendanceDate !== currentDate;
+  const recordedResult =
+    success?.attendanceDate === currentDate ? success : null;
+  const step = workerPunchStep({
+    phase,
+    inside: Boolean(inside),
+    hasPhoto: sitePhotoPath !== null,
+    faceReady: Boolean(faceReady),
+    validProof,
+    locationDenied: deniedPermissions.location,
+    cameraDenied: deniedPermissions.camera,
+  });
+  const proofExpired = expiredProofContext === context.current;
+  const faceDescription =
+    faceInfo?.profile?.status === "PENDING"
+      ? "本人底照正在审核，通过后才能正式打卡。"
+      : faceInfo?.profile?.status === "REJECTED"
+        ? (faceInfo.profile.reviewReason ??
+          "底照审核未通过，请重新提交本人照片。")
+        : faceInfo?.mode === "UNCONFIGURED"
+          ? "人脸核验暂不可用，请联系项目管理员。"
+          : "请先录入本人底照并通过审核。";
+  const taskTitle =
+    phase === "SUBMITTING"
+      ? "正在保存打卡记录"
+      : validProof
+        ? "打卡尚未保存"
+        : phase === "PREPARING"
+          ? "正在准备人脸核验"
+          : phase === "VERIFYING"
+            ? "正在进行人脸核验"
+            : phase === "PHOTO"
+              ? "正在拍摄现场照片"
+              : phase === "LOCATING"
+                ? "正在确认位置"
+                : proofExpired
+                  ? "核验结果已过期"
+                  : step.action === "location-settings"
+                    ? "需要开启定位权限"
+                    : step.action === "camera-settings"
+                      ? "需要开启相机权限"
+                      : step.stage === "location"
+                        ? location?.isInside === false
+                          ? "超出考勤范围"
+                          : locationError?.includes("精度")
+                            ? "定位精度不足"
+                            : "请确认打卡位置"
+                        : step.stage === "photo"
+                          ? "位置已确认"
+                          : !faceReady
+                            ? faceInfo?.profile?.status === "PENDING"
+                              ? "底照审核中"
+                              : "请查看人脸档案"
+                            : "现场照片已就绪";
+  const taskDescription =
+    phase === "SUBMITTING"
+      ? isDemoFace
+        ? "正在保存本机演示记录，请等待结果。"
+        : "人脸核验已通过，请等待保存结果。"
+      : validProof
+        ? "本人核验凭证仍有效，可重新提交，无需重新刷脸。"
+        : phase === "PREPARING" || phase === "VERIFYING"
+          ? "请保持在工地范围内，按提示完成本人核验。"
+          : proofExpired
+            ? "请重新确认位置并核验，保存记录后才算打卡成功。"
+            : step.action === "location-settings"
+              ? "位置用于核对本次打卡是否在工地范围内。"
+              : step.action === "camera-settings"
+                ? "请允许相机权限，拍摄本次工作现场。"
+                : step.stage === "location"
+                  ? "请到项目考勤范围内，保持定位准确后继续。"
+                  : step.stage === "photo"
+                    ? "在考勤范围内，可继续拍摄本次工作现场。"
+                    : !faceReady
+                      ? faceDescription
+                      : "按提示完成人脸核验，通过后自动保存打卡。";
+  const workerPrimaryLabel =
+    step.action === "wait"
+      ? phase === "SUBMITTING"
+        ? "保存中…"
+        : phase === "VERIFYING"
+          ? "核验中…"
+          : primaryLabel
+      : step.action === "retry-save"
+        ? "重新提交打卡"
+        : step.action === "location-settings" ||
+            step.action === "camera-settings"
+          ? "前往设置"
+          : step.action === "locate"
+            ? "重新定位"
+            : step.action === "capture"
+              ? error === null
+                ? "拍摄现场照片"
+                : "重新拍摄"
+              : step.action === "face-profile"
+                ? "查看人脸档案"
+                : isDemoFace
+                  ? "演示拍照并打卡"
+                  : pendingNative !== null
+                    ? "确认本次核验结果"
+                    : "开始人脸核验";
+  const openPermissionSettings = async (): Promise<void> => {
+    try {
+      const settings = await Taro.openSetting();
+      setDeniedPermissions({
+        location: settings.authSetting["scope.userLocation"] === false,
+        camera: settings.authSetting["scope.camera"] === false,
+      });
+    } catch (cause: unknown) {
+      setError(errorText(cause));
+    }
+  };
+  const act = (): void => {
+    if (
+      isBusy ||
+      staleDate ||
+      projectId === null ||
+      pointCode === null ||
+      today === null
+    )
+      return;
+    if (step.action === "retry-save") void retrySubmit();
+    else if (
+      step.action === "location-settings" ||
+      step.action === "camera-settings"
+    )
+      void openPermissionSettings();
+    else if (step.action === "locate") void locate(projectId, pointCode, today);
+    else if (step.action === "capture") void pickSitePhoto();
+    else if (step.action === "face-profile")
+      void Taro.navigateTo({ url: "/pages/face-profile/index" });
+    else if (step.action === "verify") void startFacePunch();
+  };
+  const viewRecords = (): void => {
+    if (projectId !== null)
+      void Taro.navigateTo({
+        url: `/pages/my-records/index?projectId=${encodeURIComponent(projectId)}`,
+      });
+  };
+  const taskDate =
+    recordedResult?.attendanceDate ?? today?.attendanceDate ?? currentDate;
+  const taskLabel = recordedResult?.label ?? selected?.label;
+  const taskTime = recordedResult?.scheduledTime ?? selected?.scheduledTime;
+  if (workerAppearance) {
+    return (
+      <Screen
+        appearance="worker"
+        header={<PageHeader title="考勤打卡" appearance="worker" />}
+      >
+        <View className="worker-punch">
+          {attempt !== null && videoFlow !== null ? (
+            <VideoFaceCapture
+              flow={videoFlow}
+              referenceDescription={`${activeProject?.projectName ?? "当前项目"} · ${activeProject?.teamName ?? "项目直属"}。${attempt.attendanceDate} · ${selected?.label ?? attempt.pointCode} ${selected?.scheduledTime ?? ""}。完成本人核验后自动保存，请保持在工地范围内。`}
+              onCancel={() => {
+                setAttempt(null);
+                busy.current = false;
+                setPhase("IDLE");
+              }}
+              onResult={(result) => {
+                void finishFace(attempt, result);
+              }}
+            />
+          ) : null}
+          {activeProject ? (
+            <View className="worker-punch__context">
+              <View className="worker-punch__project-row">
+                <View className="worker-punch__project">
+                  {activeProject.projectName}
+                </View>
+                {projects !== null && projects.length > 1 ? (
+                  <NativeButton
+                    className="worker-punch__text-button"
+                    disabled={isBusy}
+                    onClick={() => {
+                      void Taro.redirectTo({ url: "/pages/my-projects/index" });
+                    }}
+                  >
+                    切换项目
+                  </NativeButton>
+                ) : null}
+              </View>
+              <View className="worker-punch__muted">
+                {activeProject.teamName ?? "项目直属"} ·{" "}
+                {displayProjectRole(activeProject.projectRoleLabel)}
+              </View>
+              <View className="worker-punch__date">{taskDate}</View>
+              {taskLabel ? (
+                <View className="worker-punch__task-label">
+                  {taskLabel}
+                  {taskTime ? ` · 应打卡 ${taskTime}` : ""}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          {projects === null && error === null ? (
+            <StateView
+              title="正在读取项目…"
+              sub="正在确认当前项目与今日安排。"
+            />
+          ) : null}
+          {projects?.length === 0 ? (
+            <StateView
+              title="尚未加入项目"
+              sub="请联系管理员分配工地和班组。"
+            />
+          ) : null}
+          {projectId !== null && today === null && error === null ? (
+            <StateView title="正在读取今日安排…" />
+          ) : null}
+          {error !== null && (projectId === null || today === null) ? (
+            <View className="worker-punch__empty">
+              <View className="worker-punch__title">暂时无法读取打卡安排</View>
+              <View className="worker-punch__error" role="alert">
+                {error}
+              </View>
+              <Button appearance="worker" onClick={refresh}>
+                重新加载
+              </Button>
+              <NativeButton
+                className="worker-punch__text-button"
+                onClick={() => {
+                  void Taro.redirectTo({ url: "/pages/my-projects/index" });
+                }}
+              >
+                返回我的项目
+              </NativeButton>
+            </View>
+          ) : null}
+          {feedback.refreshWarning !== null ? (
+            <View
+              className="worker-punch__refresh-warning"
+              role="alert"
+              data-punch-refresh-error
+            >
+              <View className="worker-punch__refresh-title">
+                今日安排刷新失败
+              </View>
+              <View className="worker-punch__muted">
+                {feedback.refreshWarning}
+              </View>
+              <NativeButton
+                className="worker-punch__text-button"
+                disabled={isBusy}
+                onClick={refresh}
+              >
+                重试刷新安排
+              </NativeButton>
+            </View>
+          ) : null}
+          {staleDate ? (
+            <View className="worker-punch__task" data-punch-state="stale-date">
+              <View className="worker-punch__status">
+                <AppIcon name="clock" />
+                <View className="worker-punch__title">日期已变化</View>
+                <View className="worker-punch__muted">
+                  请刷新今日安排。上次的位置、照片和核验凭证已失效。
+                </View>
+              </View>
+              <Button appearance="worker" disabled={isBusy} onClick={refresh}>
+                刷新今日安排
+              </Button>
+            </View>
+          ) : recordedResult !== null ? (
+            <View
+              className="worker-punch__result"
+              data-punch-state={
+                recordedResult.abnormal
+                  ? "abnormal"
+                  : recordedResult.alreadyRecorded
+                    ? "confirmed"
+                    : "success"
+              }
+            >
+              <View
+                className={`worker-punch__result-body${recordedResult.abnormal ? " worker-punch__result-body--abnormal" : ""}`}
+              >
+                <AppIcon name={recordedResult.abnormal ? "clock" : "check"} />
+                <View className="worker-punch__title">
+                  {recordedResult.alreadyRecorded
+                    ? "已确认本时段记录"
+                    : recordedResult.abnormal
+                      ? "已记录异常打卡"
+                      : "打卡成功"}
+                </View>
+                <View className="worker-punch__muted">实际打卡时间</View>
+                <View className="worker-punch__time">
+                  {recordedResult.time}
+                </View>
+                {recordedResult.abnormal ? (
+                  <View className="worker-punch__error">
+                    本条记录有异常，请查看本项目考勤。
+                  </View>
+                ) : null}
+              </View>
+              <Button appearance="worker" onClick={viewRecords}>
+                查看本项目考勤
+              </Button>
+              {pointCode !== null ? (
+                <NativeButton
+                  className="worker-punch__text-button"
+                  onClick={() => {
+                    setSuccess(null);
+                  }}
+                >
+                  继续今日打卡
+                </NativeButton>
+              ) : null}
+              <NativeButton
+                className="worker-punch__text-button"
+                onClick={() => {
+                  void Taro.reLaunch({ url: "/pages/home/index" });
+                }}
+              >
+                返回首页
+              </NativeButton>
+            </View>
+          ) : today !== null &&
+            (!today.configured ||
+              !today.isWorkday ||
+              today.points.length === 0 ||
+              pointCode === null) ? (
+            <View
+              className="worker-punch__task"
+              data-punch-state="no-open-point"
+            >
+              <View className="worker-punch__status">
+                <AppIcon
+                  name={
+                    pointCode === null &&
+                    today.points.length > 0 &&
+                    today.configured &&
+                    today.isWorkday
+                      ? "check"
+                      : "calendar"
+                  }
+                />
+                <View className="worker-punch__title">
+                  {!today.configured
+                    ? "尚未配置打卡安排"
+                    : !today.isWorkday || today.points.length === 0
+                      ? "今天无需打卡"
+                      : "本项目今日已记录"}
+                </View>
+                <View className="worker-punch__muted">
+                  {!today.configured
+                    ? "请联系项目管理员确认安排。"
+                    : today.points.some(
+                          (point) => point.record?.status === "INVALID",
+                        )
+                      ? "存在异常记录，请在考勤中查看详情。"
+                      : (today.shiftName ?? "以本人当前生效安排为准。")}
+                </View>
+              </View>
+              <Button appearance="worker" onClick={viewRecords}>
+                查看本项目考勤
+              </Button>
+            </View>
+          ) : today !== null && pointCode !== null ? (
+            <>
+              <View
+                className="worker-punch__task"
+                data-punch-state={step.stage}
+              >
+                <View className="worker-punch__steps">
+                  {[
+                    {
+                      name: "位置",
+                      done: Boolean(inside) || validProof,
+                      active: step.stage === "location",
+                    },
+                    {
+                      name: "照片",
+                      done: sitePhotoPath !== null || validProof,
+                      active: step.stage === "photo",
+                    },
+                    {
+                      name: "核验",
+                      done: validProof,
+                      active: step.stage === "face" || step.stage === "saving",
+                    },
+                  ].map((item, index) => (
+                    <View
+                      key={item.name}
+                      className={`worker-punch__step${item.active ? " worker-punch__step--active" : ""}${item.done ? " worker-punch__step--done" : ""}`}
+                    >
+                      {item.done ? (
+                        <AppIcon name="check" />
+                      ) : (
+                        <View className="worker-punch__step-number">
+                          {index + 1}
+                        </View>
+                      )}
+                      <View>{item.name}</View>
+                    </View>
+                  ))}
+                </View>
+                {sitePhotoPath !== null &&
+                step.stage === "face" &&
+                !proofExpired ? (
+                  <Image
+                    className="worker-punch__photo"
+                    src={sitePhotoPath}
+                    mode="aspectFill"
+                  />
+                ) : null}
+                <View
+                  className={`worker-punch__status${sitePhotoPath !== null && step.stage === "face" && !proofExpired ? " worker-punch__status--compact" : ""}`}
+                >
+                  {isBusy ? (
+                    <View className="ui-btn__spinner worker-punch__spinner" />
+                  ) : sitePhotoPath === null ||
+                    step.stage !== "face" ||
+                    proofExpired ? (
+                    <AppIcon
+                      name={
+                        proofExpired || step.stage === "saving"
+                          ? "clock"
+                          : step.stage === "location" || step.stage === "photo"
+                            ? "pin"
+                            : "shield"
+                      }
+                    />
+                  ) : null}
+                  <View className="worker-punch__title">{taskTitle}</View>
+                  <View className="worker-punch__muted">{taskDescription}</View>
+                </View>
+                {step.stage === "location" ? (
+                  <View className="worker-punch__detail">
+                    {location !== null
+                      ? `距中心 ${Math.round(location.distanceM)} 米 · 允许 ${today.geofence.radiusM} 米`
+                      : `工地中心周边 ${today.geofence.radiusM} 米`}
+                    {today.geofence.locationAccuracyLimitM !== null ? (
+                      <View>
+                        定位精度要求：误差不超过{" "}
+                        {today.geofence.locationAccuracyLimitM} 米
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+                {inside && step.stage !== "saving" ? (
+                  <View className="worker-punch__completed">
+                    <AppIcon name="check" />
+                    <View>
+                      位置已确认
+                      <View className="worker-punch__muted">
+                        {location !== null
+                          ? `${taskDate} ${formatChinaHm(new Date(location.checkedAt).toISOString())}`
+                          : ""}
+                      </View>
+                    </View>
+                  </View>
+                ) : null}
+                {locationError !== null || feedback.actionError !== null ? (
+                  <View className="worker-punch__error" role="alert">
+                    {locationError ?? feedback.actionError}
+                  </View>
+                ) : null}
+                {phase === "SUBMITTING" ? (
+                  <View className="worker-punch__detail">
+                    记录保存完成后才算打卡成功。
+                  </View>
+                ) : null}
+              </View>
+              <View className="worker-punch__actions">
+                <Button
+                  appearance="worker"
+                  loading={isBusy}
+                  disabled={isBusy}
+                  onClick={act}
+                >
+                  {workerPrimaryLabel}
+                </Button>
+                {sitePhotoPath !== null && !validProof && !isBusy ? (
+                  <NativeButton
+                    className="worker-punch__text-button"
+                    data-action="retake-photo"
+                    disabled={!inside}
+                    onClick={() => {
+                      void pickSitePhoto();
+                    }}
+                  >
+                    重新拍摄现场照片
+                  </NativeButton>
+                ) : null}
+                {!isBusy && step.stage === "location" ? (
+                  <NativeButton
+                    className="worker-punch__text-button"
+                    onClick={() => {
+                      void Taro.navigateTo({
+                        url: `/pages/my-project-detail/index?projectId=${encodeURIComponent(projectId!)}`,
+                      });
+                    }}
+                  >
+                    查看工地位置与联系人
+                  </NativeButton>
+                ) : null}
+                <View className="worker-punch__footnote">
+                  {step.stage === "photo"
+                    ? "仅现场拍摄，照片不超过 5MB。"
+                    : "保存前会再次确认位置，请保持在工地范围内。"}
+                </View>
+              </View>
+            </>
+          ) : null}
+          {today?.configured &&
+          today.isWorkday &&
+          today.points.length > 0 &&
+          recordedResult === null ? (
+            <View className="worker-punch__schedule">
+              <NativeButton
+                className="worker-punch__schedule-toggle"
+                disabled={isBusy}
+                aria-expanded={showPoints}
+                onClick={() => setShowPoints((value) => !value)}
+              >
+                <View>
+                  今日安排 · {today.points.length} 个时点
+                  <View className="worker-punch__muted">
+                    {today.shiftName ?? "本人今日生效安排"}
+                  </View>
+                </View>
+                <View>{showPoints ? "收起" : "查看 / 切换"}</View>
+              </NativeButton>
+              {showPoints ? (
+                <View className="worker-punch__point-list">
+                  {today.points.map((point) => (
+                    <NativeButton
+                      key={point.pointCode}
+                      data-point-code={point.pointCode}
+                      className={`worker-punch__point${point.pointCode === pointCode ? " worker-punch__point--selected" : ""}`}
+                      disabled={isBusy || staleDate || point.record !== null}
+                      onClick={() => {
+                        if (point.pointCode !== pointCode) resetEvidence();
+                        setPointCode(point.pointCode);
+                        setSuccess(null);
+                        setShowPoints(false);
+                      }}
+                    >
+                      <View className="worker-punch__point-main">
+                        <View>{point.label}</View>
+                        <View>{point.scheduledTime}</View>
+                      </View>
+                      <View className="worker-punch__point-meta">
+                        <View>
+                          {point.record !== null
+                            ? `${point.record.status === "VALID" ? "已记录" : "异常记录"} · ${formatChinaHm(point.record.occurredAt)}`
+                            : point.pointCode === pointCode
+                              ? "当前时点"
+                              : "待打卡"}
+                        </View>
+                        <View>宽限 {point.graceMins} 分钟</View>
+                      </View>
+                    </NativeButton>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          {FRONTEND_DEMO && today?.configured && today.isWorkday ? (
+            <View className="worker-punch__demo">
+              <View className="worker-punch__muted">
+                演示定位 · 不读取真实 GPS
+              </View>
+              <Segmented
+                options={[
+                  { value: "INSIDE", label: "范围内" },
+                  { value: "OUTSIDE", label: "范围外" },
+                  { value: "DENIED", label: "定位失败" },
+                ]}
+                value={demoPosition}
+                onChange={(value) => {
+                  if (busy.current) return;
+                  resetEvidence();
+                  setDemoPosition(value);
+                }}
+              />
+            </View>
+          ) : null}
+        </View>
+      </Screen>
+    );
+  }
   return (
     <Screen>
       {attempt !== null && videoFlow !== null ? (

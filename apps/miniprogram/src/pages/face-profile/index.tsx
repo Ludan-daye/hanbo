@@ -1,4 +1,5 @@
 import {
+  Button as NativeButton,
   Checkbox,
   CheckboxGroup,
   Image,
@@ -6,7 +7,7 @@ import {
   View,
 } from "@tarojs/components";
 import Taro, { useRouter } from "@tarojs/taro";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   Button,
@@ -18,7 +19,12 @@ import {
   StateView,
   Subtitle,
   Title,
+  AppIcon,
 } from "../../components/ui/index";
+import { FlowScreen } from "../../components/worker-flow";
+import { chooseFaceEnrollmentPhoto, replacementNeedsConfirmation } from "./face-profile-input";
+import { formatChinaDate, formatChinaHm } from "../../services/time";
+import "./index.scss";
 import { useSession } from "../../store/session";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
@@ -45,9 +51,10 @@ const livenessTestFlow: VideoFaceFlow<FaceLivenessTestResult> = {
 
 export default function FaceProfilePage(): JSX.Element {
   useSessionGuard();
-  const { phase, refreshMe, clear } = useSession();
+  const { state, phase, refreshMe, clear } = useSession();
+  const params = useRouter().params;
   const onboarding: boolean =
-    useRouter().params.onboarding === "1" ||
+    params.onboarding === "1" ||
     phase === "face-enrollment-required";
   const { revision, refresh } = usePageRefresh();
   const [data, setData] = useState<MyFace | null>(null);
@@ -57,6 +64,11 @@ export default function FaceProfilePage(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<boolean>(false);
   const [testing, setTesting] = useState<boolean>(false);
+  const [consentOpen, setConsentOpen] = useState<boolean>(false);
+  const [testOpen, setTestOpen] = useState<boolean>(params.test === "1");
+  const [testDetailsOpen, setTestDetailsOpen] = useState<boolean>(false);
+  const confirmedPhoto = useRef<string | null>(null);
+  const operationLock = useRef<boolean>(false);
   const [testResult, setTestResult] = useState<FaceLivenessTestResult | null>(
     null,
   );
@@ -85,33 +97,39 @@ export default function FaceProfilePage(): JSX.Element {
     };
   }, [revision]);
   const choose = async (): Promise<void> => {
-    setError(null);
-    try {
-      const result = await Taro.chooseImage({
-        count: 1,
-        sizeType: ["compressed"],
-        sourceType:
-          process.env.TARO_ENV === "h5" ? ["album", "camera"] : ["camera"],
-      });
-      const file = result.tempFiles[0];
-      const path = result.tempFilePaths[0];
-      if (file === undefined || path === undefined)
-        throw new Error("未读取到照片，请重新拍摄。");
-      if (file.size > 2 * 1024 * 1024)
-        throw new Error("底照不能超过 2MB，请压缩后重试。");
-      setPhoto(path);
-      setSaved(false);
-    } catch (reason: unknown) {
-      setError(
-        reason instanceof Error ? reason.message : "拍摄未完成，请重试。",
-      );
-    }
-  };
-  const submit = async (): Promise<void> => {
-    if (data === null || photo === null || !consented || busy) return;
+    if (busy || operationLock.current) return;
+    operationLock.current = true;
     setBusy(true);
     setError(null);
     try {
+      const path = await chooseFaceEnrollmentPhoto();
+      setPhoto(path);
+      confirmedPhoto.current = null;
+      setSaved(false);
+    } catch (reason: unknown) {
+      const message = reason instanceof Error ? reason.message : typeof reason === "object" && reason !== null && "errMsg" in reason ? String(reason.errMsg) : "拍摄未完成，请重试。";
+      if (!/cancel/i.test(message)) setError(message);
+    } finally {
+      operationLock.current = false;
+      setBusy(false);
+    }
+  };
+  const submit = async (): Promise<void> => {
+    if (data === null || photo === null || !consented || busy || operationLock.current) return;
+    operationLock.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      if ((state.me?.roles.highestRoleCode === "WORKER" || onboarding) && replacementNeedsConfirmation(data.profile?.status, photo, confirmedPhoto.current)) {
+        const answer = await Taro.showModal({
+          title: "重新提交底照",
+          content: "重新提交成功后，旧底照将停止使用。新底照需要管理员重新审核，通过后才能正式刷脸打卡。",
+          confirmText: "重新提交",
+          cancelText: "再核对",
+        });
+        if (!answer.confirm) return;
+        confirmedPhoto.current = photo;
+      }
       const profile = await enrollMyFace(photo, data.consentVersion);
       setData({ ...data, profile });
       setPhoto(null);
@@ -124,6 +142,7 @@ export default function FaceProfilePage(): JSX.Element {
         reason instanceof Error ? reason.message : "提交未完成，请重试。",
       );
     } finally {
+      operationLock.current = false;
       setBusy(false);
     }
   };
@@ -155,6 +174,83 @@ export default function FaceProfilePage(): JSX.Element {
       setBusy(false);
     }
   };
+  const workerAppearance = state.me?.roles.highestRoleCode === "WORKER" || onboarding;
+  if (workerAppearance) {
+    const status = data?.profile?.status;
+    const canTest = data?.mode === "VIDEO_ACTION" && !onboarding;
+    const testReady = canTest && process.env.TARO_ENV === "weapp" && enrollmentSubmitted;
+    const statusTitle = photo !== null ? "照片预览" : status === "PENDING" ? "底照审核中" : status === "APPROVED" ? "底照已审核" : status === "REJECTED" ? "底照未通过审核" : data?.profile ? faceStatusLabel(status ?? "") : "录入本人正脸";
+    return (
+      <FlowScreen title="人脸档案" enabled root={onboarding}>
+        <View className="worker-face-profile">
+          {testing ? <VideoFaceCapture flow={livenessTestFlow} referenceDescription="与当前登记底照比对。本次仅测试，不生成考勤记录。" onCancel={() => setTesting(false)} onResult={(result) => { setTestResult(result); setTesting(false); setTestDetailsOpen(false); }} /> : null}
+          {error ? <View className="worker-face-profile__error" role="alert">{error}</View> : null}
+          {data === null ? <StateView title={error ? "人脸档案读取失败" : "加载中…"} onRetry={error ? refresh : undefined} /> : <>
+            <View className="worker-face-profile__heading">{statusTitle}</View>
+            <View className="worker-face-profile__muted">
+              {photo !== null ? "请确认照片清晰、真实、完整。" : status === "PENDING" ? "已提交，审核通过后才能正式打卡。" : status === "APPROVED" ? "底照已审核，用于本人的考勤身份核验。" : status === "REJECTED" ? "请查看原因，重新拍摄清晰正脸。" : "用于考勤身份核验，微信头像不会作为底照。"}
+            </View>
+            <View className="worker-face-profile__focus">
+              {photo !== null ? <>
+                <Image className="worker-face-profile__photo" src={photo} mode="aspectFit" />
+                <NativeButton className="worker-face-profile__text-button worker-face-profile__retake" disabled={busy} onClick={() => { void choose(); }}>重新拍摄</NativeButton>
+              </> : data.profile === null ? <View className="worker-face-profile__capture">
+                <AppIcon name="user" />
+                <View>拍摄清晰正脸，最大2MB</View>
+                <View className="worker-face-profile__muted">请在光线充足的环境下拍摄，确保面部完整、清晰可见。</View>
+              </View> : <>
+                <View className="worker-face-profile__status"><AppIcon name={status === "APPROVED" ? "shield" : status === "REJECTED" ? "user" : "clock"} /><View>{faceStatusLabel(status ?? "")}</View></View>
+                <View className="worker-face-profile__meta"><View>提交时间</View><View>{formatChinaDate(data.profile.createdAt)} {formatChinaHm(data.profile.createdAt)}</View></View>
+                {data.profile.reviewedAt ? <View className="worker-face-profile__meta"><View>审核时间</View><View>{formatChinaDate(data.profile.reviewedAt)} {formatChinaHm(data.profile.reviewedAt)}</View></View> : null}
+                {data.profile.reviewReason ? <View className="worker-face-profile__error">审核意见：{data.profile.reviewReason}</View> : null}
+                <View className="worker-face-profile__muted">{status === "PENDING" ? "审核时间以管理员处理为准，可在此查看状态。" : "登记底照由管理员核对，用于与打卡时采集的人脸比对。"}</View>
+              </>}
+            </View>
+            {data.mode === "UNCONFIGURED" ? <Notice>活体核验暂未启用。可以先提交底照审核，服务开通后再刷脸打卡。</Notice> : null}
+            {saved && status !== "APPROVED" ? <View className="worker-face-profile__muted">底照已提交，请等待管理员审核。</View> : null}
+            <View className="worker-face-profile__consent">
+              {photo !== null || data.profile === null ? <CheckboxGroup onChange={(event) => setConsented(event.detail.value.includes("agree"))}>
+                <Label className="worker-face-profile__consent-label"><Checkbox value="agree" checked={consented} disabled={busy} />我已阅读并同意采集与使用说明</Label>
+              </CheckboxGroup> : null}
+              <NativeButton className="worker-face-profile__text-button" onClick={() => setConsentOpen(!consentOpen)}>{consentOpen ? "收起采集说明" : "查看采集说明"}</NativeButton>
+              {consentOpen ? <View className="worker-face-profile__muted">{data.consentText}</View> : null}
+              {photo !== null && data.profile !== null ? <View className="worker-face-profile__muted">新照片尚未提交。重新提交成功后，旧底照停止使用，需要重新审核。</View> : null}
+            </View>
+            <View className="worker-face-profile__primary">
+              {photo !== null ? <Button appearance="worker" loading={busy} disabled={!consented || busy} onClick={() => { void submit(); }}>{data.profile ? "重新提交审核" : "提交审核"}</Button>
+                : enrollmentSubmitted ? <Button appearance="worker" loading={busy} onClick={() => { void enterHome(); }}>{onboarding ? "完成，进入首页" : "返回首页"}</Button>
+                : <Button appearance="worker" loading={busy} onClick={() => { void choose(); }}>{data.profile ? "重新拍摄底照" : "拍摄底照"}</Button>}
+            </View>
+            {data.profile && photo === null && !onboarding ? <View className="worker-face-profile__secondary-actions">
+              <NativeButton className="worker-face-profile__text-button" disabled={busy} onClick={refresh}>刷新审核状态</NativeButton>
+              <NativeButton className="worker-face-profile__text-button" disabled={busy} onClick={() => { void choose(); }}>更换底照</NativeButton>
+            </View> : null}
+            {photo !== null && data.profile !== null ? <NativeButton className="worker-face-profile__text-button" disabled={busy} onClick={() => { setPhoto(null); setConsented(false); confirmedPhoto.current = null; }}>取消本次更换</NativeButton> : null}
+            {canTest ? <View className="worker-face-profile__test">
+              <NativeButton className="worker-face-profile__test-toggle" disabled={busy || testing} onClick={() => setTestOpen(!testOpen)}><View>活体测试（不计考勤）</View><View className="worker-face-profile__muted">{testOpen ? "收起" : "展开"}</View></NativeButton>
+              {testOpen ? <>
+                <View className="worker-face-profile__muted">无需排班或定位。使用已上传的本人底照，按提示录制约8秒视频进行活体与本人比对，不生成考勤记录。</View>
+                {status === "PENDING" ? <View className="worker-face-profile__muted">待审核底照可测试，不代表可以正式打卡。</View> : null}
+                {!enrollmentSubmitted ? <View className="worker-face-profile__muted">请先提交本人底照；仅待审核或已通过底照可测试。</View> : null}
+                {process.env.TARO_ENV !== "weapp" ? <Notice>请用微信小程序手机预览测试摄像头录像。</Notice> : null}
+                <Button appearance="worker" variant="outline" disabled={busy || !testReady} onClick={() => { setTestResult(null); setTesting(true); }}>开始活体人脸测试</Button>
+                {testResult ? <>
+                  <View className="worker-face-profile__test-result">{testResult.status === "VERIFIED" ? "测试通过，未生成考勤记录" : "测试未通过，请按动作顺序重新测试"}</View>
+                  <NativeButton className="worker-face-profile__text-button" onClick={() => setTestDetailsOpen(!testDetailsOpen)}>{testDetailsOpen ? "收起结果详情" : "查看结果详情"}</NativeButton>
+                  {testDetailsOpen ? <View className="worker-face-profile__muted">
+                    {testResult.score !== null ? <View>人脸相似度：{testResult.score.toFixed(2)}</View> : null}
+                    {testResult.failureCode !== null ? <View>云端结果：{testResult.failureCode}</View> : null}
+                    {testResult.requestId !== null ? <View>云端请求编号：{testResult.requestId}</View> : null}
+                  </View> : null}
+                </> : null}
+              </> : null}
+            </View> : params.test === "1" && !onboarding ? <Notice>当前未启用视频动作活体测试，测试条件不满足。请联系管理员确认服务配置。</Notice> : null}
+          </>}
+          {onboarding ? <NativeButton className="worker-face-profile__text-button worker-face-profile__sign-out" disabled={busy} onClick={() => { void signOut(); }}>退出登录</NativeButton> : null}
+        </View>
+      </FlowScreen>
+    );
+  }
   return (
     <Screen>
       {testing ? (

@@ -1,4 +1,5 @@
 export default defineAppConfig({
+  lazyCodeLoading: "requiredComponents",
   pages: [
     "pages/login/index",
     "pages/complete-profile/index",

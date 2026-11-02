@@ -121,4 +121,4 @@ export type SubmitAttendanceRecordResult = {
   readonly result: AttendanceResultSummary;
 };
 
-export type MyAttendanceDay = AttendanceResultSummary & { readonly approvedMakeupCount: number; readonly teamName: string | null };
+export type MyAttendanceDay = AttendanceResultSummary & { readonly approvedMakeupCount: number; readonly teamName: string | null; readonly projectName?: string | null };

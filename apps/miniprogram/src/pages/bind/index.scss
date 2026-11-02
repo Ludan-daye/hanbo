@@ -50,3 +50,16 @@
 .binding-success-icon {
   background: #e7f6ee;
 }
+.worker-flow {
+  .worker-binding-intro { margin: 22Px 0 24Px; }
+  .worker-binding-card { padding: 20Px 16Px; margin-bottom: 28Px; background: #eaf2fc; border-radius: 18Px; }
+  .worker-binding-card .ui-field { background: #fff; }
+  .worker-binding-card .ui-btn { margin-bottom: 0; }
+  .worker-binding-profile { border-top: 1Px solid #e0e7ef; padding-top: 24Px; margin-bottom: 24Px; }
+  .worker-binding-section-title { font-size: 18Px; font-weight: 600; }
+  .worker-binding-demo,
+  .worker-binding-footnote { color: #626d78; font-size: 14Px; line-height: 1.7; margin: 18Px 0; }
+  .worker-binding-result { padding: 28Px 16Px 16Px; margin: 24Px 0; border-radius: 18Px; background: #eaf2fc; }
+  .worker-binding-result .ui-title { text-align: center; margin: 18Px 0 28Px; }
+  .worker-binding-result-icon { display: flex; align-items: center; justify-content: center; width: 52Px; height: 52Px; margin: auto; border-radius: 50%; color: #fff; background: #12b76a; }
+}

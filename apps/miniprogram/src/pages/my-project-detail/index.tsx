@@ -27,6 +27,8 @@ import {
 } from "../../services/time";
 import { workerProjectStatus } from "../../services/worker-home";
 import pin from "../../assets/icons/pin.png";
+import { FlowScreen } from "../../components/worker-flow";
+import { useSession } from "../../store/session";
 import "./index.scss";
 
 const statusLabel: Readonly<Record<MyProjectDetail["status"], string>> = {
@@ -44,6 +46,8 @@ const errorMessage = (cause: unknown): string => {
 
 export default function MyProjectDetailPage(): JSX.Element {
   useSessionGuard();
+  const { state } = useSession();
+  const workerAppearance = state.me?.roles.highestRoleCode === "WORKER";
   const projectId: string | undefined = useRouter().params.projectId;
   const { revision, refresh } = usePageRefresh();
   const [project, setProject] = useState<MyProjectDetail | null>(null);
@@ -133,6 +137,269 @@ export default function MyProjectDetailPage(): JSX.Element {
     today.configured &&
     today.isWorkday &&
     today.points.some((point) => point.record === null);
+  if (workerAppearance) {
+    return (
+      <FlowScreen title="项目详情">
+        <View className="worker-project-detail">
+          {!projectId ? (
+            <StateView title="请从我的项目选择工地" />
+          ) : error ? (
+            <StateView title="无法读取项目详情" sub={error} onRetry={refresh} />
+          ) : project === null ? (
+            <StateView title="正在读取项目详情…" />
+          ) : (
+            <>
+              <View className="worker-project-detail__hero">
+                <View className="worker-project-detail__title-row">
+                  <View className="worker-project-detail__name">
+                    {project.projectName}
+                  </View>
+                  <View className="worker-project-detail__status">
+                    {statusLabel[project.status]}
+                  </View>
+                </View>
+                <View className="worker-project-detail__summary">
+                  <View>{project.companyName}</View>
+                  <View
+                    className="worker-project-detail__link"
+                    role="button"
+                    onClick={() => {
+                      void Taro.navigateTo({
+                        url: `/pages/my-records/index?projectId=${encodeURIComponent(project.projectId)}`,
+                      });
+                    }}
+                  >
+                    本项目考勤
+                  </View>
+                </View>
+              </View>
+              <View className="worker-project-detail__schedule">
+                <View className="worker-project-detail__section-title">
+                  今日安排
+                </View>
+                <View className="worker-project-detail__muted">
+                  {date} · {project.team?.name ?? "项目直属"}
+                </View>
+                {scheduleError ? (
+                  <StateView
+                    title="打卡安排读取失败"
+                    sub={scheduleError}
+                    onRetry={refresh}
+                  />
+                ) : today === null ? (
+                  <Subtitle>正在读取安排…</Subtitle>
+                ) : (
+                  <>
+                    {today.shiftName ? (
+                      <View className="worker-project-detail__muted">
+                        {today.shiftName}
+                      </View>
+                    ) : null}
+                    {today.points.map((point) => (
+                      <View
+                        className="worker-project-detail__point"
+                        key={point.pointCode}
+                        data-point-code={point.pointCode}
+                      >
+                        <View className="worker-project-detail__point-time">
+                          {point.scheduledTime}
+                        </View>
+                        <View className="worker-project-detail__point-main">
+                          <View className="worker-project-detail__point-title">
+                            {point.label}
+                          </View>
+                          <View className="worker-project-detail__muted">
+                            {point.kind === "START"
+                              ? "迟到宽限"
+                              : point.kind === "END"
+                                ? "早退宽限"
+                                : "时间宽限"}{" "}
+                            {point.graceMins} 分钟
+                          </View>
+                          <View
+                            className={
+                              point.record?.status === "INVALID"
+                                ? "worker-project-detail__danger"
+                                : "worker-project-detail__muted"
+                            }
+                          >
+                            {point.record
+                              ? `${point.record.status === "VALID" ? "已打卡" : "异常记录"} ${formatChinaHm(point.record.occurredAt)}`
+                              : "待打卡"}
+                          </View>
+                        </View>
+                      </View>
+                    ))}
+                    <View className="worker-project-detail__current">
+                      <View className="worker-project-detail__muted">
+                        当前状态
+                      </View>
+                      <View className="worker-project-detail__current-label">
+                        {!project.requiresAttendance
+                          ? "本项目无需考勤"
+                          : project.status !== "ACTIVE"
+                            ? "项目当前未开放打卡"
+                            : !today.configured
+                              ? "待安排"
+                              : !today.isWorkday || today.points.length === 0
+                                ? "今日无需打卡"
+                                : workerProjectStatus(
+                                    today,
+                                    new Date().toISOString(),
+                                  )}
+                      </View>
+                    </View>
+                    {canPunch ? (
+                      <Button
+                        onClick={() => {
+                          void Taro.navigateTo({
+                            url: projectPunchUrl(project.projectId),
+                          });
+                        }}
+                      >
+                        去打卡
+                      </Button>
+                    ) : null}
+                    <View className="worker-project-detail__muted">
+                      已显示今日全部安排；时间和次数由上级设置。
+                    </View>
+                  </>
+                )}
+              </View>
+              <Section title="工地信息">
+                {process.env.TARO_ENV === "weapp" ? (
+                  <Map
+                    id="worker-project-map"
+                    className="worker-project-detail__map"
+                    latitude={Number(project.centerLatitude)}
+                    longitude={Number(project.centerLongitude)}
+                    includePoints={projectMapBounds(project)}
+                    scale={16}
+                    showScale
+                    enableRotate={false}
+                    markers={[
+                      {
+                        id: 1,
+                        latitude: Number(project.centerLatitude),
+                        longitude: Number(project.centerLongitude),
+                        iconPath: pin,
+                        width: 28,
+                        height: 28,
+                        title: project.projectName,
+                      },
+                    ]}
+                    circles={[
+                      {
+                        latitude: Number(project.centerLatitude),
+                        longitude: Number(project.centerLongitude),
+                        radius: project.geofenceRadiusM,
+                        color: "#1462CC",
+                        fillColor: "#1462CC20",
+                        strokeWidth: 2,
+                      },
+                    ]}
+                    onError={() =>
+                      setActionError("地图加载失败，请检查网络后重试。")
+                    }
+                  />
+                ) : (
+                  <Notice>在微信小程序中可查看工地地图与考勤范围。</Notice>
+                )}
+                <ListItem primary="地址" secondary={project.address} />
+                <ListItem
+                  primary="考勤范围"
+                  secondary={`工地中心周边 ${project.geofenceRadiusM} 米`}
+                />
+                <ListItem
+                  primary="定位精度要求"
+                  secondary={
+                    project.locationAccuracyLimitM === null
+                      ? "未设置精度上限"
+                      : `${project.locationAccuracyLimitM} 米以内`
+                  }
+                />
+                {process.env.TARO_ENV === "weapp" ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      void showLocation();
+                    }}
+                  >
+                    打开工地地图
+                  </Button>
+                ) : null}
+              </Section>
+              <Section title="我的身份">
+                <ListItem
+                  primary="本人职级"
+                  secondary={project.roles
+                    .map(
+                      (role) =>
+                        `${permissionLevel(role.roleCode).name}${role.teamName ? `（${role.teamName}）` : ""}`,
+                    )
+                    .join("、")}
+                />
+                <ListItem
+                  primary="工种"
+                  secondary={project.workType ?? "未登记"}
+                />
+                <ListItem
+                  primary="班组"
+                  secondary={project.team?.name ?? "项目直属 · 未分配班组"}
+                />
+                <ListItem
+                  primary="入场日期"
+                  secondary={formatChinaDate(project.enteredAt)}
+                />
+              </Section>
+              <Section title="联系负责人">
+                {project.team
+                  ? contactRow("班组长", project.team.leader, "leader")
+                  : null}
+                {project.managers.length ? (
+                  project.managers.map((contact, index) =>
+                    contactRow("项目负责人", contact, `manager-${index}`),
+                  )
+                ) : (
+                  <ListItem
+                    primary="项目负责人"
+                    secondary="暂未设置，请联系现场联系人"
+                  />
+                )}
+                {project.contact
+                  ? contactRow("现场联系人", project.contact, "site")
+                  : null}
+              </Section>
+              <Section title="打卡与计工说明">
+                <ListItem
+                  primary="定位 → 现场照片 → 活体人脸核验"
+                  secondary="请先录入本人底照并通过审核；范围内才可继续拍照和刷脸，每次提交后确认打卡结果。"
+                />
+                <Notice>
+                  目前记录出勤和实际工时，正常工日、零星工时、加班工时尚未分开核算，不等同工资。
+                </Notice>
+              </Section>
+              {actionError ? <Notice>{actionError}</Notice> : null}
+              <ListItem
+                primary="本项目考勤"
+                onClick={() => {
+                  void Taro.navigateTo({
+                    url: `/pages/my-records/index?projectId=${encodeURIComponent(project.projectId)}`,
+                  });
+                }}
+              />
+              <ListItem
+                primary="返回项目"
+                onClick={() => {
+                  void Taro.reLaunch({ url: "/pages/my-projects/index" });
+                }}
+              />
+            </>
+          )}
+        </View>
+      </FlowScreen>
+    );
+  }
   return (
     <Screen>
       <PageHeader title="项目详情" />

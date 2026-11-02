@@ -212,3 +212,414 @@
   color: var(--ink-soft) !important;
   opacity: 0.5;
 }
+
+// Worker-only opt-in. Px keeps logical sizes under the existing 750 design width.
+.worker-punch {
+  color: #101820;
+  font-size: 16Px;
+  line-height: 1.5;
+  padding-bottom: 24Px;
+}
+.worker-punch__context {
+  padding: 20Px 0 24Px;
+}
+.worker-punch__project-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8Px;
+}
+.worker-punch__project {
+  flex: 1;
+  min-width: 0;
+  font-size: 20Px;
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.worker-punch__context .worker-punch__muted {
+  margin-top: 4Px;
+}
+.worker-punch__muted,
+.worker-punch__detail,
+.worker-punch__footnote {
+  color: #626d78;
+  font-size: 14Px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.worker-punch__date {
+  margin-top: 20Px;
+  color: #626d78;
+  font-size: 14Px;
+}
+.worker-punch__task-label {
+  margin-top: 4Px;
+  font-size: 18Px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.worker-punch__task {
+  margin: 0 -8Px;
+  padding: 20Px;
+  border-radius: 22Px;
+  background: #eaf2fc;
+}
+.worker-punch__steps {
+  display: flex;
+  justify-content: space-between;
+  gap: 8Px;
+  color: #626d78;
+  font-size: 14Px;
+}
+.worker-punch__step {
+  display: flex;
+  align-items: center;
+  gap: 6Px;
+  min-height: 24Px;
+}
+.worker-punch__step--active {
+  color: #101820;
+  font-weight: 650;
+}
+.worker-punch__step--done {
+  color: #0066d6;
+}
+.worker-punch__step .app-icon {
+  width: 20Px;
+  height: 20Px;
+}
+.worker-punch__step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24Px;
+  height: 24Px;
+  border-radius: 50%;
+  color: #626d78;
+  background: #d7e3f1;
+  font-size: 14Px;
+}
+.worker-punch__step--active .worker-punch__step-number {
+  color: #fff;
+  background: #0066d6;
+}
+.worker-punch__status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12Px;
+  min-height: 208Px;
+  padding: 24Px 0;
+  box-sizing: border-box;
+  text-align: center;
+}
+.worker-punch__status > .app-icon {
+  width: 64Px;
+  height: 64Px;
+  margin-bottom: 8Px;
+}
+.worker-punch__status--compact {
+  align-items: flex-start;
+  min-height: 0;
+  padding: 16Px 0;
+  gap: 8Px;
+  text-align: left;
+}
+.worker-punch__title {
+  font-size: 22Px;
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.worker-punch__photo {
+  display: block;
+  width: 100%;
+  height: 200Px;
+  margin-top: 20Px;
+  border-radius: 16Px;
+  overflow: hidden;
+}
+.worker-punch__spinner.ui-btn__spinner {
+  width: 44Px;
+  height: 44Px;
+  margin: 12Px 0;
+  border-width: 4Px;
+  border-color: #cbd5e1;
+  border-top-color: #101820;
+}
+.worker-punch__status--compact .worker-punch__spinner {
+  width: 28Px;
+  height: 28Px;
+  margin: 0;
+}
+.worker-punch__completed {
+  display: flex;
+  align-items: flex-start;
+  gap: 10Px;
+  padding-top: 16Px;
+  border-top: 1Px solid #d3deeb;
+  font-size: 16Px;
+}
+.worker-punch__completed .app-icon {
+  width: 22Px;
+  height: 22Px;
+  flex-shrink: 0;
+}
+.worker-punch__detail {
+  padding-top: 12Px;
+}
+.worker-punch__error {
+  margin-top: 16Px;
+  color: #c33845;
+  font-size: 14Px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.worker-punch__actions {
+  padding-top: 20Px;
+}
+.worker-punch .worker-button.ui-btn {
+  min-height: 52Px;
+  font-size: 18Px;
+  background: #101820;
+}
+.worker-punch .worker-button.ui-btn[disabled] {
+  background: #e5e8ed;
+  color: #626d78;
+}
+.worker-punch__text-button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 44Px;
+  min-height: 44Px;
+  width: auto;
+  margin: 8Px 0 0;
+  padding: 8Px 12Px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #626d78;
+  font-size: 14Px;
+  line-height: 1.5;
+}
+.worker-punch__text-button::after,
+.worker-punch__schedule-toggle::after,
+.worker-punch__point::after {
+  border: 0;
+}
+.worker-punch__text-button[disabled] {
+  color: #8b939d;
+  background: transparent;
+}
+.worker-punch__project-row .worker-punch__text-button {
+  flex-shrink: 0;
+  margin: -8Px -8Px 0 0;
+  padding-left: 8Px;
+  padding-right: 8Px;
+  color: #0066d6;
+}
+.worker-punch__footnote {
+  margin-top: 12Px;
+  text-align: center;
+}
+.worker-punch__schedule {
+  margin-top: 24Px;
+  border-top: 1Px solid #e5e8eb;
+}
+.worker-punch__schedule-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12Px;
+  width: 100%;
+  min-height: 56Px;
+  padding: 16Px 0;
+  margin: 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: #101820;
+  font-size: 16Px;
+  line-height: 1.5;
+}
+.worker-punch__schedule-toggle > view:last-child {
+  flex-shrink: 0;
+  color: #626d78;
+  font-size: 14Px;
+}
+.worker-punch__point {
+  width: 100%;
+  margin: 0;
+  padding: 14Px 12Px;
+  min-height: 64Px;
+  border: 0;
+  border-bottom: 1Px solid #e5e8eb;
+  border-radius: 0;
+  background: #fff;
+  text-align: left;
+  color: #101820;
+  font-size: 16Px;
+  line-height: 1.5;
+}
+.worker-punch__point--selected {
+  background: #eaf2fc;
+}
+.worker-punch__point[disabled] {
+  color: #626d78;
+  background: #fff;
+}
+.worker-punch__point-main,
+.worker-punch__point-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12Px;
+}
+.worker-punch__point-main {
+  font-weight: 600;
+}
+.worker-punch__point-main > view:first-child {
+  overflow-wrap: anywhere;
+}
+.worker-punch__point-meta {
+  margin-top: 4Px;
+  color: #626d78;
+  font-size: 14Px;
+}
+.worker-punch__result-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12Px;
+  padding: 32Px 16Px;
+  margin: 0 -8Px 24Px;
+  border-radius: 22Px;
+  background: #eaf2fc;
+  text-align: center;
+}
+.worker-punch__result-body > .app-icon {
+  width: 72Px;
+  height: 72Px;
+  margin-bottom: 12Px;
+}
+.worker-punch__result-body--abnormal .worker-punch__title {
+  color: #c33845;
+}
+.worker-punch__time {
+  font-size: 40Px;
+  line-height: 1.15;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.worker-punch__empty {
+  padding: 24Px 0;
+}
+.worker-punch__empty .worker-button {
+  margin-top: 24Px;
+}
+.worker-punch__refresh-warning {
+  padding: 12Px 0;
+  margin-bottom: 16Px;
+  border-top: 1Px solid #e5e8eb;
+  border-bottom: 1Px solid #e5e8eb;
+}
+.worker-punch__refresh-title {
+  color: #c33845;
+  font-size: 16Px;
+  font-weight: 600;
+  margin-bottom: 4Px;
+}
+.worker-punch__refresh-warning .worker-punch__text-button {
+  justify-content: flex-start;
+  padding-left: 0;
+  color: #0066d6;
+}
+.worker-punch__demo {
+  margin-top: 24Px;
+  padding-top: 16Px;
+  border-top: 1Px solid #e5e8eb;
+}
+.worker-punch__demo .ui-segmented {
+  margin-top: 8Px;
+}
+.worker-punch__demo .ui-segmented__item {
+  min-height: 44Px;
+  font-size: 14Px;
+}
+.worker-punch .ui-state__title {
+  font-size: 20Px;
+}
+.worker-punch .ui-subtitle {
+  font-size: 14Px;
+  line-height: 1.6;
+}
+.worker-punch .video-face {
+  padding: calc(52Px + env(safe-area-inset-top)) 20Px calc(24Px + env(safe-area-inset-bottom));
+  background: #fff;
+  color: #101820;
+  font-size: 16Px;
+  line-height: 1.5;
+}
+.worker-punch .video-face__sheet {
+  max-width: 460Px;
+}
+.worker-punch .video-face__title {
+  padding-right: 100Px;
+  margin-bottom: 16Px;
+  font-size: 22Px;
+  line-height: 1.4;
+}
+.worker-punch .video-face__camera {
+  height: 260Px;
+  max-height: 32vh;
+  margin: 20Px 0;
+  border-radius: 22Px;
+}
+.worker-punch .video-face__instruction {
+  margin: 16Px 0;
+  color: #101820;
+  font-size: 22Px;
+  line-height: 1.4;
+}
+.worker-punch .video-face__count {
+  font-size: 16Px;
+  margin-bottom: 16Px;
+}
+.worker-punch .video-face .ui-notice {
+  padding: 12Px 0;
+  font-size: 14Px;
+  color: #c33845;
+}
+.worker-punch .video-face .ui-btn {
+  min-height: 52Px;
+  margin: 16Px 0 0;
+  padding: 12Px 16Px;
+  border-radius: 999Px;
+  background: #000;
+  color: #fff;
+  font-size: 18Px;
+  line-height: 1.5;
+}
+.worker-punch .video-face .ui-btn--outline {
+  background: transparent;
+  color: #101820;
+  border: 1Px solid #cbd2d9;
+}
+.worker-punch .video-face .ui-btn[disabled] {
+  background: #e5e8ed;
+  color: #626d78;
+}
+@media (max-width: 360Px) {
+  .worker-punch__task {
+    padding: 16Px;
+  }
+  .worker-punch__point-meta {
+    flex-wrap: wrap;
+    gap: 4Px 12Px;
+  }
+  .worker-punch__time {
+    font-size: 32Px;
+  }
+}

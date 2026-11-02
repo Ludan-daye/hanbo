@@ -1,0 +1,15 @@
+.worker-permissions {
+  padding-top: 24Px;
+  &__summary { background: #eaf2fc; padding: 24Px 20Px; border-radius: 22Px; }
+  &__name { font-size: 24Px; font-weight: 650; margin: 8Px 0; }
+  &__muted { font-size: 14Px; line-height: 1.7; color: #626d78; }
+  &__section { margin-top: 28Px; }
+  &__heading { font-size: 18Px; font-weight: 650; margin-bottom: 12Px; }
+  &__scope { padding: 16Px 0; border-bottom: 1Px solid #e5e8eb; }
+  &__level { display: flex; gap: 16Px; padding: 24Px 0; border-bottom: 1Px solid #e5e8eb; }
+  &__number { flex-shrink: 0; width: 40Px; height: 40Px; border-radius: 50%; background: #eaf2fc; text-align: center; line-height: 40Px; font-size: 20Px; color: #626d78; }
+  &__level-body { flex: 1; min-width: 0; }
+  &__level-title { font-size: 18Px; font-weight: 650; margin-bottom: 4Px; }
+  &__functions { margin: 8Px 0; font-size: 16Px; }
+  &__notice { margin-top: 24Px; color: #626d78; font-size: 14Px; line-height: 1.7; }
+}
