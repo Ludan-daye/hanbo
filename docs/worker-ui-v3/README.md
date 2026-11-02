@@ -1,6 +1,6 @@
 # 工人端 UI v3：本地运行与审阅
 
-分支：`codex/worker-ui-v3`。业务基线：`ebeb73e`。此分支用于协作审阅，未合并主分支；GitHub 推送不会自动发布微信体验版或更新测试服务器。
+分支：`worker-ui`。业务基线：`ebeb73e`。此分支用于协作审阅，未合并主分支；GitHub 推送不会自动发布微信体验版或更新测试服务器。
 
 ## 本版内容
 
@@ -15,7 +15,7 @@
 需要 Node.js 22、Corepack／pnpm 9.15.4 和微信开发者工具。请在独立目录克隆，避免覆盖已有工作区。
 
 ```sh
-git clone --branch codex/worker-ui-v3 https://github.com/Ludan-daye/hanbo.git hanbo-worker-ui-v3
+git clone --branch worker-ui https://github.com/Ludan-daye/hanbo.git hanbo-worker-ui-v3
 cd hanbo-worker-ui-v3
 corepack pnpm install --frozen-lockfile
 corepack pnpm --filter @construction/domain build
