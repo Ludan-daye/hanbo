@@ -81,7 +81,7 @@ export default function Profile(): JSX.Element {
     if (busy || !FRONTEND_DEMO) return;
     const result = await Taro.showModal({
       title: "重置前端演示数据",
-      content: "将删除本机的演示人员、照片和操作记录，并恢复初始场景。",
+      content: "清除本机演示人员、照片及记录，恢复初始数据。",
       confirmText: "重置",
     });
     if (!result.confirm) return;
@@ -109,7 +109,7 @@ export default function Profile(): JSX.Element {
               <View className="worker-profile__muted">普通工人 · {state.me.user.isBound ? "档案已绑定" : "待绑定本人档案"}</View>
               {account?.realName ? <View className="worker-profile__muted">本人姓名：{account.realName}</View> : null}
               {account?.phoneMasked ? <View className="worker-profile__muted">{account.phoneMasked}</View> : null}
-              <View className="worker-profile__muted">{FRONTEND_DEMO ? "本机演示账号 · 不关联真实微信" : "微信登录 · 已关联"}</View>
+              <View className="worker-profile__muted">{FRONTEND_DEMO ? "演示账号 · 未关联微信" : "微信登录 · 已关联"}</View>
             </View>
           </View>
           {accountError ? <StateView title="账号资料读取失败" sub={accountError} onRetry={refreshAccount} /> : null}
@@ -160,7 +160,7 @@ export default function Profile(): JSX.Element {
               </View>
             ) : null}
           </View>
-          <View className="worker-profile__help">人脸核验以服务端结果为准。无法刷脸时，请联系管理员办理人工考勤或补卡。</View>
+          <View className="worker-profile__help">无法刷脸时，联系管理员处理考勤或补卡。</View>
           <NativeButton className="worker-profile__account-action" disabled={busy} onClick={() => { void signOut(); }}>
             {busy ? "正在处理…" : FRONTEND_DEMO ? "退出并切换演示身份" : "退出登录"}
           </NativeButton>
@@ -207,7 +207,7 @@ export default function Profile(): JSX.Element {
       ) : null}
       <ListItem
         primary="打卡流程测试"
-        secondary="测试定位、拍照和活体人脸识别，不计入考勤"
+        secondary="定位、拍照、人脸测试 · 不计考勤"
         chip="开始测试"
         onClick={() => {
           void Taro.navigateTo({ url: "/pages/punch-test/index" });
@@ -264,7 +264,7 @@ export default function Profile(): JSX.Element {
           secondary={
             FRONTEND_DEMO
               ? "仅用于演示，不关联真实微信"
-              : "查看当前账号的人员档案与岗位身份"
+              : "人员档案及岗位"
           }
           chip={state.me?.user.isBound ? "已绑定" : "待绑定"}
           onClick={() => {
@@ -324,7 +324,7 @@ export default function Profile(): JSX.Element {
         <Section title="考勤身份">
           <ListItem
             primary="人脸档案"
-            secondary="录入本人底照、查看审核结果"
+            secondary="底照录入与审核"
             onClick={() => {
               void Taro.navigateTo({ url: "/pages/face-profile/index" });
             }}
@@ -332,7 +332,7 @@ export default function Profile(): JSX.Element {
         </Section>
       ) : null}
       <Notice>
-        人脸核验以服务端结果为准。无法刷脸时，请联系管理员办理人工考勤或补卡。
+        无法刷脸时，联系管理员处理考勤或补卡。
       </Notice>
       <Button
         variant="outline"
@@ -352,7 +352,7 @@ export default function Profile(): JSX.Element {
               const result = await Taro.showModal({
                 title: "重置前端演示数据",
                 content:
-                  "将删除本机的演示人员、照片和操作记录，并恢复初始场景。",
+                  "清除本机演示人员、照片及记录，恢复初始数据。",
                 confirmText: "重置",
               });
               if (!result.confirm) return;

@@ -1,3 +1,7 @@
+import { confirmDemoSafety, demoSafetyNotice, requireDemoSafety } from "./attendance-safety";
+import { parseTaskPoint, type ConfirmAttendanceSafety } from "@construction/domain";
+import { approveDemoTaskMakeup, demoTaskMakeupTarget, demoTaskToday, punchDemoTask } from "./task-attendance";
+import { demoTeamWorkRequest } from "./team-work";
 import { memberRoleAssignments, memberRoleFields } from "../member-roles";
 import { demoMyProject } from "./my-project";
 import { demoReportPerson, saveDemoEvaluation } from "./report-details";
@@ -215,12 +219,13 @@ const assertDemoScope = (
     role === "SYSTEM_ADMIN" ||
     parts[0] === "auth" ||
     parts[0] === "account" ||
+    (parts[0] === "team-work" && parts[1] === "me") ||
     parts[0] === "me" || path === "/management/my-role-scopes" ||
     (parts[0] === "face-profiles" && parts[1] === "me") ||
     parts[0] === "app"
   )
     return;
-  if (parts[0] === "makeups" && parts[1] === "pending") return;
+  if (parts[0] === "makeups" && ["pending", "reviewed"].includes(parts[1])) return;
   const assignedScope = me.roles.assignments[0]?.scope.scopeId;
   const managedCompany = state.companies.find(
     (row) => row.id === assignedScope,
@@ -246,7 +251,7 @@ const assertDemoScope = (
       return;
   }
   if (
-    (parts[0] === "attendance" && parts[3] === "records") ||
+    (parts[0] === "attendance" && ["records", "safety", "safety-confirmations", "tasks"].includes(parts[3])) ||
     (parts[0] === "makeups" && parts[1] === "projects")
   ) {
     requirePerson(state, userId, parts[2]);
@@ -291,6 +296,7 @@ const routeDemo = (
   );
   const me = demoMe(state, userId);
   assertDemoScope(state, userId, path, method);
+  if (parts[0] === "team-work") return demoTeamWorkRequest(state, userId, parts, query.date, query.cursor, query.search, options);
   if (parts[0] === "attendance" && parts[1] === "planning")
     return demoPlanRequest(state, userId, parts, method, options.data);
   if (parts[0] === "me" && parts[3] === "attendance-plan")
@@ -530,6 +536,7 @@ const routeDemo = (
           projectId: row.projectId,
           projectName: state.projects.find((p) => p.id === row.projectId)?.name,
           projectRoleLabel: row.projectRoleLabel,
+          taskAttendanceOnly: row.taskAttendanceOnly === true,
           teamId: row.teamId,
           teamName: row.teamName,
         })),
@@ -1203,6 +1210,9 @@ const routeDemo = (
         schedule,
       );
     }
+    if (resource === "tasks" && parts[5] === "today" && method === "GET") return response(state, demoTaskToday(state, requirePerson(state, userId, projectId), parts[4]));
+    if (resource === "safety") return response(state, demoSafetyNotice(state, requirePerson(state, userId, projectId), query.pointCode));
+    if (resource === "safety-confirmations") return confirmDemoSafety(state, userId, requirePerson(state, userId, projectId), options.data as ConfirmAttendanceSafety);
     if (resource === "records") {
       const person = requirePerson(state, userId, projectId);
       const body = options.data as SubmitAttendanceRecordBody;
@@ -1229,6 +1239,7 @@ const routeDemo = (
           "不在考勤范围内，无法打卡。请进入项目范围后重新打卡。",
           { message: "OUTSIDE_GEOFENCE", projectId },
         );
+      if (parseTaskPoint(body.pointCode) !== null) return punchDemoTask(state, userId, person, body);
       const plan = effectiveDemoPlan(state, person, body.attendanceDate);
       const point = plan.points.find((row) => row.code === body.pointCode);
       if (
@@ -1259,6 +1270,7 @@ const routeDemo = (
         throw new ApiError(409, "该时点已有打卡或补卡，请刷新记录。", {});
       if (!plan.isWorkday || !point)
         throw new ApiError(400, "该时点不属于当天排班。", {});
+      requireDemoSafety(state, userId, person, body);
       const record = {
         pointLabel: point.label,
         ...makeDemoRecord(
@@ -1277,7 +1289,7 @@ const routeDemo = (
     }
   }
   if (parts[0] === "makeups") {
-    if (parts[1] === "pending") {
+    if (parts[1] === "pending" || parts[1] === "reviewed") {
       const rows = state.makeups
         .filter((row) => {
           const person = state.people.find(
@@ -1288,7 +1300,7 @@ const routeDemo = (
           if (
             !person ||
             row.requesterUserId === userId ||
-            row.status !== "PENDING"
+            (parts[1] === "pending" ? row.status !== "PENDING" : row.status === "PENDING" || row.approverUserId !== userId)
           )
             return false;
           const historical = demoMemberOn(state, person, row.attendanceDate);
@@ -1330,6 +1342,7 @@ const routeDemo = (
     if (parts[1] === "projects") {
       const person = requirePerson(state, userId, parts[2]);
       const body = options.data as SubmitMakeupBody;
+      const task = parseTaskPoint(body.pointCode) === null ? null : demoTaskMakeupTarget(state, person, body.pointCode, body.requestedOccurredAt);
       const plan = effectiveDemoPlan(state, person, body.attendanceDate);
       const point = plan.points.find((row) => row.code === body.pointCode);
       if (
@@ -1352,21 +1365,20 @@ const routeDemo = (
           (r) =>
             r.projectId === person.projectId &&
             r.participantId === person.profileId &&
-            r.attendanceDate === body.attendanceDate &&
+            (task !== null || r.attendanceDate === body.attendanceDate) &&
             r.pointCode === body.pointCode &&
             r.status !== "REJECTED",
         )
       )
         throw new ApiError(409, "该时点已有打卡或补卡，请刷新记录。", {});
       if (
-        !plan.isWorkday ||
-        !point ||
+        (task === null && (!plan.isWorkday || !point)) ||
         new Date(body.requestedOccurredAt).getTime() > Date.now()
       )
         throw new ApiError(400, "请按当天有效排班申请已发生的补卡。", {});
       const makeup = {
         ...body,
-        pointLabel: point.label,
+        pointLabel: task !== null ? `任务完工 · ${task.task.title}` : point!.label,
         id: demoId("makeup"),
         projectId: person.projectId,
         participantId: person.profileId,
@@ -1412,8 +1424,9 @@ const routeDemo = (
       approverUserId: userId,
       approvedAt: new Date().toISOString(),
     };
+    const approvedState = updated.status === "APPROVED" && parseTaskPoint(request.pointCode) !== null ? approveDemoTaskMakeup(state, applicant, request.pointCode, request.requestedOccurredAt) : state;
     const next = {
-      ...state,
+      ...approvedState,
       makeups: state.makeups.map((row) =>
         row.id === updated.id ? updated : row,
       ),

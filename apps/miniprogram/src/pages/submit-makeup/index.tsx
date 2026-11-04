@@ -1,5 +1,5 @@
 import { Picker, Textarea, View } from "@tarojs/components";
-import Taro from "@tarojs/taro";
+import Taro, { useRouter } from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 
@@ -13,7 +13,11 @@ import {
   Segmented,
   StateView,
 } from "../../components/ui/index";
-import { fetchMyProjects, submitMakeup } from "../../services/me";
+import {
+  fetchMyProjects,
+  fetchTaskAttendanceToday,
+  submitMakeup,
+} from "../../services/me";
 import {
   fetchMyAttendancePlan,
   type EffectivePlan,
@@ -32,6 +36,7 @@ export default function SubmitMakeup(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
   const workerAppearance = state.me?.roles.highestRoleCode === "WORKER";
+  const { taskId, projectId: requestedProjectId } = useRouter().params;
   const [projects, setProjects] = useState<
     readonly MyProjectMembership[] | null
   >(null);
@@ -57,7 +62,12 @@ export default function SubmitMakeup(): JSX.Element {
       (rows) => {
         if (!cancelled) {
           setProjects(rows);
-          setProjectId(rows[0]?.projectId ?? null);
+          setProjectId(
+            rows.find((row) => row.projectId === requestedProjectId)
+              ?.projectId ??
+              rows[0]?.projectId ??
+              null,
+          );
         }
       },
       (cause) => {
@@ -72,7 +82,7 @@ export default function SubmitMakeup(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [projectRevision]);
+  }, [projectRevision, requestedProjectId]);
   useEffect(() => {
     if (projectId === null) return;
     let cancelled = false;
@@ -81,7 +91,32 @@ export default function SubmitMakeup(): JSX.Element {
     setError(null);
     setPlanError(null);
     setLoadedContext(null);
-    void fetchMyAttendancePlan(projectId, date).then(
+    const readPlan = async (): Promise<EffectivePlan> => {
+      if (!taskId) return fetchMyAttendancePlan(projectId, date);
+      const task = await fetchTaskAttendanceToday(projectId, taskId);
+      const end = task.points.find((row) => row.kind === "END");
+      return {
+        name: task.shiftName ?? "临时任务",
+        isWorkday:
+          task.isWorkday &&
+          task.points.some(
+            (row) => row.kind === "START" && row.record !== null,
+          ) &&
+          end?.record === null,
+        points: end
+          ? [
+              {
+                code: end.pointCode,
+                label: "任务完工",
+                kind: "END",
+                time: end.scheduledTime,
+                graceMins: 0,
+              },
+            ]
+          : [],
+      };
+    };
+    void readPlan().then(
       (value) => {
         if (cancelled) return;
         setPlan(value);
@@ -101,7 +136,7 @@ export default function SubmitMakeup(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [projectId, date, planRevision]);
+  }, [projectId, date, taskId, planRevision]);
   const selectPoint = (value: AttendancePointCode): void => {
     if (busyRef.current) return;
     setPoint(value);
@@ -112,7 +147,7 @@ export default function SubmitMakeup(): JSX.Element {
       await Taro.redirectTo({ url: "/pages/my-makeups/index?status=PENDING" });
     } catch {
       setError(
-        "申请已提交，但返回列表失败。请点击“查看我的补卡”重试，无需重复提交。",
+        "申请已提交，返回失败。点击“查看我的补卡”，勿重复提交。",
       );
     }
   };
@@ -206,9 +241,9 @@ export default function SubmitMakeup(): JSX.Element {
                 mode="selector"
                 range={projects.map((row) => row.projectName)}
                 value={Math.max(0, projectIndex)}
-                disabled={locked}
+                disabled={locked || Boolean(taskId)}
                 onChange={(event) => {
-                  if (busyRef.current) return;
+                  if (busyRef.current || taskId) return;
                   const selected = projects[Number(event.detail.value)];
                   if (!selected || selected.projectId === projectId) return;
                   setLoadedContext(null);
@@ -266,7 +301,11 @@ export default function SubmitMakeup(): JSX.Element {
               ) : currentPlan === null ? (
                 <StateView title="正在读取当天排班…" />
               ) : !currentPlan.isWorkday || currentPlan.points.length === 0 ? (
-                <Notice>当天没有安排可补卡的时点，请确认项目和日期。</Notice>
+                <Notice>
+                  {taskId
+                    ? "该任务不属于已开工、未完工状态，不能补完工。"
+                    : "当天没有安排可补卡的时点，请确认项目和日期。"}
+                </Notice>
               ) : (
                 <>
                   <Picker
@@ -344,7 +383,7 @@ export default function SubmitMakeup(): JSX.Element {
               ) : null}
               {submitted ? (
                 <>
-                  <Notice>申请已提交，等待所属上级处理。</Notice>
+                  <Notice>申请已提交，待审批。</Notice>
                   <Button
                     loading={busy}
                     onClick={() => {
@@ -374,28 +413,40 @@ export default function SubmitMakeup(): JSX.Element {
   return (
     <Screen>
       <PageHeader title="发起补卡" />
-      <Notice>请按实际工作情况填写，由所属班组长审批。</Notice>
+      <Notice>
+        {taskId
+          ? "实际完工须晚于开工，间隔不超过 24 小时。审批后计工。"
+          : "按实际出勤填写，班组长审批。"}
+      </Notice>
       {projects === null && error === null ? (
         <StateView title="加载中…" />
       ) : null}
       {projects?.length === 0 ? (
         <StateView title="还没有加入项目" sub="请先联系管理员分配项目。" />
       ) : null}
-      {(projects ?? []).map((project) => (
-        <ListItem
-          key={project.projectId}
-          primary={project.projectName}
-          secondary={project.teamName ?? "未分配班组"}
-          chip={projectId === project.projectId ? "已选择" : undefined}
-          onClick={() => {
-            if (!busy) setProjectId(project.projectId);
-          }}
-        />
-      ))}
+      {(projects ?? [])
+        .filter(
+          (project) => !taskId || project.projectId === requestedProjectId,
+        )
+        .map((project) => (
+          <ListItem
+            key={project.projectId}
+            primary={project.projectName}
+            secondary={project.teamName ?? "未分配班组"}
+            chip={projectId === project.projectId ? "已选择" : undefined}
+            onClick={() => {
+              if (!busy) setProjectId(project.projectId);
+            }}
+          />
+        ))}
       {projectId ? (
         <View>
           {plan && !plan.isWorkday ? (
-            <Notice>当天没有安排打卡，不能申请补卡。</Notice>
+            <Notice>
+              {taskId
+                ? "该任务不属于已开工、未完工状态，不能补完工。"
+                : "当天没有安排打卡，不能申请补卡。"}
+            </Notice>
           ) : null}
           <Section title="补卡时段">
             <Segmented
@@ -432,14 +483,14 @@ export default function SubmitMakeup(): JSX.Element {
           </View>
           <Section
             title="补卡原因"
-            sub="请描述漏打卡的实际情况，便于班组长审批"
+            sub="填写缺卡原因"
           >
             <Textarea
               className="reason-textarea"
               value={reason}
               disabled={busy ? true : undefined}
               maxlength={500}
-              placeholder="例如：上午在现场搬运材料，未及时完成打卡。"
+              placeholder="如：现场搬运材料，未及时打卡。"
               onInput={(event) => {
                 setReason(event.detail.value);
               }}

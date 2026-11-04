@@ -16,6 +16,7 @@ export type WorkRoleScope = {
 };
 
 export type ProjectParticipant = {
+  readonly taskAttendanceOnly?: boolean;
   readonly additionalRoles?: readonly AdditionalMemberRole[];
   readonly displayName: string | null;
   readonly memberId: string;

@@ -162,7 +162,7 @@ export default function PersonFormPage(): JSX.Element {
     if (memberId && body.status !== "ACTIVE") {
       const result = await Taro.showModal({
         title: body.status === "EXITED" ? "确认成员退场" : "确认暂停成员",
-        content: "该成员将不再作为在场人员参与后续考勤，历史记录会保留。",
+        content: "停止该成员后续考勤，保留历史记录。",
         confirmText: "确认保存",
       });
       if (!result.confirm) return;
@@ -191,7 +191,7 @@ export default function PersonFormPage(): JSX.Element {
         <StateView title="无法读取成员资料" sub="请返回人员列表后重新进入。" />
       ) : (
         <>
-          <Notice>先建立人员档案，再生成邀请码，由本人微信登录后绑定。</Notice>
+          <Notice>建档后生成邀请码，由本人微信绑定。</Notice>
           <Section title="基本资料">
             <Field
               label="姓名 *"

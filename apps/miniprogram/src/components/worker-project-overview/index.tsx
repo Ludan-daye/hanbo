@@ -99,7 +99,7 @@ export const WorkerProjectOverview = ({
       ? [
           {
             title: "完善本人资料",
-            description: "补齐姓名、手机号和微信头像昵称",
+            description: "完善姓名、手机号、头像和昵称",
             url: "/pages/profile/index",
           },
         ]
@@ -115,9 +115,9 @@ export const WorkerProjectOverview = ({
                   : "先准备本人底照",
             description:
               face.profile?.status === "PENDING"
-                ? "审核通过后可刷脸打卡，请联系项目管理员"
+                ? "底照审核通过后可打卡"
                 : (face.profile?.reviewReason ??
-                  "录入本人正脸，审核通过后才能刷脸打卡"),
+                  "录入本人底照，审核后可打卡"),
             url: "/pages/face-profile/index",
           },
         ]
@@ -126,7 +126,7 @@ export const WorkerProjectOverview = ({
       ? [
           {
             title: "刷脸核验暂不可用",
-            description: "请联系项目管理员确认核验服务",
+            description: "请联系管理员检查核验服务",
             url: "/pages/face-profile/index",
           },
         ]
@@ -135,7 +135,7 @@ export const WorkerProjectOverview = ({
       ? [
           {
             title: `本月有 ${month.missingDays} 项缺卡待核对`,
-            description: "查看缺卡明细，按实际工作情况申请补卡",
+            description: "按实际出勤申请补卡",
             url: "/pages/my-records/index?range=MONTH",
           },
         ]
@@ -144,7 +144,7 @@ export const WorkerProjectOverview = ({
       ? [
           {
             title: `${month.pendingMakeups} 条补卡申请处理中`,
-            description: "查看审批进度，不必重复申请",
+            description: "审批中，请勿重复申请",
             url: "/pages/my-makeups/index",
           },
         ]
@@ -205,7 +205,7 @@ export const WorkerProjectOverview = ({
           {entries.length === 0 ? (
             <StateView
               title="还没有加入项目"
-              sub="请联系管理员将你加入工地和班组。"
+              sub="请联系管理员分配项目、班组。"
             />
           ) : todays.length === 0 && failed.length === 0 ? (
             <StateView
@@ -258,10 +258,10 @@ export const WorkerProjectOverview = ({
             </View>
           </View>
           <View className="worker-month-note">
-            出勤天数按日期去重，工时按已完成的工作时段累计。
+            出勤按日去重，工时按已完成时段累计。
           </View>
           <View className="worker-month-note worker-month-note--divider">
-            暂未分开统计正常工日、零星工时和加班工时。
+            暂未区分工日、零星及加班工时。
           </View>
         </View>
       )}

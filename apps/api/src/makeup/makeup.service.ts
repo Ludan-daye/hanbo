@@ -6,6 +6,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { parseTaskPoint } from "@construction/domain";
+import {
+  recalculateTaskResult,
+  resolveTaskMakeup,
+} from "../attendance/task-attendance.js";
 import type {
   Prisma,
   AttendanceResult,
@@ -247,20 +252,35 @@ export class MakeupService {
     );
     if (requestedOccurredAt.getTime() > Date.now())
       throw new BadRequestException({ message: "不能申请未来时间的补卡。" });
-    const plan = await this.attendanceService.getMyPlan(
-      projectId,
-      userId,
-      request.attendanceDate,
-    );
+    const taskPoint = parseTaskPoint(request.pointCode);
+    const plan =
+      taskPoint !== null
+        ? null
+        : await this.attendanceService.getMyPlan(
+            projectId,
+            userId,
+            request.attendanceDate,
+          );
     if (
-      !plan.isWorkday ||
-      !plan.points.some((point) => point.code === request.pointCode)
+      plan !== null &&
+      (!plan.isWorkday ||
+        !plan.points.some((point) => point.code === request.pointCode))
     )
       throw new BadRequestException({
         message: "补卡时点不属于当天有效排班。",
       });
 
     const created = await this.prisma.$transaction(async (tx) => {
+      const assignment =
+        taskPoint === null
+          ? null
+          : await resolveTaskMakeup(
+              tx,
+              projectId,
+              userId,
+              request.pointCode,
+              requestedOccurredAt,
+            );
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${attendanceLockKey(projectId, participant.participantType, participant.participantId, request.attendanceDate)}, 0))`;
       await this.attendanceService.assertPointAvailable(
         tx,
@@ -274,7 +294,7 @@ export class MakeupService {
         where: {
           projectId,
           ...participant,
-          attendanceDate,
+          ...(assignment === null ? { attendanceDate } : {}),
           pointCode: request.pointCode,
           status: "PENDING",
         },
@@ -289,9 +309,11 @@ export class MakeupService {
           participantId: participant.participantId,
           participantType: participant.participantType,
           pointCode: request.pointCode,
-          pointLabel: plan.points.find(
-            (point) => point.code === request.pointCode,
-          )!.label,
+          pointLabel:
+            assignment !== null
+              ? `任务完工 · ${assignment.task.title}`
+              : plan!.points.find((point) => point.code === request.pointCode)!
+                  .label,
           projectId,
           reason: request.reason,
           requestedOccurredAt,
@@ -312,6 +334,16 @@ export class MakeupService {
     await this.assertReviewerAuthorized(request, approverUserId);
     return this.prisma.$transaction(
       async (tx): Promise<ReviewMakeupResponse> => {
+        const task =
+          parseTaskPoint(request.pointCode) === null
+            ? null
+            : await resolveTaskMakeup(
+                tx,
+                request.projectId,
+                request.requesterUserId,
+                request.pointCode,
+                request.requestedOccurredAt,
+              );
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${attendanceLockKey(request.projectId, request.participantType, request.participantId, toDateOnly(request.attendanceDate))}, 0))`;
         await this.attendanceService.assertPointAvailable(
           tx,
@@ -334,6 +366,35 @@ export class MakeupService {
         const updated = await tx.makeupRequest.findUniqueOrThrow({
           where: { id: request.id },
         });
+        if (task !== null) {
+          await tx.teamTaskAssignment.update({
+            where: { id: task.id },
+            data: { finishedAt: updated.requestedOccurredAt },
+          });
+          const startDay: string = getChinaDateOnly(task.startedAt!);
+          const endDay: string = toDateOnly(updated.attendanceDate);
+          if (startDay !== endDay)
+            await recalculateTaskResult(
+              tx,
+              task.memberId,
+              updated.projectId,
+              updated.participantId,
+              startDay,
+              new Date(),
+            );
+          const result = await recalculateTaskResult(
+            tx,
+            task.memberId,
+            updated.projectId,
+            updated.participantId,
+            endDay,
+            new Date(),
+          );
+          return {
+            request: createMakeupRequestResponse(updated),
+            result: createAttendanceResultResponse(result),
+          };
+        }
         const result = await this.attendanceService.recalculateDailyResult(
           tx,
           updated.projectId,
@@ -641,6 +702,30 @@ export class MakeupService {
     userId: string,
     cursor: string | null,
   ): Promise<MakeupInboxResponse> {
+    return this.inboxPage(userId, cursor, { status: "PENDING" }, [
+      { createdAt: "asc" },
+      { id: "asc" },
+    ]);
+  }
+
+  async reviewedInbox(
+    userId: string,
+    cursor: string | null,
+  ): Promise<MakeupInboxResponse> {
+    return this.inboxPage(
+      userId,
+      cursor,
+      { status: { in: ["APPROVED", "REJECTED"] }, approverUserId: userId },
+      [{ approvedAt: "desc" }, { id: "desc" }],
+    );
+  }
+
+  private async inboxPage(
+    userId: string,
+    cursor: string | null,
+    filter: Prisma.MakeupRequestWhereInput,
+    orderBy: Prisma.MakeupRequestOrderByWithRelationInput[],
+  ): Promise<MakeupInboxResponse> {
     const authorization =
       await this.authorizationContext.loadAuthorizationData(userId);
     const assignments = authorization.assignments.filter(
@@ -657,11 +742,11 @@ export class MakeupService {
     if (scopes.length === 0) return { items: [], nextCursor: null };
     const candidates = await this.prisma.makeupRequest.findMany({
       where: {
-        status: "PENDING",
+        ...filter,
         requesterUserId: { not: userId },
         OR: scopes,
       },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      orderBy,
       take: 51,
       ...(cursor === null ? {} : { cursor: { id: cursor }, skip: 1 }),
     });

@@ -5,6 +5,7 @@ import type {
 } from "@prisma/client";
 
 export type MemberState = {
+  readonly taskAttendanceOnly?: boolean;
   readonly memberId: string;
   readonly teamId: string | null;
   readonly status: MemberStatus;
@@ -49,6 +50,7 @@ export const memberStateOn = (
   );
   return {
     memberId: member.memberId,
+    taskAttendanceOnly: snapshot.taskAttendanceOnly,
     teamId: snapshot.teamId,
     status: recordedExit === undefined ? snapshot.status : "EXITED",
     requiresAttendance: snapshot.requiresAttendance,

@@ -57,12 +57,14 @@ export const createVideoFaceSession = async (
   projectId: string,
   pointCode: AttendancePointCode,
   position: AttendanceLocation,
+  safetyConfirmationId: string,
 ): Promise<VideoFaceSession> =>
   apiClient.request<VideoFaceSession>(
     `/attendance/projects/${projectId}/face-verifications/video`,
     {
       method: "POST",
       data: {
+        safetyConfirmationId,
         pointCode,
         latitude: position.latitude,
         longitude: position.longitude,
@@ -257,12 +259,14 @@ export const createFaceSession = async (
   projectId: string,
   pointCode: AttendancePointCode,
   position: AttendanceLocation,
+  safetyConfirmationId: string,
 ): Promise<FaceSession> =>
   apiClient.request<FaceSession>(
     `/attendance/projects/${projectId}/face-verifications`,
     {
       method: "POST",
       data: {
+        safetyConfirmationId,
         pointCode,
         latitude: position.latitude,
         longitude: position.longitude,

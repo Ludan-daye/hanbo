@@ -164,7 +164,7 @@ export const registrationIssues = (
       ? null
       : {
           field: "residentialAddress",
-          message: "请填写街道、楼栋或门牌号，完整地址不超过 200 字。",
+          message: "填写街道、楼栋或门牌号，完整地址限 200 字。",
         },
     value.emergencyContactName.trim() && value.emergencyContactName.length <= 30
       ? null
@@ -176,13 +176,13 @@ export const registrationIssues = (
       ? null
       : {
           field: "emergencyContactPhone",
-          message: "手机号需为 11 位；座机请填写区号和 7～8 位号码。",
+          message: "手机 11 位；座机含区号及 7～8 位号码。",
         },
     value.hasLongTermMedication !== null
       ? null
       : {
           field: "hasLongTermMedication",
-          message: "请选择是否有需要长期服药的疾病。",
+          message: "请选择长期用药疾病情况。",
         },
     !value.hasLongTermMedication ||
     (value.medicationDetails.trim() && value.medicationDetails.length <= 500)

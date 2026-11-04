@@ -40,7 +40,7 @@ export const checkAttendanceGeofence = (
     geofence.radiusM <= 0
   )
     throw new RangeError(
-      "考勤位置无效，请重新打卡；如仍失败，请联系管理员核对项目位置。",
+      "定位无效，请重试；仍失败请联系管理员核对工地位置。",
     );
   const lat: number = toRadians(toLat - fromLat);
   const lng: number = toRadians(toLng - fromLng);

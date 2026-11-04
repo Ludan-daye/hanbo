@@ -8,6 +8,7 @@ import {
 } from "../config/env";
 import { apiClient as client } from "./client";
 import type { LoginResponse, MeResponse } from "./auth.types";
+import { clearWorkEntry } from "./work-entry";
 
 const exchangeWechatCode = async (code: string): Promise<void> => {
   const res = await client.request<LoginResponse>("/auth/wechat/login", {
@@ -33,11 +34,10 @@ const storeLogin = (res: LoginResponse): void => {
 
 export type TestAccountCode = "dev-worker" | "dev-team" | "dev-project" | "dev-company" | "dev-system";
 
-export const loginTestAccount = async (account: TestAccountCode, passcode: string): Promise<void> => {
+export const loginTestAccount = async (account: TestAccountCode): Promise<void> => {
   if (!TEST_LOGIN_ENABLED) throw new Error("当前版本未启用测试登录。");
-  if (passcode.trim().length === 0) throw new Error("请先输入测试口令。");
   const response = await client.request<LoginResponse>("/auth/test/login", {
-    auth: false, method: "POST", data: { account, passcode },
+    auth: false, method: "POST", data: { account },
   });
   storeLogin(response);
 };
@@ -51,7 +51,7 @@ export const devLogin = async (code: string): Promise<void> => {
 export const loginWithWechat = async (): Promise<void> => {
   if (FRONTEND_DEMO)
     throw new Error(
-      "当前为前端演示环境，请体验绑定流程；真实微信登录需连接正式服务。",
+      "当前为模拟演示，真实微信登录需连接服务。",
     );
   if (process.env.TARO_ENV !== "weapp")
     throw new Error("请在微信小程序中登录。");
@@ -79,5 +79,6 @@ export const logout = async (): Promise<void> => {
   } finally {
     Taro.removeStorageSync(ACCESS_TOKEN_KEY);
     Taro.removeStorageSync(REFRESH_TOKEN_KEY);
+    clearWorkEntry();
   }
 };

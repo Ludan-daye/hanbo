@@ -27,8 +27,8 @@ export const workerFaceBlocker = (
       title: "刷脸核验暂不可用",
       description:
         face.profile?.status === "REJECTED"
-          ? `请联系项目管理员确认核验服务。底照审核未通过：${face.profile.reviewReason || "请按审核意见重新拍摄本人正脸。"}`
-          : "请联系项目管理员确认核验服务。",
+          ? `请联系管理员检查核验服务。底照审核未通过：${face.profile.reviewReason || "请按审核意见重新拍摄本人正脸。"}`
+          : "请联系管理员检查核验服务。",
     };
   if (face.profile?.status === "APPROVED")
     return face.mode === "WECHAT_NATIVE" ||
@@ -62,7 +62,7 @@ export const workerFaceBlocker = (
   return {
     ...link,
     title: "请确认底照状态",
-    description: "请查看人脸档案，确认是否需要重新提交。",
+    description: "请查看人脸档案审核结果。",
   };
 };
 
@@ -85,14 +85,14 @@ export const workerHomeReminders = (
     reminders.push({
       id: "profile",
       title: "完善本人资料",
-      description: "补齐姓名、手机号和微信头像昵称。",
+      description: "完善姓名、手机号、头像和昵称。",
       url: "/pages/profile/index",
     });
   if (month?.missingDays)
     reminders.push({
       id: "missing",
       title: `本月有 ${month.missingDays} 项缺卡待核对`,
-      description: "查看缺卡明细，按实际工作情况申请补卡。",
+      description: "按实际出勤申请补卡。",
       url: "/pages/my-records/index?range=MONTH",
     });
   if (month?.rejectedMakeups)
@@ -106,7 +106,7 @@ export const workerHomeReminders = (
     reminders.push({
       id: "pending",
       title: `${month.pendingMakeups} 条补卡申请待审批`,
-      description: "查看审批进度，不必重复申请。",
+      description: "审批中，请勿重复申请。",
       url: "/pages/my-makeups/index",
     });
   return reminders;

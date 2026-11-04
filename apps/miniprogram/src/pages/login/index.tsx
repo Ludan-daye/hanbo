@@ -1,4 +1,4 @@
-import { Input, View } from "@tarojs/components";
+import { Button as TaroButton, View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
@@ -6,10 +6,8 @@ import {
   AppIcon,
   Button,
   Notice,
-  Subtitle,
   type IconName,
 } from "../../components/ui/index";
-import { FlowScreen } from "../../components/worker-flow";
 import {
   ACCESS_TOKEN_KEY,
   FRONTEND_DEMO,
@@ -21,9 +19,16 @@ import {
   loginTestAccount,
   type TestAccountCode,
 } from "../../services/auth";
+import { FlowScreen } from "../../components/worker-flow";
+import { prepareDemoWorkerPreview } from "../../services/demo/client";
 import { useSession } from "../../store/session";
 import { sessionEntryUrl } from "../../routing/session";
-import { prepareDemoWorkerPreview } from "../../services/demo/client";
+import {
+  clearWorkEntry,
+  saveWorkEntry,
+  WORK_ENTRY_OPTIONS,
+  type WorkEntry,
+} from "../../services/work-entry";
 
 import "./index.scss";
 
@@ -69,9 +74,10 @@ const nativeWechatLogin: boolean = process.env.TARO_ENV === "weapp";
 
 export default function Login(): JSX.Element {
   const { phase, onLoggedIn, error: sessionError } = useSession();
-  const [testPasscode, setTestPasscode] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [workEntry, setWorkEntry] = useState<WorkEntry | null>(null);
+  const [showTestAccounts, setShowTestAccounts] = useState<boolean>(true);
   const redirectForPhase = (): void => {
     if (!Taro.getStorageSync(ACCESS_TOKEN_KEY)) return;
     const url = sessionEntryUrl(phase);
@@ -98,6 +104,23 @@ export default function Login(): JSX.Element {
       setBusy(null);
     }
   };
+  const signInWorker = (): void => {
+    if (workEntry === null) return;
+    void signIn(async (): Promise<void> => {
+      saveWorkEntry(workEntry);
+      if (FRONTEND_DEMO) {
+        prepareDemoWorkerPreview();
+        await devLogin("dev-worker");
+      } else await loginWithWechat();
+    }, "worker");
+  };
+  const signInManager = (): void => {
+    void signIn(async (): Promise<void> => {
+      clearWorkEntry();
+      if (FRONTEND_DEMO) await devLogin("dev-project");
+      else await loginWithWechat();
+    }, "manager");
+  };
   return (
     <FlowScreen title="瀚渤" enabled root>
       <View className="login-intro">
@@ -105,7 +128,35 @@ export default function Login(): JSX.Element {
           <AppIcon name="building" />
         </View>
         <View className="login-title">欢迎使用瀚渤</View>
-        <Subtitle>项目、人员与考勤，一个入口。</Subtitle>
+      </View>
+      <View className="login-entry-heading">请选择用工入口</View>
+      <View className="login-entries">
+        {WORK_ENTRY_OPTIONS.map((entry) => (
+          <TaroButton
+            key={entry.value}
+            className={`login-entry${workEntry === entry.value ? " login-entry--selected" : ""}`}
+            disabled={busy !== null}
+            onClick={() => {
+              setWorkEntry(entry.value);
+              setError(null);
+            }}
+          >
+            <View className="login-entry__icon">
+              <AppIcon
+                name={entry.value === "LONG_TERM" ? "building" : "clock"}
+              />
+            </View>
+            <View className="login-entry__body">
+              <View className="login-entry__title">{entry.label}</View>
+              <View className="login-entry__description">
+                {entry.description}
+              </View>
+            </View>
+            <View className="login-entry__check">
+              {workEntry === entry.value ? "✓" : ""}
+            </View>
+          </TaroButton>
+        ))}
       </View>
       <View className="login-wechat">
         {FRONTEND_DEMO ? (
@@ -114,7 +165,8 @@ export default function Login(): JSX.Element {
               loading={busy === "worker-preview"}
               disabled={busy !== null}
               onClick={() => {
-                void signIn(async () => {
+                void signIn(async (): Promise<void> => {
+                  clearWorkEntry();
                   prepareDemoWorkerPreview();
                   await devLogin("dev-worker");
                 }, "worker-preview");
@@ -123,29 +175,36 @@ export default function Login(): JSX.Element {
               直接体验工人端
             </Button>
             <View className="login-wechat__note">
-              使用虚构资料直接进入首页，无需填写。数据仅保存在本机。
+              使用虚构资料，数据仅存本机。
             </View>
           </View>
         ) : null}
         <Button
           variant={FRONTEND_DEMO ? "outline" : "primary"}
-          loading={busy !== null}
-          disabled={!FRONTEND_DEMO && !nativeWechatLogin}
-          onClick={() => {
-            if (FRONTEND_DEMO) {
-              void signIn(() => devLogin("dev-unbound"), "binding-demo");
-              return;
-            }
-            void signIn(loginWithWechat, "wechat");
-          }}
+          loading={busy === "worker"}
+          disabled={
+            workEntry === null ||
+            busy !== null ||
+            (!FRONTEND_DEMO && !nativeWechatLogin)
+          }
+          onClick={signInWorker}
         >
-          {FRONTEND_DEMO ? "体验首次登录与绑定" : "微信一键登录"}
+          {workEntry === null
+            ? "请先选择用工入口"
+            : `${FRONTEND_DEMO ? "体验" : "微信登录"} · ${workEntry === "LONG_TERM" ? "长期用工" : "临时用工"}`}
         </Button>
         <View className="login-wechat__note">
           {FRONTEND_DEMO
-            ? "此入口体验邀请码绑定流程，不关联真实微信。"
-            : "必须使用本人微信登录，并填写真实姓名、手机号后绑定档案。"}
+            ? "演示工人账号，免邀请码。"
+            : "入场须完成微信绑定、用工登记和底照录入。"}
         </View>
+        <TaroButton
+          className="login-manager"
+          disabled={busy !== null || (!FRONTEND_DEMO && !nativeWechatLogin)}
+          onClick={signInManager}
+        >
+          {busy === "manager" ? "正在登录…" : "管理人员登录 ›"}
+        </TaroButton>
       </View>
       {!FRONTEND_DEMO && !nativeWechatLogin ? (
         <Notice>请在微信小程序内使用微信登录。</Notice>
@@ -155,65 +214,60 @@ export default function Login(): JSX.Element {
       ) : null}
       {FRONTEND_DEMO || TEST_LOGIN_ENABLED ? (
         <>
-          <View className="login-section login-section--demo">
+          <TaroButton
+            className="login-section login-test-toggle"
+            disabled={busy !== null}
+            onClick={() => setShowTestAccounts((current) => !current)}
+          >
             <View className="login-section__title">
               {FRONTEND_DEMO ? "选择演示身份" : "测试人员登录"}
             </View>
-          </View>
-          {TEST_LOGIN_ENABLED ? (
-            <View className="ui-field-wrap">
-              <View className="ui-field-label">测试口令</View>
-              <Input
-                className="ui-field"
-                password
-                value={testPasscode}
-                maxlength={128}
-                placeholder="输入口令后，点击下方测试身份"
-                onInput={(event) => setTestPasscode(event.detail.value)}
-              />
-              <View className="login-wechat__note">
-                共用测试账号，操作会保存到云端测试库。
-              </View>
-            </View>
-          ) : null}
-          <View className="login-roles">
-            {DEMO_ROLES.map((role) => (
-              <View
-                key={role.code}
-                className={`login-role ${busy === role.code ? "login-role--busy" : ""}`}
-                onClick={() => {
-                  void signIn(
-                    () =>
-                      FRONTEND_DEMO
-                        ? devLogin(role.code)
-                        : loginTestAccount(role.code, testPasscode),
-                    role.code,
-                  );
-                }}
-              >
-                <View className="login-role__icon">
-                  <AppIcon name={role.icon} />
-                </View>
-                <View className="login-role__body">
-                  <View className="login-role__title">
-                    {busy === role.code ? "正在进入…" : role.label}
+            <View>{showTestAccounts ? "收起" : "展开"}</View>
+          </TaroButton>
+          {showTestAccounts ? (
+            <>
+              {TEST_LOGIN_ENABLED ? <View className="login-wechat__note">选择测试身份，操作保存至测试库。</View> : null}
+              <View className="login-roles">
+                {DEMO_ROLES.map((role) => (
+                  <View
+                    key={role.code}
+                    className={`login-role ${busy === role.code ? "login-role--busy" : ""}`}
+                    onClick={() => {
+                      void signIn(async (): Promise<void> => {
+                        clearWorkEntry();
+                        if (FRONTEND_DEMO) {
+                          if (role.code === "dev-worker") prepareDemoWorkerPreview();
+                          await devLogin(role.code);
+                        }
+                        else await loginTestAccount(role.code);
+                      }, role.code);
+                    }}
+                  >
+                    <View className="login-role__icon">
+                      <AppIcon name={role.icon} />
+                    </View>
+                    <View className="login-role__body">
+                      <View className="login-role__title">
+                        {busy === role.code ? "正在进入…" : role.label}
+                      </View>
+                      <View className="login-role__sub">{role.sub}</View>
+                    </View>
+                    <View className="login-role__arrow">›</View>
                   </View>
-                  <View className="login-role__sub">{role.sub}</View>
-                </View>
-                <View className="login-role__arrow">›</View>
+                ))}
               </View>
-            ))}
-          </View>
+            </>
+          ) : null}
         </>
       ) : null}
       <View className="login-disclaimer">
         {FRONTEND_DEMO ? (
           <>
-            绑定演示可使用邀请码 HANBO-DEMO。
+            测试登录免口令。
             <View>当前数据仅保存在本机。</View>
           </>
         ) : (
-          "人员档案与岗位权限由管理员统一分配，请使用本人微信登录。"
+          "本人微信登录，岗位权限由管理员分配。"
         )}
       </View>
     </FlowScreen>

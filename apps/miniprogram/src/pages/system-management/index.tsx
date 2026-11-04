@@ -256,7 +256,7 @@ export default function SystemManagement(): JSX.Element {
                 onInput={setSearch}
               />
               <Notice>
-                角色决定能做什么，管理范围决定能查看哪些数据。本人账号的权限须由其他管理员调整。
+                角色对应功能，范围限定数据；本人权限由其他管理员修改。
               </Notice>
               {accounts
                 .filter((row) =>
@@ -277,7 +277,7 @@ export default function SystemManagement(): JSX.Element {
               {draft ? (
                 <Section title={`编辑 · ${draft.name}`}>
                   {draft.id === state.me?.user.id ? (
-                    <Notice>当前登录账号不可在此修改。</Notice>
+                    <Notice>本人权限不可在此修改。</Notice>
                   ) : (
                     <>
                       <Picker
@@ -387,7 +387,7 @@ export default function SystemManagement(): JSX.Element {
             </Section>
           ) : null}
           {!loading && tab === "AUDIT" ? (
-            <Section title="操作日志" sub="展示当前演示数据中的最近 200 次操作">
+            <Section title="操作日志" sub="最近 200 条演示操作">
               {audit.length === 0 ? <StateView title="暂无操作日志" /> : null}
               {audit.map((row) => (
                 <ListItem
@@ -396,7 +396,7 @@ export default function SystemManagement(): JSX.Element {
                   secondary={`${row.actor} · ${new Date(row.createdAt).toLocaleString("zh-CN")}`}
                 />
               ))}
-              <Subtitle>正式环境的日志将由服务器记录并校验访问权限。</Subtitle>
+              <Subtitle>正式操作由服务器记录。</Subtitle>
             </Section>
           ) : null}
         </>

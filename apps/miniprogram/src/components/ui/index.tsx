@@ -29,7 +29,7 @@ export const Screen = ({
           {header}
           {FRONTEND_DEMO ? (
             <View className="demo-mode-strip">
-              演示模式 · 本机数据 · 定位与人脸为模拟
+              本机演示 · 定位与人脸均为模拟
             </View>
           ) : null}
           {children}

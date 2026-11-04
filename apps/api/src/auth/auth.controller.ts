@@ -66,9 +66,9 @@ export class AuthController {
   @Post("test/login")
   @Header("Cache-Control", "no-store")
   async testLogin(@Body() body: unknown, @Req() request: RequestWithAuthenticatedUser): Promise<LoginResponse> {
-    const parsed = z.object({ account: z.enum(TEST_ACCOUNT_CODES), passcode: z.string().min(1).max(128) }).strict().safeParse(body);
+    const parsed = z.object({ account: z.enum(TEST_ACCOUNT_CODES) }).strict().safeParse(body);
     if (!parsed.success) throw new BadRequestException({ message: "INVALID_TEST_LOGIN_REQUEST" });
-    return this.authService.loginTestAccount(parsed.data.account, parsed.data.passcode, getRequestMetadata(request));
+    return this.authService.loginTestAccount(parsed.data.account, getRequestMetadata(request));
   }
 
   @Post("logout")

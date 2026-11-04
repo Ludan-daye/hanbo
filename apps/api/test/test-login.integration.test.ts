@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,8 +14,6 @@ import { API_ENV } from "../src/config/env.module.js";
 import type { ApiEnv } from "../src/config/env.js";
 import { PrismaService } from "../src/infrastructure/database/prisma.service.js";
 
-const passcode: string = "isolated-integration-passcode";
-
 describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("test login with real HTTP and database", () => {
   let app: INestApplication;
   let database: PrismaService;
@@ -30,7 +27,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("test lo
     vi.stubEnv("DATABASE_URL", url);
     vi.stubEnv("UPLOADS_DIR", uploads);
     vi.stubEnv("DEPLOYMENT_ENV", "test");
-    vi.stubEnv("TEST_LOGIN_SECRET_HASH", createHash("sha256").update(passcode).digest("hex"));
+    vi.stubEnv("TEST_LOGIN_ENABLED", "true");
     const module = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = module.createNestApplication();
     await app.init();
@@ -56,21 +53,21 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("test lo
     vi.unstubAllEnvs();
   });
 
-  test("rejects unknown accounts, wrong credentials and incomplete profiles", async (): Promise<void> => {
+  test("rejects unknown accounts, unexpected fields and incomplete profiles", async (): Promise<void> => {
     const server = app.getHttpServer();
     const sessionCount: number = await database.userSession.count();
-    await request(server).post("/auth/test/login").send({ account: "real-wechat-account", passcode }).expect(400);
-    await request(server).post("/auth/test/login").send({ account: "dev-worker", passcode: "wrong" }).expect(401);
+    await request(server).post("/auth/test/login").send({ account: "real-wechat-account" }).expect(400);
+    await request(server).post("/auth/test/login").send({ account: "dev-worker", passcode: "unexpected" }).expect(400);
     const user = await database.user.findUniqueOrThrow({ where: { openid: "dev-worker" } });
     await database.user.update({ where: { id: user.id }, data: { encryptedRealName: null } });
-    await request(server).post("/auth/test/login").send({ account: "dev-worker", passcode }).expect(403);
+    await request(server).post("/auth/test/login").send({ account: "dev-worker" }).expect(403);
     await database.user.update({ where: { id: user.id }, data: { encryptedRealName: user.encryptedRealName } });
     expect(await database.userSession.count()).toBe(sessionCount);
   });
 
   test.each(TEST_ACCOUNT_CODES)("%s logs in, saves its matching identity, refreshes and logs out", async (account): Promise<void> => {
     const server = app.getHttpServer();
-    const login = await request(server).post("/auth/test/login").send({ account, passcode }).expect(201);
+    const login = await request(server).post("/auth/test/login").send({ account }).expect(201);
     expect(login.headers["cache-control"]).toBe("no-store");
     const token: string = login.body.accessToken;
     const me = await request(server).get("/auth/me").auth(token, { type: "bearer" }).expect(200);
@@ -101,13 +98,17 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("test lo
     await request(server).get("/auth/me").auth(token, { type: "bearer" }).expect(401);
   });
 
-  test("normal deployments have no working test-login entrance", async (): Promise<void> => {
+  test.each([
+    { deployment: "production", enabled: false },
+    { deployment: "production", enabled: true },
+    { deployment: "test", enabled: false },
+  ])("test-login is unavailable in $deployment with enabled=$enabled", async ({ deployment, enabled }): Promise<void> => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(API_ENV).useValue({ ...app.get<ApiEnv>(API_ENV), DEPLOYMENT_ENV: "production", TEST_LOGIN_SECRET_HASH: "" }).compile();
+      .overrideProvider(API_ENV).useValue({ ...app.get<ApiEnv>(API_ENV), DEPLOYMENT_ENV: deployment, TEST_LOGIN_ENABLED: enabled }).compile();
     const disabled: INestApplication = module.createNestApplication();
     try {
       await disabled.init();
-      await request(disabled.getHttpServer()).post("/auth/test/login").send({ account: "dev-worker", passcode }).expect(404);
+      await request(disabled.getHttpServer()).post("/auth/test/login").send({ account: "dev-worker" }).expect(404);
     } finally { await disabled.close(); }
   });
 });

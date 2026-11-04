@@ -103,7 +103,7 @@ export default function Invitation(): JSX.Element {
     <Screen>
       <PageHeader title="生成绑定邀请码" />
       <Notice>
-        先选择成员，再生成专属邀请码。已绑定账号的成员无需重复邀请。
+        选择未绑定成员，生成专属邀请码。
       </Notice>
       <Segmented
         options={TARGET_OPTIONS}

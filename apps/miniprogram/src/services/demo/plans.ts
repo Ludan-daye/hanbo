@@ -22,7 +22,8 @@ export type DemoPlan = PlanConfiguration &
     readonly authorUserId: string | null;
     readonly authorLevel: number;
   };
-const memberLevel = (person: ProjectParticipant): number => ROLE_LEVEL[participantPermissionRole(person)];
+const memberLevel = (person: ProjectParticipant): number =>
+  ROLE_LEVEL[participantPermissionRole(person)];
 export const demoPlanLevel = (
   state: DemoState,
   userId: string,
@@ -94,34 +95,31 @@ export const effectiveDemoPlan = (
   person: ProjectParticipant,
   date: string,
 ): EffectivePlan => {
+  if (person.taskAttendanceOnly)
+    return {
+      name: "临时用工，请从我的任务开工／完工打卡",
+      isWorkday: false,
+      points: [],
+    };
   const plans = [...(state.plans ?? [])]
     .reverse()
     .sort((a, b) => b.startsOn.localeCompare(a.startsOn));
-  for (const scope of [
-    { type: "MEMBER", id: person.memberId },
-    { type: "TEAM", id: person.teamId },
-    { type: "PROJECT", id: person.projectId },
-  ]) {
-    const plan = plans.find(
+  const scoped = selectDemoScopePlan(
+    plans.filter(
       (row) =>
-        row.projectId === person.projectId &&
-        row.scopeType === scope.type &&
-        row.scopeId === scope.id &&
-        row.startsOn <= date &&
         row.authorLevel > memberLevel(person) &&
         (row.authorUserId === null ||
           demoMe(state, row.authorUserId).profile.id !== person.profileId),
-    );
-    if (!plan || plan.inherit || (plan.endsOn !== null && plan.endsOn < date))
-      continue;
-    return {
-      name: plan.name,
-      points: plan.points,
-      isWorkday: plan.workdays.includes(
-        new Date(`${date}T00:00:00Z`).getUTCDay() || 7,
-      ),
-    };
-  }
+    ),
+    [
+      { type: "MEMBER", id: person.memberId },
+      { type: "TEAM", id: person.teamId },
+      { type: "PROJECT", id: person.projectId },
+    ],
+    person.projectId,
+    date,
+  );
+  if (scoped !== null) return scoped;
   if (
     plans.some(
       (row) =>
@@ -144,6 +142,76 @@ export const effectiveDemoPlan = (
         (day) => day === (new Date(`${date}T00:00:00Z`).getUTCDay() || 7),
       ),
     };
+  return { name: "每日两次", points: defaultAttendancePoints, isWorkday: true };
+};
+const selectDemoScopePlan = (
+  plans: readonly DemoPlan[],
+  scopes: readonly { readonly type: string; readonly id: string | null }[],
+  projectId: string,
+  date: string,
+): EffectivePlan | null => {
+  for (const scope of scopes) {
+    const plan = plans.find(
+      (row) =>
+        row.projectId === projectId &&
+        row.scopeType === scope.type &&
+        row.scopeId === scope.id &&
+        row.startsOn <= date,
+    );
+    if (!plan || plan.inherit || (plan.endsOn !== null && plan.endsOn < date))
+      continue;
+    return {
+      name: plan.name,
+      points: plan.points,
+      isWorkday: plan.workdays.includes(
+        new Date(`${date}T00:00:00Z`).getUTCDay() || 7,
+      ),
+    };
+  }
+  return null;
+};
+export const effectiveDemoTeamPlan = (
+  state: DemoState,
+  projectId: string,
+  teamId: string,
+  date: string,
+): EffectivePlan => {
+  const plans = [...(state.plans ?? [])]
+    .reverse()
+    .sort((a, b) => b.startsOn.localeCompare(a.startsOn));
+  const scoped = selectDemoScopePlan(
+    plans.filter((row) => row.authorLevel > 1),
+    [
+      { type: "TEAM", id: teamId },
+      { type: "PROJECT", id: projectId },
+    ],
+    projectId,
+    date,
+  );
+  if (scoped !== null) return scoped;
+  if (
+    !plans.some(
+      (row) =>
+        row.projectId === projectId &&
+        row.authorLevel === 6 &&
+        row.startsOn <= date,
+    )
+  ) {
+    const config = state.configurations[projectId];
+    if (
+      config?.shift &&
+      config.schedule &&
+      config.schedule.startsOn <= date &&
+      (config.schedule.endsOn === null || date <= config.schedule.endsOn)
+    )
+      return {
+        name: config.shift.name,
+        points: legacyAttendancePoints(config.shift.segments),
+        isWorkday: config.schedule.workdays.some(
+          (day) => day === (new Date(`${date}T00:00:00Z`).getUTCDay() || 7),
+        ),
+      };
+  }
   return { name: "每日两次", points: defaultAttendancePoints, isWorkday: true };
 };
 export const demoPlanRequest = (

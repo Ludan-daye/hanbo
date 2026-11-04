@@ -30,6 +30,7 @@ export const ProjectAttendanceCard = ({
   const progress =
     entry.status === "ready" ? projectAttendanceProgress(entry) : null;
   const todayRequired = hasAttendanceToday(entry);
+  const taskAttendanceOnly: boolean = entry.project.taskAttendanceOnly === true;
   return (
     <View
       className="project-attendance-card"
@@ -50,7 +51,9 @@ export const ProjectAttendanceCard = ({
           className={`project-attendance-card__status ${todayRequired && progress?.abnormal === 0 && progress?.completed === progress?.total ? "project-attendance-card__status--done" : ""}`}
         >
           {entry.status === "ready"
-            ? workerProjectStatus(entry.today, now)
+            ? taskAttendanceOnly
+              ? "按任务打卡"
+              : workerProjectStatus(entry.today, now)
             : "读取失败"}
         </View>
       </View>
@@ -107,9 +110,11 @@ export const ProjectAttendanceCard = ({
         </>
       ) : (
         <View className="project-attendance-card__meta">
-          {entry.today.configured
-            ? "当前项目今天没有打卡任务"
-            : "请联系管理员确认本项目的打卡安排"}
+          {taskAttendanceOnly
+            ? "从我的任务开工、完工，按实际分钟计工"
+            : entry.today.configured
+              ? "当前项目今天没有打卡任务"
+              : "请联系管理员确认本项目的打卡安排"}
         </View>
       )}
       <Button
@@ -118,10 +123,11 @@ export const ProjectAttendanceCard = ({
           if (entry.status === "error") onRetry();
           else
             void Taro.navigateTo({
-              url:
-                todayRequired &&
-                progress !== null &&
-                progress.completed < progress.total
+              url: taskAttendanceOnly
+                ? "/pages/my-tasks/index"
+                : todayRequired &&
+                    progress !== null &&
+                    progress.completed < progress.total
                   ? projectPunchUrl(entry.project.projectId)
                   : `/pages/my-records/index?projectId=${encodeURIComponent(entry.project.projectId)}`,
             });
@@ -130,11 +136,13 @@ export const ProjectAttendanceCard = ({
         <View>
           {entry.status === "error"
             ? "重新加载"
-            : todayRequired &&
-                progress !== null &&
-                progress.completed < progress.total
-              ? "进入项目打卡"
-              : "查看项目考勤"}
+            : taskAttendanceOnly
+              ? "进入我的任务"
+              : todayRequired &&
+                  progress !== null &&
+                  progress.completed < progress.total
+                ? "进入项目打卡"
+                : "查看项目考勤"}
         </View>
         <View>→</View>
       </Button>

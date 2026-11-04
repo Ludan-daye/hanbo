@@ -14,6 +14,7 @@ export type FaceOwner = {
 };
 
 export type FaceSessionContext = {
+  readonly safetyConfirmationId?: string | undefined;
   readonly userId: string;
   readonly projectId: string;
   readonly attendanceDate: string;

@@ -110,7 +110,7 @@ export default function CreateProject(): JSX.Element {
     <Screen>
       <PageHeader title="新建项目" />
       <Notice>
-        设置工地范围并选择项目管理员，创建后由管理员配置班组和排班。
+        设置工地范围、项目管理员。
       </Notice>
       <Section title="基本信息">
         <Field

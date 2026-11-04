@@ -55,7 +55,7 @@ await writeFile(join(packageRoot, "运行说明.txt"), `瀚渤智慧工地 · �
 
 API 地址：${apiUrl.origin}
 AppID：${project.appid}
-测试人员登录：${values["test-login"] === true ? "已启用，输入管理员单独提供的测试口令后选择角色。" : "未启用"}
+测试人员登录：${values["test-login"] === true ? "已启用，点击测试身份直接进入。" : "未启用"}
 
 1. 解压 ZIP，打开电脑上的“微信开发者工具”，选择导入项目。
 2. 导入整个“${folderName}”文件夹，根目录应能看到 project.config.json。不要只导入 miniprogram 子文件夹。

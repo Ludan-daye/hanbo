@@ -28,6 +28,7 @@ import type { AuthorizationData } from "../authorization/authorization.types.js"
 
 export type PlanScopeType = "PROJECT" | "TEAM" | "MEMBER";
 export type PlanPerson = {
+  readonly taskAttendanceOnly?: boolean;
   readonly memberId: string;
   readonly participantId: string;
   readonly teamId: string | null;
@@ -173,6 +174,7 @@ export const historicalPlanPerson = (
     ? person
     : {
         ...person,
+        taskAttendanceOnly: history.taskAttendanceOnly,
         teamId: history.teamId,
         roleLevel:
           history.roleCode === null
@@ -187,7 +189,12 @@ export const resolveAttendancePlan = (
   date: string,
 ): EffectivePlan => {
   const person = historicalPlanPerson(data, participant, date);
-  const weekday: number = new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
+  if (person.taskAttendanceOnly)
+    return {
+      name: "临时用工，请从我的任务开工／完工打卡",
+      points: [],
+      isWorkday: false,
+    };
   const scopes: readonly {
     readonly type: PlanScopeType;
     readonly id: string | null;
@@ -196,17 +203,52 @@ export const resolveAttendancePlan = (
     { type: "TEAM", id: person.teamId },
     { type: "PROJECT", id: projectId },
   ];
+  const eligibleRules = data.rules.filter(
+    (row) =>
+      row.authorRoleLevel > person.roleLevel &&
+      (row.authorUserId === null || row.authorUserId !== person.userId) &&
+      row.author?.workerProfile?.id !== person.participantId &&
+      row.author?.managerProfile?.id !== person.participantId,
+  );
+  return resolveScopedPlan(data, projectId, scopes, eligibleRules, date);
+};
+
+/** Resolve the ordinary team shift without applying any member-specific overrides. */
+export const resolveTeamAttendancePlan = (
+  data: PlanningData,
+  projectId: string,
+  teamId: string,
+  date: string,
+): EffectivePlan =>
+  resolveScopedPlan(
+    data,
+    projectId,
+    [
+      { type: "TEAM", id: teamId },
+      { type: "PROJECT", id: projectId },
+    ],
+    data.rules.filter((row) => row.authorRoleLevel > 1),
+    date,
+  );
+
+const resolveScopedPlan = (
+  data: PlanningData,
+  projectId: string,
+  scopes: readonly {
+    readonly type: PlanScopeType;
+    readonly id: string | null;
+  }[],
+  eligibleRules: PlanningData["rules"],
+  date: string,
+): EffectivePlan => {
+  const weekday: number = new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
   for (const scope of scopes) {
-    const rule = data.rules.find(
+    const rule = eligibleRules.find(
       (row) =>
         row.projectId === projectId &&
         row.scopeType === scope.type &&
         row.scopeId === scope.id &&
-        row.startsOn.toISOString().slice(0, 10) <= date &&
-        row.authorRoleLevel > person.roleLevel &&
-        (row.authorUserId === null || row.authorUserId !== person.userId) &&
-        row.author?.workerProfile?.id !== person.participantId &&
-        row.author?.managerProfile?.id !== person.participantId,
+        row.startsOn.toISOString().slice(0, 10) <= date,
     );
     if (
       rule === undefined ||

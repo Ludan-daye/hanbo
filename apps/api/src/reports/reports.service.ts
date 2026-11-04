@@ -1,3 +1,5 @@
+import { summarizeTaskAttendance } from "@construction/domain";
+import { taskInterval } from "../attendance/task-attendance.js";
 import { createHash } from "node:crypto";
 import type { Prisma, MakeupRequest } from "@prisma/client";
 import {
@@ -691,6 +693,7 @@ export class ReportsService {
             this.env.PERSONNEL_ENCRYPTION_KEY,
           ),
           memberId: m.id,
+          taskAttendanceOnly: m.taskAttendanceOnly,
           participantId: m.workerId,
           participantType: "WORKER",
           displayName: m.worker.encryptedName.startsWith("name-v1:")
@@ -779,6 +782,43 @@ export class ReportsService {
           select: { id: true, name: true },
         }),
       ]);
+    const taskMembers = members.filter(
+      (member) =>
+        member.taskAttendanceOnly ||
+        planning.histories.some(
+          (history) =>
+            history.workerMemberId === member.memberId &&
+            history.taskAttendanceOnly,
+        ),
+    );
+    const taskAssignments =
+      taskMembers.length === 0
+        ? []
+        : await database.teamTaskAssignment.findMany({
+            where: {
+              memberId: { in: taskMembers.map((member) => member.memberId) },
+              OR: [
+                {
+                  task: {
+                    startsAt: { lt: new Date(end.getTime() + 16 * 3600000) },
+                    endsAt: { gt: new Date(start.getTime() - 8 * 3600000) },
+                  },
+                },
+                {
+                  startedAt: { lt: new Date(end.getTime() + 16 * 3600000) },
+                  OR: [
+                    { finishedAt: null },
+                    {
+                      finishedAt: {
+                        gt: new Date(start.getTime() - 8 * 3600000),
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+            include: { task: true },
+          });
     const names = new Map(teams.map((t) => [t.id, t.name]));
     const inputs = new Map<string, readonly AttendanceRecordInput[]>();
     for (const record of records) {
@@ -869,30 +909,44 @@ export class ReportsService {
         const evidence = inputs.get(key) ?? [];
         const legacy = stored.get(key);
         const eligible = isAttendanceMemberOn(state, text);
+        const taskSummary = state.taskAttendanceOnly
+          ? summarizeTaskAttendance(
+              taskAssignments
+                .filter((row) => row.memberId === member.memberId)
+                .map(taskInterval),
+              text,
+              now,
+            )
+          : null;
         if (
           !eligible &&
+          !taskSummary?.hasResult &&
           evidence.length === 0 &&
           legacy === undefined &&
           !makeupsByDay.has(key)
         )
           continue;
-        const plan = resolveAttendancePlan(
-          data,
-          member.projectId,
-          {
-            ...member,
-            roleLevel: ROLE_LEVEL[state.roleCode],
-            teamId: state.teamId,
-          },
-          text,
-        );
-        const isScheduled = eligible && plan.isWorkday;
-        const summary = summarizeScheduledAttendance(
-          plan.points,
-          text,
-          evidence,
-          now,
-        );
+        const plan = state.taskAttendanceOnly
+          ? {
+              name: "临时任务 · 按实际分钟计工",
+              isWorkday: taskSummary!.isScheduled,
+              points: [],
+            }
+          : resolveAttendancePlan(
+              data,
+              member.projectId,
+              {
+                ...member,
+                roleLevel: ROLE_LEVEL[state.roleCode],
+                teamId: state.teamId,
+              },
+              text,
+            );
+        const isScheduled =
+          (eligible || taskSummary?.hasResult === true) && plan.isWorkday;
+        const summary =
+          taskSummary ??
+          summarizeScheduledAttendance(plan.points, text, evidence, now);
         // Preserve imported legacy summaries only when no raw evidence exists for that past day.
         const imported =
           text < today &&
@@ -901,10 +955,11 @@ export class ReportsService {
           !data.rules.some((r) => r.startsOn <= date)
             ? legacy
             : null;
-        const day = imported ?? summary;
+        const day = taskSummary ?? imported ?? summary;
         const hasResult =
-          evidence.some((r) => r.isValid) ||
-          (imported !== null && !imported.isAbsent);
+          taskSummary?.hasResult ??
+          (evidence.some((r) => r.isValid) ||
+            (imported !== null && !imported.isAbsent));
         const participant: AttendanceReportParticipantBase = {
           projectId: member.projectId,
           projectName: member.projectName,

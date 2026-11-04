@@ -239,16 +239,29 @@ export default function MyProjectDetailPage(): JSX.Element {
                           ? "本项目无需考勤"
                           : project.status !== "ACTIVE"
                             ? "项目当前未开放打卡"
-                            : !today.configured
-                              ? "待安排"
-                              : !today.isWorkday || today.points.length === 0
-                                ? "今日无需打卡"
-                                : workerProjectStatus(
-                                    today,
-                                    new Date().toISOString(),
-                                  )}
+                            : project.taskAttendanceOnly
+                              ? "按任务开工、完工计时"
+                              : !today.configured
+                                ? "待安排"
+                                : !today.isWorkday || today.points.length === 0
+                                  ? "今日无需打卡"
+                                  : workerProjectStatus(
+                                      today,
+                                      new Date().toISOString(),
+                                    )}
                       </View>
                     </View>
+                    {project.taskAttendanceOnly ? (
+                      <Button
+                        onClick={() => {
+                          void Taro.navigateTo({
+                            url: "/pages/my-tasks/index",
+                          });
+                        }}
+                      >
+                        查看我的任务与计时
+                      </Button>
+                    ) : null}
                     {canPunch ? (
                       <Button
                         onClick={() => {
@@ -261,7 +274,7 @@ export default function MyProjectDetailPage(): JSX.Element {
                       </Button>
                     ) : null}
                     <View className="worker-project-detail__muted">
-                      已显示今日全部安排；时间和次数由上级设置。
+                      今日安排由上级设置。
                     </View>
                   </>
                 )}
@@ -299,11 +312,11 @@ export default function MyProjectDetailPage(): JSX.Element {
                       },
                     ]}
                     onError={() =>
-                      setActionError("地图加载失败，请检查网络后重试。")
+                      setActionError("地图加载失败，请检查网络。")
                     }
                   />
                 ) : (
-                  <Notice>在微信小程序中可查看工地地图与考勤范围。</Notice>
+                  <Notice>工地地图请在微信小程序查看。</Notice>
                 )}
                 <ListItem primary="地址" secondary={project.address} />
                 <ListItem
@@ -373,10 +386,11 @@ export default function MyProjectDetailPage(): JSX.Element {
               <Section title="打卡与计工说明">
                 <ListItem
                   primary="定位 → 现场照片 → 活体人脸核验"
-                  secondary="请先录入本人底照并通过审核；范围内才可继续拍照和刷脸，每次提交后确认打卡结果。"
+                  secondary="底照审核通过、定位在范围内后，可拍照刷脸打卡。"
                 />
                 <Notice>
-                  目前记录出勤和实际工时，正常工日、零星工时、加班工时尚未分开核算，不等同工资。
+                  <View>统计出勤和总工时，不作工资依据。</View>
+                  <View>暂未区分工日、零星用工及加班。</View>
                 </Notice>
               </Section>
               {actionError ? <Notice>{actionError}</Notice> : null}
@@ -457,13 +471,24 @@ export default function MyProjectDetailPage(): JSX.Element {
             ) : (
               <>
                 <View className="worker-project-schedule-heading">
-                  {!project.requiresAttendance
-                    ? "本项目无需考勤"
-                    : project.status !== "ACTIVE"
-                      ? "项目当前未开放打卡"
-                      : workerProjectStatus(today, new Date().toISOString())}
+                  {project.taskAttendanceOnly
+                    ? "按临时任务开工、完工打卡"
+                    : !project.requiresAttendance
+                      ? "本项目无需考勤"
+                      : project.status !== "ACTIVE"
+                        ? "项目当前未开放打卡"
+                        : workerProjectStatus(today, new Date().toISOString())}
                 </View>
                 <Subtitle>{today.shiftName ?? "尚未配置打卡安排"}</Subtitle>
+                {project.taskAttendanceOnly && (
+                  <Button
+                    onClick={() => {
+                      void Taro.navigateTo({ url: "/pages/my-tasks/index" });
+                    }}
+                  >
+                    查看我的任务与计时
+                  </Button>
+                )}
                 {today.points.map((point) => (
                   <View className="worker-project-point" key={point.pointCode}>
                     <View className="worker-project-point-time">
@@ -494,7 +519,7 @@ export default function MyProjectDetailPage(): JSX.Element {
                   </View>
                 ))}
                 <View className="worker-project-muted worker-project-footnote">
-                  按本人今日生效安排执行；时间和次数由上级设置。
+                  按今日生效安排打卡。
                 </View>
               </>
             )}
@@ -538,7 +563,7 @@ export default function MyProjectDetailPage(): JSX.Element {
                     },
                   ]}
                   onError={() =>
-                    setActionError("地图加载失败，请检查网络后重试。")
+                    setActionError("地图加载失败，请检查网络。")
                   }
                 />
                 <Button
@@ -552,11 +577,11 @@ export default function MyProjectDetailPage(): JSX.Element {
               </>
             ) : (
               <View className="worker-project-map-note">
-                在微信小程序中可查看地图上的圆形范围，并打开工地位置。
+                在微信小程序中查看工地地图。
               </View>
             )}
             <Subtitle>
-              打卡时自动获取当前位置，范围内才可继续拍照和刷脸。
+              范围内可拍照、刷脸打卡。
               {project.locationAccuracyLimitM === null
                 ? ""
                 : `定位精度须在 ${project.locationAccuracyLimitM} 米以内。`}
@@ -603,11 +628,11 @@ export default function MyProjectDetailPage(): JSX.Element {
           <Section title="打卡要求">
             <ListItem
               primary="定位 → 现场照片 → 活体人脸核验"
-              secondary="请先录入本人底照并通过审核，每次提交后确认打卡结果。"
+              secondary="底照审核通过后可打卡，提交后查看结果。"
             />
             <ListItem
               primary="计工说明"
-              secondary="目前记录出勤和实际工时，正常工日、零星工时、加班工时尚未分开核算。"
+              secondary="统计出勤和总工时，暂未区分工日、零星及加班。"
             />
           </Section>
           {actionError ? <Notice>{actionError}</Notice> : null}

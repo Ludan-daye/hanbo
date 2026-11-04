@@ -1,5 +1,5 @@
 import { membershipGrants, readAdditionalRoles, synchronizeMembershipGrants } from "../management/membership-roles.js";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -152,12 +152,9 @@ export class AuthService {
     return this.issueSession(user, metadata, now);
   }
 
-  async loginTestAccount(account: TestAccountCode, passcode: string, metadata: RequestMetadata): Promise<LoginResponse> {
-    if (this.env.DEPLOYMENT_ENV !== "test" || this.env.TEST_LOGIN_SECRET_HASH.length === 0)
+  async loginTestAccount(account: TestAccountCode, metadata: RequestMetadata): Promise<LoginResponse> {
+    if (this.env.DEPLOYMENT_ENV !== "test" || !this.env.TEST_LOGIN_ENABLED)
       throw new NotFoundException({ message: "TEST_LOGIN_DISABLED" });
-    const digest: Buffer = createHash("sha256").update(passcode).digest();
-    if (!timingSafeEqual(digest, Buffer.from(this.env.TEST_LOGIN_SECRET_HASH, "hex")))
-      throw new UnauthorizedException({ message: "TEST_LOGIN_INVALID_CREDENTIALS" });
     const user = await this.prisma.user.findUnique({ where: { openid: account }, include: { roles: { include: { role: true } } } });
     if (user === null || !user.isBound || user.status !== "ACTIVE" ||
         getHighestRoleCode(user.roles.map((assignment) => ({ roleCode: assignment.role.code }))) !== TEST_ACCOUNTS[account].roleCode)

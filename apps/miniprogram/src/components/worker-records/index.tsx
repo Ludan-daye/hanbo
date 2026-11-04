@@ -246,7 +246,7 @@ export const WorkerRecords = (): JSX.Element => {
         </Picker>
         {projectError ? (
           <View className="worker-records__project-warning">
-            项目名称暂未加载，历史记录仍可查看。
+            项目名加载失败，记录仍可查看。
             <NativeButton
               className="worker-records__text-button"
               onClick={() => setProjectRevision((v) => v + 1)}
@@ -338,7 +338,7 @@ export const WorkerRecords = (): JSX.Element => {
             <View className="worker-records__heading">考勤加载失败</View>
             <View className="worker-records__muted">{loaded.error}</View>
             <View className="worker-records__muted">
-              当前筛选已保留，请重新加载。
+              筛选已保留，请重试。
             </View>
             <Button appearance="worker" onClick={refresh}>
               重新加载
@@ -417,7 +417,7 @@ export const WorkerRecords = (): JSX.Element => {
                       </>
                     ) : (
                       <View className="worker-records__muted">
-                        暂无日汇总，请以以下已保存记录为准。
+                        暂无日汇总，以原始记录为准。
                       </View>
                     )}
                   </View>
@@ -457,7 +457,7 @@ export const WorkerRecords = (): JSX.Element => {
                       <View className="worker-records__muted">
                         暂无原始打卡记录。
                         {group.makeups.length
-                          ? "已批准的补卡仍是有效考勤结果。"
+                          ? "已批准补卡有效。"
                           : ""}
                       </View>
                     )}

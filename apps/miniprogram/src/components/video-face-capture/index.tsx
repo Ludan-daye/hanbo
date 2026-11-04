@@ -80,11 +80,11 @@ export const VideoFaceCapture = <Result extends CompletedFaceSession>({
       setError(null);
       try {
         if (new Date(issued.expiresAt).getTime() <= Date.now())
-          throw new Error("本次核验已过期，请关闭后重新开始。");
+          throw new Error("核验已过期，请重新开始。");
         const current = await flow.fetchResult(issued.id);
         if (!active.current) return;
         if (current.status === "VERIFYING")
-          throw new Error("云端仍在处理本次录像，请稍后点击确认结果。");
+          throw new Error("核验处理中，请稍后查看结果。");
         const result =
           current.status === "PENDING"
             ? await flow.uploadVideo(issued.id, video)
@@ -94,7 +94,7 @@ export const VideoFaceCapture = <Result extends CompletedFaceSession>({
         if (result.status === "VERIFIED") return;
         setPhase("FAILED");
         setError(
-          "活体检测或本人比对未通过，请确认是本人操作、光线充足，并按顺序完成动作后重新核验。",
+          "核验未通过，请本人在光线充足处按顺序完成动作。",
         );
       } catch (reason: unknown) {
         if (!active.current) return;
@@ -157,7 +157,7 @@ export const VideoFaceCapture = <Result extends CompletedFaceSession>({
     if (active.current) {
       setReady(false);
       setPhase("FAILED");
-      setError("相机已暂停，本次录像不用于核验。请关闭后重新进入。");
+      setError("相机已暂停，录像无效，请重新进入。");
     }
   };
   Taro.useDidHide(interrupted);
@@ -231,12 +231,12 @@ export const VideoFaceCapture = <Result extends CompletedFaceSession>({
               setReady(false);
               setPhase("FAILED");
               setError(
-                "无法使用摄像头，请在微信设置中允许相机权限，再重新进入。",
+                "相机未授权，请在微信设置中开启。",
               );
             }}
           />
         ) : (
-          <Notice>请在微信小程序真机预览中使用摄像头核验。</Notice>
+          <Notice>相机核验仅支持小程序真机预览。</Notice>
         )}
         <View className="video-face__instruction">{instruction}</View>
         {phase === "RECORDING" ? (
@@ -245,8 +245,8 @@ export const VideoFaceCapture = <Result extends CompletedFaceSession>({
           </View>
         ) : null}
         <Subtitle>
-          按提示完成两个动作，约 8
-          秒自动结束。录像发送至腾讯云完成核验；仅由后端确认通过。
+          <View>完成两个动作，约 8 秒自动结束。</View>
+          <View>录像发送至腾讯云，核验结果由服务器确认。</View>
         </Subtitle>
         {error !== null ? <Notice>{error}</Notice> : null}
         {phase === "RETRY" ? (

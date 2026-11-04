@@ -93,8 +93,7 @@ export const MonthlyExport = ({
   if (FRONTEND_DEMO)
     return (
       <Notice>
-        月度 Excel
-        包含汇总、每日明细、补卡异常和统计说明。演示数据不导出，请在正式数据模式中使用。
+        演示数据不支持导出，请切换正式数据模式。
       </Notice>
     );
   const pending = jobs.some(
@@ -117,9 +116,9 @@ export const MonthlyExport = ({
       </Button>
       <Notice>
         {month === chinaMonth()
-          ? "本月尚未结束，按生成时的数据统计。"
+          ? "本月报表截至生成时间。"
           : "生成后可打开或转发 Excel。"}{" "}
-        调整补卡后请重新生成。
+        补卡后需重新生成。
       </Notice>
       {error !== null ? (
         <View>
@@ -155,7 +154,7 @@ export const MonthlyExport = ({
         </View>
       ))}
       {jobs.length > 0 ? (
-        <Notice>显示本人当前月份最近 20 次导出，旧版本保持不变。</Notice>
+        <Notice>本月最近 20 次导出，保留历史版本。</Notice>
       ) : null}
     </View>
   );

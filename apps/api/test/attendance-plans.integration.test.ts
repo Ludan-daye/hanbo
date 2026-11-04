@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { ATTENDANCE_SAFETY_VERSION } from "@construction/domain";
 import { ReportExportsService } from "../src/reports/report-exports.service.js";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -114,22 +115,54 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       code: string,
       time: string,
       latitude: string,
-    ) =>
-      request(app.getHttpServer())
-        .post(`/attendance/projects/${projectId}/records`)
-        .auth(auth(actor), { type: "bearer" })
-        .send({
-          attendanceDate: date,
-          pointCode: code,
-          occurredAt: `${date}T${time}:00+08:00`,
-          latitude,
-          longitude: "121",
-          locationAccuracyM: "5",
-          selfieObjectKey: "test/selfie.jpg",
-          selfieHash: "test-hash",
-          sitePhotoObjectKey: images.get(actor)!.objectKey,
-          sitePhotoHash: images.get(actor)!.hash,
-        });
+    ): { expect: (status: number) => Promise<request.Response> } => ({
+      expect: async (status: number): Promise<request.Response> => {
+        const confirmation = await database.attendanceSafetyConfirmation.create(
+          {
+            data: {
+              userId: `planning-${actor}`,
+              projectId,
+              teamId:
+                actor === "other"
+                  ? "planning-other-team"
+                  : actor === "admin"
+                    ? null
+                    : teamId,
+              memberId: `member-${actor}`,
+              participantType: ["worker", "other"].includes(actor)
+                ? "WORKER"
+                : "MANAGER",
+              participantId: `planning-${actor}`,
+              attendanceDate: new Date(date),
+              pointCode: code,
+              baselineVersion: ATTENDANCE_SAFETY_VERSION,
+              briefingIds: [],
+              snapshot: {},
+              expiresAt: new Date(Date.now() + 60000),
+            },
+          },
+        );
+        return request(app.getHttpServer())
+          .post(`/attendance/projects/${projectId}/records`)
+          .auth(auth(actor), { type: "bearer" })
+          .send({
+            attendanceDate: date,
+            pointCode: code,
+            occurredAt: `${date}T${time}:00+08:00`,
+            latitude,
+            longitude: "121",
+            locationAccuracyM: "5",
+            selfieObjectKey: "test/selfie.jpg",
+            selfieHash: "test-hash",
+            sitePhotoObjectKey: images.get(actor)!.objectKey,
+            sitePhotoHash: images.get(actor)!.hash,
+            safetyConfirmationId: confirmation.id,
+          })
+          .expect((response): void => {
+            expect(response.status, JSON.stringify({ actor, date, code, body: response.body, text: response.text })).toBe(status);
+          });
+      },
+    });
 
     beforeAll(async () => {
       const url = process.env.DATABASE_FOUNDATION_TEST_URL;
@@ -639,6 +672,13 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         ),
       );
       expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+      const reviewed = await request(app.getHttpServer()).get("/makeups/reviewed").auth(auth("admin"), { type: "bearer" }).expect(200);
+      expect(reviewed.body.items).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id, status: "APPROVED", approvalReason: "verified", approvedAt: expect.any(String) }),
+        expect.objectContaining({ id: reverse.body.id, status: "REJECTED", approvalReason: "time incorrect" }),
+      ]));
+      const peerHistory = await request(app.getHttpServer()).get("/makeups/reviewed").auth(auth("peer"), { type: "bearer" }).expect(200);
+      expect(peerHistory.body.items).toEqual([]);
       const personal = await request(app.getHttpServer())
         .get("/me/attendance-days?from=2030-01-07&to=2030-01-07")
         .auth(auth("leader"), { type: "bearer" })
@@ -778,7 +818,22 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
     test("project scoring and person detail preserve scope, hierarchy, versions and audit history", async () => {
       vi.setSystemTime(new Date("2030-01-21T04:00:00Z"));
       const path = `/reports/projects/${projectId}/members/member-worker`;
-      await database.managerProfile.create({ data: { id: "report-peer-manager", name: "Same level manager", phone: "13900000666", status: "ACTIVE", projectMemberships: { create: { id: "report-peer-member", projectId, roleCode: "PROJECT_ADMIN", status: "ACTIVE" } } } });
+      await database.managerProfile.create({
+        data: {
+          id: "report-peer-manager",
+          name: "Same level manager",
+          phone: "13900000666",
+          status: "ACTIVE",
+          projectMemberships: {
+            create: {
+              id: "report-peer-member",
+              projectId,
+              roleCode: "PROJECT_ADMIN",
+              status: "ACTIVE",
+            },
+          },
+        },
+      });
       const body = {
         score: 92,
         comment: "配合良好，注意准时",
@@ -813,7 +868,13 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         .auth(auth("admin"), { type: "bearer" })
         .send(body)
         .expect(201);
-      await request(app.getHttpServer()).post(`/reports/projects/${projectId}/members/report-peer-member/evaluation`).auth(auth("admin"), { type: "bearer" }).send(body).expect(403);
+      await request(app.getHttpServer())
+        .post(
+          `/reports/projects/${projectId}/members/report-peer-member/evaluation`,
+        )
+        .auth(auth("admin"), { type: "bearer" })
+        .send(body)
+        .expect(403);
       expect(created.body).toMatchObject({
         score: 92,
         reviewerName: "admin",
@@ -890,7 +951,11 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         .auth(auth("leader"), { type: "bearer" })
         .expect(200);
       expect(team.body.canEvaluate).toBe(false);
-      const teamForAdmin = await request(app.getHttpServer()).get(`/reports/teams/${teamId}/members/member-worker`).query({ from: "2030-01-01", to: "2030-01-21" }).auth(auth("admin"), { type: "bearer" }).expect(200);
+      const teamForAdmin = await request(app.getHttpServer())
+        .get(`/reports/teams/${teamId}/members/member-worker`)
+        .query({ from: "2030-01-01", to: "2030-01-21" })
+        .auth(auth("admin"), { type: "bearer" })
+        .expect(200);
       expect(teamForAdmin.body.canEvaluate).toBe(true);
       expect(
         team.body.days.every(
@@ -1100,7 +1165,15 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         join(process.cwd(), "../../.temp/monthly-report-sample.xlsx"),
         bytes,
       );
-      await request(app.getHttpServer()).post(`/reports/projects/${projectId}/members/member-worker/evaluation`).auth(auth("admin"), { type: "bearer" }).send({ score: 0, comment: "测试修订零分", expectedUpdatedAt: currentEvaluation.updatedAt.toISOString() }).expect(201);
+      await request(app.getHttpServer())
+        .post(`/reports/projects/${projectId}/members/member-worker/evaluation`)
+        .auth(auth("admin"), { type: "bearer" })
+        .send({
+          score: 0,
+          comment: "测试修订零分",
+          expectedUpdatedAt: currentEvaluation.updatedAt.toISOString(),
+        })
+        .expect(201);
       const again = await request(app.getHttpServer())
         .post("/report-exports")
         .auth(auth("admin"), { type: "bearer" })
@@ -1108,10 +1181,14 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         .expect(201);
       expect(again.body.version).toBe(ready.body.version + 1);
       await app.get(ReportExportsService).processNext();
-      const revised = await app.get(ReportExportsService).download("planning-admin", String(again.body.id));
+      const revised = await app
+        .get(ReportExportsService)
+        .download("planning-admin", String(again.body.id));
       const revisedWorkbook = new ExcelJS.Workbook();
       await revisedWorkbook.xlsx.load(revised.bytes);
-      expect(revisedWorkbook.getWorksheet("月度汇总")!.getColumn(18).values).toContain(0);
+      expect(
+        revisedWorkbook.getWorksheet("月度汇总")!.getColumn(18).values,
+      ).toContain(0);
       const old = await app
         .get(ReportExportsService)
         .download("planning-admin", id);

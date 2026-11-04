@@ -109,7 +109,7 @@ export default function FaceReviewPage(): JSX.Element {
   return (
     <Screen>
       <PageHeader title="人脸档案审核" />
-      <Notice>请核对照片中的本人及人员档案后审核；不能审核自己的底照。</Notice>
+      <Notice>核对本人及档案，不可审核自己的底照。</Notice>
       {error !== null ? <Notice>{error}</Notice> : null}
       {projectId === undefined ? (
         <StateView title="请从项目成员页面进入" />

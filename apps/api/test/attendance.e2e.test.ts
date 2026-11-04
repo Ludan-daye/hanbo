@@ -1,3 +1,5 @@
+import { ATTENDANCE_SAFETY_VERSION } from "@construction/domain";
+import type { AttendanceSafetyConfirmation } from "@prisma/client";
 import { UploadsService } from "../src/uploads/uploads.service.js";
 import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
@@ -345,6 +347,16 @@ const applyTestEnv = (): void => {
 };
 
 class AttendancePrismaTestDouble {
+  readonly teamTaskAssignment = { findFirst: async (): Promise<null> => null };
+  readonly teamSafetyBriefing = { findMany: async (): Promise<[]> => [] };
+  readonly safetyConfirmations = new Map<string, AttendanceSafetyConfirmation>();
+  readonly attendanceSafetyConfirmation = {
+    findFirst: async (args: { where: { id: string; userId: string; memberId: string; pointCode: string; attendanceDate: Date } }): Promise<AttendanceSafetyConfirmation | null> => {
+      const row = this.safetyConfirmations.get(args.where.id);
+      if (!row || row.userId !== args.where.userId || row.memberId !== args.where.memberId || row.pointCode !== args.where.pointCode || row.attendanceDate.getTime() !== args.where.attendanceDate.getTime()) return null;
+      return row;
+    },
+  };
   readonly attendancePlan = { findMany: async (): Promise<[]> => [] };
   readonly projectMemberHistory = { findMany: async (): Promise<[]> => [] };
 
@@ -733,6 +745,7 @@ const attendanceBody = (
   pointCode,
   selfieHash: `selfie-hash-${pointCode}`,
   selfieObjectKey: `selfies/${pointCode}.jpg`,
+  safetyConfirmationId: `safety-worker-${attendanceDate}-${pointCode}`,
   sitePhotoHash: `site-photo-hash-${pointCode}`,
   sitePhotoObjectKey: `site-photos/${pointCode}.jpg`
 });
@@ -744,6 +757,15 @@ describe("AttendanceModule", (): void => {
   beforeEach((): void => {
     applyTestEnv();
     prisma = new AttendancePrismaTestDouble();
+    for (const actor of ["worker", "manager"] as const) {
+      for (let day = 3; day <= 10; day += 1) {
+        const date: string = `2026-06-${String(day).padStart(2, "0")}`;
+        for (const point of ["SEGMENT_1_START", "SEGMENT_1_END", "SEGMENT_2_START", "SEGMENT_2_END", "START"]) {
+          const id: string = `safety-${actor}-${date}-${point}`;
+          prisma.safetyConfirmations.set(id, { id, userId: `${actor}-user`, projectId: "project-1", teamId: "team-1", memberId: `${actor}-member-1`, participantType: actor === "worker" ? "WORKER" : "MANAGER", participantId: `${actor}-1`, attendanceDate: new Date(date), pointCode: point, baselineVersion: ATTENDANCE_SAFETY_VERSION, briefingIds: [], snapshot: {}, confirmedAt: new Date(), expiresAt: new Date(Date.now() + 60000) });
+        }
+      }
+    }
     seedDirectRolePermissions(prisma);
     prisma.projects.set("project-1", {
       centerLatitude: "31.2304000",
@@ -1060,7 +1082,7 @@ describe("AttendanceModule", (): void => {
     const response = await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")
       .set("Authorization", `Bearer ${managerAccessToken}`)
-      .send(attendanceBody("2026-06-03", "SEGMENT_1_START", "2026-06-03T08:00:00.000+08:00", "31.2304000", "121.4737000"))
+      .send({ ...attendanceBody("2026-06-03", "SEGMENT_1_START", "2026-06-03T08:00:00.000+08:00", "31.2304000", "121.4737000"), safetyConfirmationId: "safety-manager-2026-06-03-SEGMENT_1_START" })
       .expect(201);
 
     expect(response.body.record).toMatchObject({
@@ -1136,6 +1158,8 @@ describe("AttendanceModule", (): void => {
 
     app = await createApp(prisma);
     const noPermAccessToken = await createAccessToken(app, "no-permission-user", "session-no-permission");
+    const source = prisma.safetyConfirmations.get("safety-worker-2026-06-09-START")!;
+    prisma.safetyConfirmations.set(source.id, { ...source, userId: "no-permission-user", memberId: "worker-member-no-perm", participantId: "worker-no-perm", teamId: null });
 
     await request(app.getHttpServer())
       .post("/attendance/projects/project-1/records")

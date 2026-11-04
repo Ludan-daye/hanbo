@@ -17,8 +17,10 @@ import {
 import { AccountProfileForm } from "../../components/account-profile-form";
 import { FlowScreen } from "../../components/worker-flow";
 import { ACCESS_TOKEN_KEY, FRONTEND_DEMO } from "../../config/env";
+import { joinTemporaryTask } from "../../services/team-work";
 import { bindByInvitation } from "../../services/auth";
 import { useSession } from "../../store/session";
+import { WorkEntryNotice } from "../../components/work-entry-notice";
 
 import "./index.scss";
 
@@ -51,13 +53,14 @@ export default function Bind(): JSX.Element {
   const submit = async (): Promise<void> => {
     if (busy || bound || phase !== "unbound") return;
     if (code.trim().length === 0) {
-      setError("请填写管理员提供的本人专属邀请码。");
+      setError("请输入本人专属邀请码。");
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      await bindByInvitation(code.trim());
+      if (/^\d{6}$/.test(code.trim())) await joinTemporaryTask(code.trim());
+      else await bindByInvitation(code.trim());
       setBindingComplete(true);
       setCode("");
     } catch (cause) {
@@ -155,7 +158,7 @@ export default function Bind(): JSX.Element {
             <View className="worker-binding-intro">
               <Title>绑定本人档案</Title>
               <Subtitle>
-                输入管理员提供的邀请码，关联项目中的本人档案。
+                输入邀请码，绑定本人档案。
               </Subtitle>
             </View>
             <View className="worker-binding-card">
@@ -207,13 +210,13 @@ export default function Bind(): JSX.Element {
         )}
         {FRONTEND_DEMO ? (
           <View className="worker-binding-demo">
-            <View>演示绑定仅保存在本机，不关联真实微信。</View>
+            <View>本机演示，不关联真实微信。</View>
             {!bound ? (
               <>
                 <View>预置姓名：待入场成员</View>
                 <View>手机号：13800000006</View>
                 <View>邀请码：HANBO-DEMO</View>
-                <View>请先在“修改资料”中填写匹配信息，再绑定。</View>
+                <View>先修改资料，再绑定档案。</View>
               </>
             ) : null}
           </View>
@@ -230,7 +233,7 @@ export default function Bind(): JSX.Element {
         <View className="worker-binding-footnote">
           {bound
             ? "资料有误请联系管理员核实。"
-            : "邀请码仅供本人使用，失效请联系管理员重新获取。"}
+            : "邀请码仅限本人，失效后重新领取。"}
         </View>
       </FlowScreen>
     );
@@ -263,15 +266,16 @@ export default function Bind(): JSX.Element {
         <Title>{bound ? "本人档案已绑定" : "连接你的工作现场"}</Title>
         <Subtitle>
           {bound ? (
-            "登录账号已关联人员档案，工人需补齐用工资料并录入本人正脸后进入项目。"
+            "档案已绑定，完成用工登记和底照录入后入场。"
           ) : (
             <>
               已完成{FRONTEND_DEMO ? "演示" : "微信"}登录，
-              <View>输入本人专属邀请码，关联项目人员档案。</View>
+              <View>输入邀请码，绑定本人档案。</View>
             </>
           )}
         </Subtitle>
       </View>
+      <WorkEntryNotice />
       {FRONTEND_DEMO ? (
         <Notice>
           当前为演示绑定，不关联真实微信。
@@ -299,7 +303,7 @@ export default function Bind(): JSX.Element {
               />
             ) : null}
             <Subtitle>
-              再次使用同一账号登录会自动识别身份，岗位和项目权限由管理员分配。
+              岗位和权限由管理员分配。
             </Subtitle>
           </View>
           <Button
@@ -337,14 +341,14 @@ export default function Bind(): JSX.Element {
           <Field
             label="本人专属邀请码"
             value={code}
-            placeholder="请输入管理员提供的邀请码"
+            placeholder="输入档案邀请码或六位临时工邀请码"
             onInput={(value: string): void => {
               setCode(value);
               setError(null);
             }}
           />
           <View className="binding-help">
-            请向管理员领取对应本人档案的邀请码，绑定后将按该档案分配权限。
+            使用管理员提供的本人专属邀请码。
           </View>
           <Button
             loading={busy}
@@ -369,7 +373,7 @@ export default function Bind(): JSX.Element {
       <View className="page-footnote">
         {bound
           ? "如档案信息有误，请联系管理员核实。"
-          : "邀请码仅供本人使用，过期或失效请联系管理员重新获取。"}
+          : "邀请码仅限本人使用，失效后向管理员重新领取。"}
       </View>
     </Screen>
   );

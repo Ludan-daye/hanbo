@@ -1,3 +1,8 @@
+import {
+  AttendanceSafetyCard,
+  type PunchSafetyReceipt,
+} from "../../components/attendance-safety-card";
+import { ApiError } from "../../services/apiClient";
 import { Button as NativeButton, Image, View } from "@tarojs/components";
 import Taro, { useRouter } from "@tarojs/taro";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -45,6 +50,7 @@ import {
 } from "../../services/geofence";
 import {
   fetchAttendanceToday,
+  fetchTaskAttendanceToday,
   fetchMyProjects,
   submitAttendanceRecord,
 } from "../../services/me";
@@ -73,6 +79,7 @@ type LocationCheck = GeofenceCheck & {
   readonly position: AttendanceLocation;
 };
 type PunchAttempt = {
+  readonly safetyConfirmationId: string;
   readonly projectId: string;
   readonly pointCode: AttendancePointCode;
   readonly attendanceDate: string;
@@ -131,6 +138,14 @@ export default function Punch(): JSX.Element {
   const { phase: sessionPhase, state: sessionState } = useSession();
   const workerAppearance = sessionState.me?.roles.highestRoleCode === "WORKER";
   const requestedProjectId = useRouter().params.projectId ?? null;
+  const requestedTaskId = useRouter().params.taskId ?? null;
+  const readToday = useCallback(
+    (id: string): Promise<AttendanceToday> =>
+      requestedTaskId === null
+        ? fetchAttendanceToday(id)
+        : fetchTaskAttendanceToday(id, requestedTaskId),
+    [requestedTaskId],
+  );
   const { revision, refresh } = usePageRefresh();
   const [projects, setProjects] = useState<
     readonly MyProjectMembership[] | null
@@ -142,6 +157,10 @@ export default function Punch(): JSX.Element {
     : null;
   const [today, setToday] = useState<AttendanceToday | null>(null);
   const [pointCode, setPointCode] = useState<AttendancePointCode | null>(null);
+  const [safetyReceipt, setSafetyReceipt] = useState<PunchSafetyReceipt | null>(
+    null,
+  );
+  const [safetyRevision, setSafetyRevision] = useState<number>(0);
   const [faceInfo, setFaceInfo] = useState<MyFace | null>(null);
   const [location, setLocation] = useState<LocationCheck | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -173,6 +192,25 @@ export default function Punch(): JSX.Element {
   const sitePhotoPath =
     sitePhoto?.context === context.current ? sitePhoto.path : null;
   const isBusy = phase !== "IDLE";
+  const safetyReady =
+    safetyReceipt !== null &&
+    safetyReceipt.context === context.current &&
+    Date.parse(safetyReceipt.expiresAt) > Date.now();
+  const invalidateSafetyOnError = (reason: unknown): void => {
+    if (
+      reason instanceof ApiError &&
+      typeof reason.responseBody === "object" &&
+      reason.responseBody !== null &&
+      "message" in reason.responseBody &&
+      String(reason.responseBody.message).startsWith("SAFETY_")
+    ) {
+      setSafetyReceipt(null);
+      setProof(null);
+      setPendingNative(null);
+      setAttempt(null);
+      setSafetyRevision((value) => value + 1);
+    }
+  };
   const inside =
     location?.context === context.current &&
     location.isInside &&
@@ -184,11 +222,13 @@ export default function Punch(): JSX.Element {
       (faceInfo.mode === "VIDEO_ACTION" || faceInfo.mode === "WECHAT_NATIVE"));
   const validProof =
     proof !== null &&
+    proof.safetyConfirmationId === safetyReceipt?.id &&
     contextKey(proof.projectId, proof.pointCode, proof.attendanceDate) ===
       context.current &&
     new Date(proof.expiresAt).getTime() > Date.now();
 
   const resetEvidence = (): void => {
+    setSafetyReceipt(null);
     setLocation(null);
     setLocationError(null);
     setSitePhoto(null);
@@ -278,28 +318,32 @@ export default function Punch(): JSX.Element {
     );
     return () => clearTimeout(timer);
   }, [proof, workerAppearance]);
-  const loadToday = useCallback(async (pid: string): Promise<void> => {
-    const sequence = ++loadSeq.current;
-    setScheduleError(null);
-    try {
-      const data = await fetchAttendanceToday(pid);
-      if (sequence !== loadSeq.current) return;
-      setToday(data);
-      setPointCode((current) =>
-        data.points.some(
-          (point) => point.pointCode === current && point.record === null,
-        )
-          ? current
-          : nextOpenPoint(data),
-      );
-    } catch (reason: unknown) {
-      if (sequence === loadSeq.current) {
-        const message = errorText(reason);
-        setScheduleError(message);
-        setError(message);
+  const loadToday = useCallback(
+    async (pid: string): Promise<void> => {
+      const sequence = ++loadSeq.current;
+      setScheduleError(null);
+      try {
+        const data = await readToday(pid);
+        if (sequence !== loadSeq.current) return;
+        setToday(data);
+        setPointCode((current) =>
+          data.points.some(
+            (point) => point.pointCode === current && point.record === null,
+          )
+            ? current
+            : nextOpenPoint(data),
+        );
+      } catch (reason: unknown) {
+        if (sequence === loadSeq.current) {
+          invalidateSafetyOnError(reason);
+          const message = errorText(reason);
+          setScheduleError(message);
+          setError(message);
+        }
       }
-    }
-  }, []);
+    },
+    [readToday],
+  );
   useEffect(() => {
     if (sessionPhase !== "ready") return;
     if (requestedProjectId === null) {
@@ -324,7 +368,7 @@ export default function Punch(): JSX.Element {
           setToday(null);
           setPointCode(null);
           resetEvidence();
-          setError("你尚未加入该项目或已退出，请从“我的项目”选择工地。");
+          setError("未加入该项目或已退场，请重新选择项目。");
           return;
         }
         await loadToday(requestedProjectId);
@@ -335,6 +379,7 @@ export default function Punch(): JSX.Element {
         setToday(null);
         setPointCode(null);
         resetEvidence();
+        invalidateSafetyOnError(reason);
         setError(errorText(reason));
       },
     );
@@ -379,7 +424,7 @@ export default function Punch(): JSX.Element {
             checkedAt: Date.now(),
             position,
           });
-          throw new Error("当前位置不在工地范围内，请到达现场后重试。");
+          throw new Error("超出工地范围，请到场后重试。");
         }
         const limit = data.geofence.locationAccuracyLimitM;
         if (
@@ -404,7 +449,7 @@ export default function Punch(): JSX.Element {
         if (context.current === expected)
           setLocationError(
             message.includes("auth") || message.includes("deny")
-              ? "未获得定位权限，请在微信设置中允许使用位置后重试。"
+              ? "定位未授权，请在微信设置中开启。"
               : message,
           );
         throw reason;
@@ -425,6 +470,7 @@ export default function Punch(): JSX.Element {
       try {
         await confirmLocation(pid, point, data);
       } catch (reason: unknown) {
+        invalidateSafetyOnError(reason);
         setError(errorText(reason));
       } finally {
         busy.current = false;
@@ -459,15 +505,17 @@ export default function Punch(): JSX.Element {
       await confirmLocation(projectId, pointCode, today);
       const photo = await chooseAttendancePhoto();
       if (context.current !== expectedContext)
-        throw new Error("项目或时段已变化，请重新拍摄现场照片。");
+        throw new Error("项目或时段已变更，请重新拍照。");
       setSitePhoto({ path: photo, context: expectedContext });
       setProof(null);
       setPendingNative(null);
       setSuccess(null);
       setExpiredProofContext(null);
     } catch (reason: unknown) {
-      if (!errorText(reason).toLowerCase().includes("cancel"))
+      if (!errorText(reason).toLowerCase().includes("cancel")) {
+        invalidateSafetyOnError(reason);
         setError(errorText(reason));
+      }
     } finally {
       busy.current = false;
       setPhase("IDLE");
@@ -480,13 +528,13 @@ export default function Punch(): JSX.Element {
   ): Promise<void> => {
     setPhase("SUBMITTING");
     setError(null);
-    const fresh = await fetchAttendanceToday(current.projectId);
+    const fresh = await readToday(current.projectId);
     if (
       fresh.attendanceDate !== current.attendanceDate ||
       context.current !==
         contextKey(current.projectId, current.pointCode, current.attendanceDate)
     )
-      throw new Error("日期、项目或时段已变化，请重新开始打卡。");
+      throw new Error("打卡安排已变更，请重新开始。");
     const selected = fresh.points.find(
       (point) => point.pointCode === current.pointCode,
     );
@@ -508,6 +556,7 @@ export default function Punch(): JSX.Element {
       );
       const response = await submitAttendanceRecord(current.projectId, {
         attendanceDate: fresh.attendanceDate,
+        safetyConfirmationId: current.safetyConfirmationId,
         pointCode: current.pointCode,
         occurredAt: new Date().toISOString(),
         latitude: position.latitude,
@@ -546,6 +595,7 @@ export default function Punch(): JSX.Element {
     try {
       await savePunch(current, { faceVerificationSessionId: result.id });
     } catch (reason: unknown) {
+      invalidateSafetyOnError(reason);
       setError(errorText(reason));
     } finally {
       busy.current = false;
@@ -568,12 +618,15 @@ export default function Punch(): JSX.Element {
     setError(null);
     setSuccess(null);
     try {
-      const fresh = await fetchAttendanceToday(projectId);
+      const fresh = await readToday(projectId);
       if (fresh.attendanceDate !== today.attendanceDate)
         throw new Error("日期已变化，请刷新今日安排。");
       requireOpenPoint(fresh, pointCode);
       const position = await confirmLocation(projectId, pointCode, fresh);
+      if (!safetyReady || safetyReceipt === null)
+        throw new Error("请先阅读并确认本次安全交底。");
       const current: PunchAttempt = {
+        safetyConfirmationId: safetyReceipt.id,
         projectId,
         pointCode,
         attendanceDate: fresh.attendanceDate,
@@ -597,6 +650,7 @@ export default function Punch(): JSX.Element {
         let issued: FaceProof;
         if (
           pendingNative !== null &&
+          pendingNative.safetyConfirmationId === current.safetyConfirmationId &&
           contextKey(
             pendingNative.projectId,
             pendingNative.pointCode,
@@ -610,6 +664,7 @@ export default function Punch(): JSX.Element {
             projectId,
             pointCode,
             position,
+            current.safetyConfirmationId,
           );
           await verifyWithNativeFaceSdk(session.bizToken);
           issued = { ...current, id: session.id, expiresAt: session.expiresAt };
@@ -627,6 +682,7 @@ export default function Punch(): JSX.Element {
         await finishFace(current, result);
       }
     } catch (reason: unknown) {
+      invalidateSafetyOnError(reason);
       setError(errorText(reason));
     }
     busy.current = false;
@@ -638,7 +694,7 @@ export default function Punch(): JSX.Element {
         ? null
         : {
             createSession: async () => {
-              const fresh = await fetchAttendanceToday(attempt.projectId);
+              const fresh = await readToday(attempt.projectId);
               if (fresh.attendanceDate !== attempt.attendanceDate)
                 throw new Error("日期已变化，请重新开始打卡。");
               requireOpenPoint(fresh, attempt.pointCode);
@@ -651,6 +707,7 @@ export default function Punch(): JSX.Element {
                 attempt.projectId,
                 attempt.pointCode,
                 position,
+                attempt.safetyConfirmationId,
               );
             },
             fetchResult: (id) =>
@@ -666,6 +723,7 @@ export default function Punch(): JSX.Element {
     try {
       await savePunch(proof, { faceVerificationSessionId: proof.id });
     } catch (reason: unknown) {
+      invalidateSafetyOnError(reason);
       setError(errorText(reason));
     } finally {
       busy.current = false;
@@ -701,13 +759,15 @@ export default function Punch(): JSX.Element {
                 ? "重新定位并继续"
                 : sitePhotoPath === null
                   ? "拍摄现场照片"
-                  : !faceReady
-                    ? "完善人脸档案"
-                    : isDemoFace
-                      ? "演示拍照并打卡"
-                      : pendingNative !== null
-                        ? "确认刷脸结果并打卡"
-                        : "刷脸并打卡";
+                  : !safetyReady
+                    ? "请先确认安全交底"
+                    : !faceReady
+                      ? "完善人脸档案"
+                      : isDemoFace
+                        ? "演示拍照并打卡"
+                        : pendingNative !== null
+                          ? "确认刷脸结果并打卡"
+                          : "刷脸并打卡";
   // Keep derived view values in the same lexical scope as the loader's inputs.
   // Reusing minified names in a nested block can overwrite captured values after
   // WeChat's ES6 compilation, leaving the ready-session guard stuck in loading.
@@ -776,24 +836,26 @@ export default function Punch(): JSX.Element {
         ? "正在保存本机演示记录，请等待结果。"
         : "人脸核验已通过，请等待保存结果。"
       : validProof
-        ? "本人核验凭证仍有效，可重新提交，无需重新刷脸。"
+        ? "核验仍有效，可直接重试提交。"
         : phase === "PREPARING" || phase === "VERIFYING"
           ? "请保持在工地范围内，按提示完成本人核验。"
           : proofExpired
-            ? "请重新确认位置并核验，保存记录后才算打卡成功。"
+            ? "重新定位、核验，保存后打卡成功。"
             : step.action === "location-settings"
-              ? "位置用于核对本次打卡是否在工地范围内。"
+              ? "定位核对工地范围。"
               : step.action === "camera-settings"
-                ? "请允许相机权限，拍摄本次工作现场。"
+                ? "开启相机权限，拍摄现场。"
                 : step.stage === "location"
-                  ? "请到项目考勤范围内，保持定位准确后继续。"
+                  ? "请到考勤范围内重新定位。"
                   : step.stage === "photo"
-                    ? "在考勤范围内，可继续拍摄本次工作现场。"
+                    ? "定位通过，可拍摄现场。"
                     : !faceReady
                       ? faceDescription
                       : "按提示完成人脸核验，通过后自动保存打卡。";
-  const workerPrimaryLabel =
-    step.action === "wait"
+  const safetyBlocked = step.action === "verify" && !safetyReady;
+  const workerPrimaryLabel = safetyBlocked
+    ? "请先确认安全交底"
+    : step.action === "wait"
       ? phase === "SUBMITTING"
         ? "保存中…"
         : phase === "VERIFYING"
@@ -847,7 +909,7 @@ export default function Punch(): JSX.Element {
     else if (step.action === "capture") void pickSitePhoto();
     else if (step.action === "face-profile")
       void Taro.navigateTo({ url: "/pages/face-profile/index" });
-    else if (step.action === "verify") void startFacePunch();
+    else if (step.action === "verify" && safetyReady) void startFacePunch();
   };
   const viewRecords = (): void => {
     if (projectId !== null)
@@ -972,7 +1034,7 @@ export default function Punch(): JSX.Element {
                 <AppIcon name="clock" />
                 <View className="worker-punch__title">日期已变化</View>
                 <View className="worker-punch__muted">
-                  请刷新今日安排。上次的位置、照片和核验凭证已失效。
+                  请刷新安排，原定位、照片及核验已失效。
                 </View>
               </View>
               <Button appearance="worker" disabled={isBusy} onClick={refresh}>
@@ -1070,6 +1132,16 @@ export default function Punch(): JSX.Element {
                       : (today.shiftName ?? "以本人当前生效安排为准。")}
                 </View>
               </View>
+              {requestedTaskId === null && activeProject?.taskAttendanceOnly ? (
+                <Button
+                  appearance="worker"
+                  onClick={() => {
+                    void Taro.navigateTo({ url: "/pages/my-tasks/index" });
+                  }}
+                >
+                  进入我的任务开工／完工
+                </Button>
+              ) : null}
               <Button appearance="worker" onClick={viewRecords}>
                 查看本项目考勤
               </Button>
@@ -1093,9 +1165,16 @@ export default function Punch(): JSX.Element {
                       active: step.stage === "photo",
                     },
                     {
+                      name: "交底",
+                      done: safetyReady || validProof,
+                      active: step.stage === "face" && !safetyReady,
+                    },
+                    {
                       name: "核验",
                       done: validProof,
-                      active: step.stage === "face" || step.stage === "saving",
+                      active:
+                        (step.stage === "face" && safetyReady) ||
+                        step.stage === "saving",
                     },
                   ].map((item, index) => (
                     <View
@@ -1180,11 +1259,21 @@ export default function Punch(): JSX.Element {
                   </View>
                 ) : null}
               </View>
+              <AttendanceSafetyCard
+                key={context.current}
+                projectId={projectId!}
+                pointCode={pointCode}
+                context={context.current}
+                revision={safetyRevision}
+                disabled={isBusy || !inside || sitePhotoPath === null}
+                receipt={safetyReady ? safetyReceipt : null}
+                onConfirmed={setSafetyReceipt}
+              />
               <View className="worker-punch__actions">
                 <Button
                   appearance="worker"
                   loading={isBusy}
-                  disabled={isBusy}
+                  disabled={isBusy || safetyBlocked}
                   onClick={act}
                 >
                   {workerPrimaryLabel}
@@ -1216,7 +1305,7 @@ export default function Punch(): JSX.Element {
                 <View className="worker-punch__footnote">
                   {step.stage === "photo"
                     ? "仅现场拍摄，照片不超过 5MB。"
-                    : "保存前会再次确认位置，请保持在工地范围内。"}
+                    : "提交前重新定位，请保持在范围内。"}
                 </View>
               </View>
             </>
@@ -1304,7 +1393,7 @@ export default function Punch(): JSX.Element {
       {attempt !== null && videoFlow !== null ? (
         <VideoFaceCapture
           flow={videoFlow}
-          referenceDescription="完成活体检测和本人比对后，自动提交本次打卡。请保持在工地范围内。"
+          referenceDescription="核验通过后自动打卡，请保持在工地范围内。"
           onCancel={() => {
             setAttempt(null);
             busy.current = false;
@@ -1391,6 +1480,17 @@ export default function Punch(): JSX.Element {
           </Button>
         </View>
       ) : null}
+      {requestedTaskId === null &&
+        projects?.find((row) => row.projectId === projectId)
+          ?.taskAttendanceOnly && (
+          <Button
+            onClick={() => {
+              void Taro.navigateTo({ url: "/pages/my-tasks/index" });
+            }}
+          >
+            进入我的任务开工／完工
+          </Button>
+        )}
       {today?.configured && today.isWorkday ? (
         <>
           <View className="punch-date">
@@ -1438,7 +1538,7 @@ export default function Punch(): JSX.Element {
             <View className="punch-flow">
               <View className="punch-flow__heading">
                 {selected?.label ?? "本次打卡"}
-                <Subtitle>按顺序完成，刷脸通过后自动保存</Subtitle>
+                <Subtitle>刷脸通过后自动保存</Subtitle>
               </View>
               <View
                 className={`punch-step ${inside ? "punch-step--done" : ""}`}
@@ -1489,11 +1589,21 @@ export default function Punch(): JSX.Element {
                   <View>{sitePhotoPath !== null ? "重拍" : "拍摄"}</View>
                 </NativeButton>
               </View>
+              <AttendanceSafetyCard
+                key={context.current}
+                projectId={projectId!}
+                pointCode={pointCode}
+                context={context.current}
+                revision={safetyRevision}
+                disabled={isBusy || !inside || sitePhotoPath === null}
+                receipt={safetyReady ? safetyReceipt : null}
+                onConfirmed={setSafetyReceipt}
+              />
               <View
-                className={`punch-step ${validProof ? "punch-step--done" : ""} ${!inside || sitePhotoPath === null ? "punch-step--locked" : ""}`}
+                className={`punch-step ${validProof ? "punch-step--done" : ""} ${!inside || sitePhotoPath === null || !safetyReady ? "punch-step--locked" : ""}`}
               >
                 <View className="punch-step__number">
-                  {validProof ? "✓" : "3"}
+                  {validProof ? "✓" : "4"}
                 </View>
                 <View className="punch-step__body">
                   <View className="punch-step__title">活体刷脸打卡</View>
@@ -1504,9 +1614,11 @@ export default function Punch(): JSX.Element {
                         ? "进入工地范围后开启"
                         : sitePhotoPath === null
                           ? "先拍好现场照片"
-                          : faceReady
-                            ? "按提示完成动作，与本人底照比对"
-                            : "请先录入底照并等待管理员审核"}
+                          : !safetyReady
+                            ? "先确认本次安全交底"
+                            : faceReady
+                              ? "按提示完成动作，与本人底照比对"
+                              : "请先录入底照并等待管理员审核"}
                   </Subtitle>
                 </View>
                 <AppIcon name="shield" />
@@ -1514,7 +1626,9 @@ export default function Punch(): JSX.Element {
               <View className="punch-action">
                 <Button
                   loading={isBusy}
-                  disabled={isBusy}
+                  disabled={
+                    isBusy || (inside && sitePhotoPath !== null && !safetyReady)
+                  }
                   onClick={() => {
                     if (validProof) void retrySubmit();
                     else if (!inside) void locate(projectId!, pointCode, today);
@@ -1529,13 +1643,13 @@ export default function Punch(): JSX.Element {
                   {primaryLabel}
                 </Button>
                 <View className="punch-action__note">
-                  提交前再次确认 GPS，离开范围不会生成打卡记录
+                  提交前核对定位，范围外无法打卡
                 </View>
               </View>
             </View>
           ) : (
             <Notice>
-              今天的 {today.points.length} 次打卡均已完成，辛苦了。
+              今天的 {today.points.length} 次打卡已完成。
             </Notice>
           )}
           {FRONTEND_DEMO ? (

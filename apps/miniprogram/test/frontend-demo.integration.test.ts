@@ -1,5 +1,9 @@
+import { reuseTaskTemplate } from "../src/services/team-task-draft";
+import type { TeamTaskTemplatePage, TeamTaskDefaults } from "@construction/domain";
+import { taskPointCode, type AttendanceSafetyNotice, type AttendanceSafetyReceipt } from "@construction/domain";
 import { memberRoleFields, memberRoleAssignments } from "../src/services/member-roles";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { NewTaskInvitation, TaskJoinResult, SafetyBriefing, TeamDailySummary, TeamTask, TeamTaskWorker } from "@construction/domain";
 import type { MyProjectDetail } from "@construction/domain";
 import Taro from "@tarojs/taro";
 
@@ -49,6 +53,7 @@ import {
   type SessionState,
 } from "../src/store/sessionReducer";
 import type { LegacyDemoState } from "../src/services/demo/state";
+import { clearWorkEntry, readWorkEntry, saveWorkEntry, type WorkEntry } from "../src/services/work-entry";
 
 const client = createDemoClient();
 const login = async (code: string): Promise<MeResponse> => {
@@ -80,11 +85,141 @@ const restoreSession = async (): Promise<SessionState> => {
 };
 beforeEach(() => {
   resetDemoState();
+  clearWorkEntry();
   Taro.removeStorageSync("demoAccessToken");
 });
 afterEach(() => vi.useRealTimers());
 
 describe("standalone frontend workflows using persistent demo storage", () => {
+  test("six-digit invitation matches the worker account, project, team and task", async () => {
+    await login("dev-team");
+    const path: string = "/team-work/teams/demo-team";
+    const task = await client.request<TeamTask>(`${path}/tasks`, {
+      method: "POST",
+      data: {
+        title: "邀请对应关系测试", description: "维修照明", workType: "电工",
+        startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 3 * 3600000).toISOString(), memberIds: [],
+      },
+    });
+    const invitation = await client.request<NewTaskInvitation>(`${path}/tasks/${task.id}/invitations`, {
+      method: "POST", data: { realName: "张建国", phone: "13800000001" },
+    });
+    expect(invitation.code).toMatch(/^\d{6}$/);
+    await login("dev-project");
+    await expect(client.request("/team-work/me/join", { method: "POST", data: { code: invitation.code } })).rejects.toThrow("本人姓名");
+    await login("dev-worker");
+    await client.request("/account/profile", { method: "PUT", data: { nickname: "测试工人", realName: "张建国", phone: "13800000001" } });
+    const joined = await client.request<TaskJoinResult>("/team-work/me/join", { method: "POST", data: { code: invitation.code } });
+    expect(joined).toEqual({ taskId: task.id, projectId: "demo-project", memberId: "member-worker" });
+    const own = await client.request<readonly TeamTask[]>(`/team-work/me/tasks?date=${chinaToday()}`, { method: "GET" });
+    expect(own[0]).toMatchObject({ id: task.id, projectId: "demo-project", teamId: "demo-team", workType: "电工", assignments: [{ memberId: "member-worker", source: "TEMPORARY_INVITE" }] });
+    expect(readDemoState().teamWork?.invitations[0]).toMatchObject({ id: invitation.id, status: "ACCEPTED" });
+  });
+
+  test("task clock connects safety, real minutes, missed finish review and scoped exit in the demo", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2030-01-07T08:00:00+08:00"));
+      await login("dev-team");
+      const fixture = readDemoState();
+      Taro.setStorageSync("hanbo.frontend-demo.v1", { ...fixture, people: fixture.people.map((person) => person.memberId === "member-worker" ? { ...person, taskAttendanceOnly: true } : person), memberHistories: fixture.memberHistories?.map((history) => history.person.memberId === "member-worker" ? { ...history, person: { ...history.person, taskAttendanceOnly: true } } : history) });
+      const path: string = "/team-work/teams/demo-team";
+      const task = await client.request<TeamTask>(`${path}/tasks`, { method: "POST", data: { title: "三小时临时维修", description: "更换照明", workType: "电工", startsAt: "2030-01-07T08:00:00+08:00", endsAt: "2030-01-07T12:00:00+08:00", memberIds: ["member-worker"] } });
+      expect(task.assignments[0].taskAttendanceOnly).toBe(true);
+      await login("dev-worker");
+      expect((await client.request<AttendanceToday>("/me/projects/demo-project/attendance-today", { method: "GET" })).points).toHaveLength(0);
+      const taskToday = await client.request<AttendanceToday>(`/attendance/projects/demo-project/tasks/${task.id}/today`, { method: "GET" });
+      expect(taskToday.points.map((row) => row.label)).toEqual(["开工", "完工"]);
+      const start: string = taskPointCode(task.id, "START");
+      const notice = await client.request<AttendanceSafetyNotice>(`/attendance/projects/demo-project/safety?pointCode=${start}`, { method: "GET" });
+      const receipt = await client.request<AttendanceSafetyReceipt>("/attendance/projects/demo-project/safety-confirmations", { method: "POST", data: { pointCode: start, baselineVersion: notice.baselineVersion, briefingIds: [] } });
+      const body = { safetyConfirmationId: receipt.id, attendanceDate: chinaToday(), pointCode: start, occurredAt: new Date().toISOString(), latitude: "31.2304", longitude: "121.4737", locationAccuracyM: "5", selfieObjectKey: "demo/selfie", selfieHash: "demo", sitePhotoObjectKey: "demo/site", sitePhotoHash: "demo" };
+      const punched = await client.request<SubmitAttendanceRecordResult>("/attendance/projects/demo-project/records", { method: "POST", data: body });
+      expect(punched.result.workedMinutes).toBe(0);
+      expect(punched.record.facePassed).toBe(false);
+      await expect(client.request("/attendance/projects/demo-project/records", { method: "POST", data: body })).rejects.toThrow("已经开工");
+      await login("dev-team");
+      await expect(client.request(`${path}/tasks/${task.id}/members/member-worker/exit`, { method: "POST" })).rejects.toThrow("未结束");
+      vi.setSystemTime(new Date("2030-01-09T08:00:00+08:00"));
+      await login("dev-worker");
+      const pending = await client.request<Makeup>("/makeups/projects/demo-project/requests", { method: "POST", data: { attendanceDate: "2030-01-07", requestedOccurredAt: "2030-01-07T11:00:00+08:00", pointCode: taskPointCode(task.id, "END"), reason: "忘记完工" } });
+      await login("dev-team");
+      await client.request(`/makeups/requests/${pending.id}/approve`, { method: "POST", data: { approvalReason: "核实工作三小时" } });
+      const reviewed = await client.request<{ items: readonly { id: string; status: string; approvalReason: string }[] }>("/makeups/reviewed", { method: "GET" });
+      expect(reviewed.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: pending.id, status: "APPROVED", approvalReason: "核实工作三小时" })]));
+      const report = await client.request<TeamDailySummary>(`${path}/daily/2030-01-07`, { method: "POST" });
+      expect(report.workedMinutes).toBe(180);
+      await client.request(`${path}/tasks/${task.id}/members/member-worker/exit`, { method: "POST" });
+      expect(readDemoState().people.find((person) => person.memberId === "member-worker")?.status).toBe("EXITED");
+      await login("dev-worker");
+      const history = await client.request<readonly TeamTask[]>("/team-work/me/tasks?date=2030-01-07", { method: "GET" });
+      expect(history[0].assignments[0]).toMatchObject({ workedMinutes: 180, exitConfirmedAt: new Date().toISOString() });
+    } finally { vi.useRealTimers(); }
+  });
+
+  test("team work connects assignments, worker safety acknowledgement and automatic daily summary", async () => {
+    await login("dev-team");
+    const path: string = "/team-work/teams/demo-team";
+    const date: string = chinaToday();
+    const task = await client.request<TeamTask>(`${path}/tasks`, { method: "POST", data: {
+      title: "维修任务", workType: "电工", description: "更换灯具", startsAt: `${date}T00:00:00+08:00`, endsAt: `${date}T23:59:00+08:00`, memberIds: [],
+    } });
+    const workers = await client.request<readonly TeamTaskWorker[]>(`${path}/workers`, { method: "GET" });
+    expect(workers.map((row) => row.memberId)).toEqual(["member-worker", "member-unbound"]);
+    expect(workers[0]).toMatchObject({ projectId: "demo-project", teamId: "demo-team", workType: "钢筋工" });
+    await expect(client.request(`${path}/tasks/${task.id}/members`, { method: "POST", data: { memberIds: ["member-worker-other-team"] } })).rejects.toThrow("本班组");
+    const assigned = await client.request<TeamTask>(`${path}/tasks/${task.id}/members`, { method: "POST", data: { memberIds: [workers[0].memberId] } });
+    expect(assigned.assignments).toHaveLength(1);
+    await client.request(`${path}/briefings`, { method: "POST", data: { workDate: date, title: "施工安全", content: "维修前断电" } });
+    await login("dev-worker");
+    const own = await client.request<readonly TeamTask[]>(`/team-work/me/tasks?date=${date}`, { method: "GET" });
+    expect(own[0].id).toBe(task.id);
+    const briefs = await client.request<readonly SafetyBriefing[]>(`/team-work/me/briefings?date=${date}`, { method: "GET" });
+    await client.request(`/team-work/me/briefings/${briefs[0].id}/acknowledge`, { method: "POST" });
+    await expect(client.request(`${path}/tasks`, { method: "POST", data: {} })).rejects.toThrow("权限");
+    await login("dev-team");
+    const log = await client.request<TeamDailySummary>(`${path}/daily/${date}`, { method: "POST" });
+    expect(log).toMatchObject({ taskCount: 1, acknowledgementCount: 1, workedMinutes: 0 });
+    expect(readDemoState().teamWork?.logs).toHaveLength(1);
+    expect(await client.request(`${path}/daily/2001-01-01`, { method: "GET" })).toEqual({ snapshot: null });
+    expect(await client.request(`${path}/daily/${date}`, { method: "GET" })).toEqual({ snapshot: log });
+    await client.request(`${path}/issues`, { method: "POST", data: { workDate: "2001-01-01", memberId: null, severity: "GENERAL", description: "旧隐患" } });
+    const open = await client.request<{ items: readonly { id: string; workDate: string }[] }>(`${path}/issues/open`, { method: "GET" });
+    expect(open.items[0].workDate).toBe("2001-01-01");
+    await client.request(`${path}/issues/${open.items[0].id}/resolution`, { method: "PUT", data: { resolution: "已整改" } });
+    expect(await client.request(`${path}/issues/open`, { method: "GET" })).toEqual({ items: [], nextCursor: null });
+    const details = { title: "夜班维修", workType: "电工", description: "跨天维修", startsAt: "2035-01-01T19:00:00+08:00", endsAt: "2035-01-02T02:00:00+08:00" };
+    const edited = await client.request<TeamTask>(`${path}/tasks/${task.id}`, { method: "PUT", data: details });
+    expect(edited.title).toBe("夜班维修");
+    expect((await client.request<readonly TeamTask[]>(`${path}/tasks?date=2035-01-02`, { method: "GET" }))[0].id).toBe(task.id);
+    await client.request(`${path}/tasks/${task.id}/members/${workers[0].memberId}`, { method: "DELETE" });
+    expect(readDemoState().teamWork?.tasks[0].assignments).toHaveLength(0);
+  });
+
+  test("reuses historical work as a new overnight task and excludes unavailable workers", async () => {
+    await login("dev-team");
+    const path: string = "/team-work/teams/demo-team";
+    const workers = await client.request<readonly TeamTaskWorker[]>(`${path}/workers`, { method: "GET" });
+    const original = await client.request<TeamTask>(`${path}/tasks`, { method: "POST", data: { title: "模板测试夜班", workType: "", description: "", startsAt: "2038-01-01T22:00:00+08:00", endsAt: "2038-01-02T02:00:00+08:00", memberIds: workers.map((worker) => worker.memberId) } });
+    const page = await client.request<TeamTaskTemplatePage>(`${path}/task-templates?search=模板测试`, { method: "GET" });
+    expect(page.items).toHaveLength(1);
+    const draft = reuseTaskTemplate(page.items[0], "2038-01-03", workers.slice(0, 1));
+    expect(draft.memberIds).toEqual([workers[0].memberId]);
+    expect(draft.omittedCount).toBe(workers.length - 1);
+    expect(draft.details.startsAt).toBe("2038-01-03T22:00:00+08:00");
+    expect(Date.parse(draft.details.endsAt)).toBe(Date.parse("2038-01-04T02:00:00+08:00"));
+    const copy = await client.request<TeamTask>(`${path}/tasks`, { method: "POST", data: { ...draft.details, title: "套用后修改", memberIds: draft.memberIds } });
+    expect(copy.id).not.toBe(original.id);
+    expect(copy.assignments).toHaveLength(1);
+    expect(copy.assignments[0].startedAt).toBeUndefined();
+    expect(readDemoState().teamWork?.invitations).toHaveLength(0);
+    expect(readDemoState().teamWork?.tasks.find((task) => task.id === original.id)?.title).toBe("模板测试夜班");
+    const defaults = await client.request<TeamTaskDefaults>(`${path}/task-defaults?date=2038-01-03`, { method: "GET" });
+    expect(defaults.points.length).toBeGreaterThanOrEqual(2);
+    await login("dev-worker");
+    await expect(client.request(`${path}/task-templates`, { method: "GET" })).rejects.toThrow("权限");
+  });
+
   test("shows a member's project, duties and designated contacts without granting management access", async () => {
     await login("dev-project");
     const team = await client.request<ManagedTeam>("/management/projects/demo-project/teams/demo-team", { method: "GET" });
@@ -307,9 +442,14 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     expect(projectAttendanceProgress(second).completed).toBe(0);
     expect(projectPunchUrl(second.project.projectId)).toBe("/pages/punch/index?projectId=demo-project-2");
     const point = second.today.points[0]!;
+    const notice = await client.request<AttendanceSafetyNotice>(`/attendance/projects/demo-project-2/safety?pointCode=${point.pointCode}`, { method: "GET" });
+    const receipt = await client.request<AttendanceSafetyReceipt>("/attendance/projects/demo-project-2/safety-confirmations", {
+      method: "POST", data: { pointCode: point.pointCode, baselineVersion: notice.baselineVersion, briefingIds: notice.briefings.map((briefing) => briefing.id) },
+    });
     await client.request("/attendance/projects/demo-project-2/records", {
       method: "POST",
       data: {
+        safetyConfirmationId: receipt.id,
         attendanceDate: chinaToday(), pointCode: point.pointCode,
         occurredAt: `${chinaToday()}T${point.scheduledTime}:00+08:00`,
         latitude: second.today.geofence.centerLatitude,
@@ -380,8 +520,10 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     expect(readDemoState()).toEqual(upgraded);
     expect(sessionPhase(await restoreSession())).toBe("worker-registration-required");
   });
-  test("login requires both profile fields before binding, persists completion, and checks returning bound accounts", async () => {
+  test.each<WorkEntry>(["LONG_TERM", "TEMPORARY"])("%s entry retains full profile, binding and face enrollment requirements", async (entry) => {
+    saveWorkEntry(entry);
     await login("dev-unbound");
+    expect(readWorkEntry()).toBe(entry);
     expect(sessionEntryUrl(sessionPhase(await restoreSession()))).toBe(
       "/pages/complete-profile/index",
     );
@@ -457,12 +599,15 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     );
     await login("dev-unbound");
     expect(sessionPhase(await restoreSession())).toBe("face-enrollment-required");
+    expect(readWorkEntry()).toBe(entry);
     const beforeEnrollment: MyFace = await client.request("/face-profiles/me", { method: "GET" });
     const enrolled: FaceProfile = demoEnrollFace("data:image/png;base64,iVBORw0KGgo=", beforeEnrollment.consentVersion);
     expect(enrolled.status).toBe("PENDING");
     expect(sessionEntryUrl(sessionPhase(await restoreSession()))).toBe("/pages/home/index");
     await login("dev-unbound");
     expect(sessionPhase(await restoreSession())).toBe("ready");
+    clearWorkEntry();
+    expect(readWorkEntry()).toBeNull();
     await login("dev-worker");
     expect(sessionEntryUrl(sessionPhase(await restoreSession()))).toBe(
       "/pages/complete-profile/index",
@@ -795,11 +940,14 @@ describe("standalone frontend workflows using persistent demo storage", () => {
       }),
     ).rejects.toThrow("不在考勤范围内");
     expect(readDemoState().records).toHaveLength(countBefore);
+    const safety = await client.request<AttendanceSafetyNotice>("/attendance/projects/demo-project/safety?pointCode=END", { method: "GET" });
+    const receipt = await client.request<AttendanceSafetyReceipt>("/attendance/projects/demo-project/safety-confirmations", { method: "POST", data: { pointCode: "END", baselineVersion: safety.baselineVersion, briefingIds: safety.briefings.map((row) => row.id) } });
     const result = await client.request<SubmitAttendanceRecordResult>(
       "/attendance/projects/demo-project/records",
       {
         method: "POST",
         data: {
+          safetyConfirmationId: receipt.id,
           attendanceDate: chinaToday(),
           pointCode: "END",
           occurredAt: new Date().toISOString(),

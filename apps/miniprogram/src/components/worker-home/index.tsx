@@ -259,7 +259,7 @@ export const WorkerHome = ({
       return (
         <View className="worker-task__state">
           <View className="worker-task__title">还没有加入项目</View>
-          <View className="worker-muted">请联系管理员将你加入工地和班组。</View>
+          <View className="worker-muted">请联系管理员分配项目、班组。</View>
           <Button appearance="worker" onClick={retry}>
             刷新项目
           </Button>
@@ -283,7 +283,7 @@ export const WorkerHome = ({
           </View>
           {invalid ? (
             <View className="worker-muted">
-              上次选择的项目已失效，请确认当前工地。
+              原项目已失效，请重新选择。
             </View>
           ) : null}
           <View className="worker-project-choices">
@@ -297,7 +297,6 @@ export const WorkerHome = ({
               />
             ))}
           </View>
-          <View className="worker-task__hint">点选项目后查看今日任务</View>
         </>
       );
     return (
@@ -336,6 +335,19 @@ export const WorkerHome = ({
               重新加载
             </Button>
           </View>
+        ) : current.project.taskAttendanceOnly ? (
+          <View className="worker-task__state">
+            <View className="worker-task__title">按任务开工、完工</View>
+            <View className="worker-muted">
+              任务工时按实际开工、完工记录统计。
+            </View>
+            <Button
+              appearance="worker"
+              onClick={() => go("/pages/my-tasks/index")}
+            >
+              查看我的任务
+            </Button>
+          </View>
         ) : !current.today.configured ||
           !current.today.isWorkday ||
           current.today.points.length === 0 ? (
@@ -346,7 +358,7 @@ export const WorkerHome = ({
             <View className="worker-muted">
               {current.today.configured
                 ? "可查看项目安排和工地信息。"
-                : "请联系管理员确认本项目的打卡安排。"}
+                : "请联系管理员设置打卡安排。"}
             </View>
             <Button
               appearance="worker"
@@ -374,7 +386,7 @@ export const WorkerHome = ({
               查看今日记录
             </Button>
           </View>
-      ) : blocker && !demoFace ? (
+        ) : blocker && !demoFace ? (
           <View className="worker-task__state">
             <View className="worker-task__title">{blocker.title}</View>
             <View className="worker-muted">{blocker.description}</View>
@@ -410,7 +422,11 @@ export const WorkerHome = ({
                 disabled={!face}
                 onClick={() => go(projectPunchUrl(projectId!))}
               >
-              {!face ? "正在确认打卡资格…" : blocker && demoFace ? "模拟打卡" : "去打卡"}
+                {!face
+                  ? "正在确认打卡资格…"
+                  : blocker && demoFace
+                    ? "模拟打卡"
+                    : "去打卡"}
               </Button>
             )}
           </View>
@@ -446,7 +462,7 @@ export const WorkerHome = ({
       </View>
       {storageError ? (
         <View className="worker-inline-note">
-          本次选择可继续使用，暂时无法记住项目。
+          项目选择已生效，暂未保存为默认。
         </View>
       ) : null}
       {!loading &&
@@ -529,6 +545,9 @@ export const WorkerHome = ({
         ) : null}
       </View>
       <View className="worker-quick-links">
+        <NativeButton onClick={() => go("/pages/my-tasks/index")}>
+          我的任务
+        </NativeButton>
         <NativeButton onClick={() => go("/pages/my-records/index?range=MONTH")}>
           考勤记录
         </NativeButton>

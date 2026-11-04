@@ -41,6 +41,15 @@ export class MakeupController {
     return this.makeupService.pendingInbox(user.userId, cursor ?? null);
   }
 
+  @Get("reviewed")
+  @UseGuards(AccessTokenGuard)
+  async reviewed(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("cursor") cursor: string | undefined,
+  ): Promise<MakeupInboxResponse> {
+    return this.makeupService.reviewedInbox(user.userId, cursor ?? null);
+  }
+
   @Post("projects/:projectId/requests")
   @UseGuards(AccessTokenGuard)
   async createMakeupRequest(

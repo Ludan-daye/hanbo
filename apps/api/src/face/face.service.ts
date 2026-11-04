@@ -399,6 +399,7 @@ export class FaceService {
           participantId: context.owner.ownerId,
           pointCode: context.pointCode,
           attendanceDate: new Date(`${context.attendanceDate}T00:00:00Z`),
+          safetyConfirmationId: context.safetyConfirmationId ?? null,
           faceProfileId: approved.id,
           faceProfileVersion: approved.version,
           status: "CREATING",

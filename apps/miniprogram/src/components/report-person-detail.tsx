@@ -136,7 +136,7 @@ export const ReportPerson = ({
             <Notice>{detail.person.evaluation.comment}</Notice>
           ) : null}
           <Subtitle>
-            显示当前项目评价，不作为所选日期的考勤分；修改会保留审计记录。
+            项目评价独立于考勤，修改留痕。
           </Subtitle>
           {detail.canEvaluate && !editing ? (
             <Button variant="outline" onClick={() => setEditing(true)}>

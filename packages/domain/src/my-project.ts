@@ -28,4 +28,5 @@ export type MyProjectDetail = {
   }[];
   readonly enteredAt: string;
   readonly requiresAttendance: boolean;
+  readonly taskAttendanceOnly?: boolean;
 };

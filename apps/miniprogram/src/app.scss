@@ -1,4 +1,4 @@
-@import "./styles/tokens.scss";
+@use "./styles/tokens.scss";
 
 page,
 body,
@@ -15,10 +15,12 @@ body,
 body {
   margin: 0;
 }
-button::after {
+button::after,
+taro-button-core::after {
   border: 0;
 }
-button {
+button,
+taro-button-core {
   font-family: inherit;
 }
 view,

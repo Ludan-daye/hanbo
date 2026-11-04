@@ -8,6 +8,7 @@ import { FlowScreen } from "../../components/worker-flow";
 import { ACCESS_TOKEN_KEY, FRONTEND_DEMO } from "../../config/env";
 import { sessionEntryUrl } from "../../routing/session";
 import { useSession } from "../../store/session";
+import { WorkEntryNotice } from "../../components/work-entry-notice";
 
 import "./index.scss";
 
@@ -42,8 +43,9 @@ export default function CompleteProfile(): JSX.Element {
     <FlowScreen title="完善本人资料" enabled root>
       <View className="complete-profile-intro">
         <Title>先认识一下你</Title>
-        <Subtitle>完善资料后，继续绑定本人档案。</Subtitle>
+        <Subtitle>完善资料，绑定本人档案。</Subtitle>
       </View>
+      <WorkEntryNotice />
       <View className="complete-profile-form">
         {state.accountProfile !== null ? (
           <AccountProfileForm
@@ -58,8 +60,8 @@ export default function CompleteProfile(): JSX.Element {
       </View>
       <View className="complete-profile-note">
         {FRONTEND_DEMO
-          ? "当前为演示账号，资料只保存在本机。"
-          : "请填写本人资料以关联人员档案。头像不作为考勤人脸核验依据。"}
+          ? "演示资料仅保存在本机。"
+          : "填写本人资料。微信头像不用于考勤核验。"}
       </View>
       {error ? <Notice>{error}</Notice> : null}
       <Button

@@ -59,10 +59,12 @@ export type AttendancePosition = {
 };
 
 export type FaceVerificationStartRequest = AttendancePosition & {
+  readonly safetyConfirmationId?: string | undefined;
   readonly pointCode: AttendancePointCode;
 };
 
 export type SubmitAttendanceRecordRequest = {
+  readonly safetyConfirmationId?: string | undefined;
   readonly faceVerificationSessionId?: string | undefined;
   readonly attendanceDate: string;
   readonly latitude: string;

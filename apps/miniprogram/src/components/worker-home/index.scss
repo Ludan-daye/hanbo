@@ -241,11 +241,15 @@
 }
 .worker-quick-links {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 20Px;
   padding: 12Px 0;
 }
-.worker-quick-links button {
+.worker-quick-links button,
+.worker-quick-links taro-button-core {
+  width: auto;
+  flex: 1;
   min-height: 44Px;
   margin: 0;
   padding: 8Px 0;

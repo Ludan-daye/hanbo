@@ -145,10 +145,7 @@ export const ReportParticipants = ({
           chip="选择"
         />
       </Picker>
-      <Subtitle>
-        工地项目 → 人员 →
-        每日记录与项目评分。筛选只影响下方列表，同人跨项目分别统计。
-      </Subtitle>
+      <Subtitle>按项目分别统计</Subtitle>
       {rows.length === 0 ? <StateView title="没有符合条件的人员" /> : null}
       {projects.map(([projectId, projectName]) => {
         const projectRows = rows.filter((row) => row.projectId === projectId);

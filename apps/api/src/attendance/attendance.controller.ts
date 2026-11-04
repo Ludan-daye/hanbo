@@ -1,3 +1,7 @@
+import type {
+  AttendanceSafetyNotice,
+  AttendanceSafetyReceipt,
+} from "@construction/domain";
 import {
   Body,
   Controller,
@@ -29,12 +33,14 @@ import { RequirePermission } from "../authorization/require-permission.decorator
 
 import {
   parseFaceVerificationPoint,
+  parseSafetyConfirmation,
   parseFaceVerificationStart,
   parseSubmitAttendanceRecordRequest,
 } from "./attendance-body.parsers.js";
 import { AttendanceService } from "./attendance.service.js";
 import type {
   DefaultAttendanceConfiguration,
+  AttendanceTodayResponse,
   DefaultScheduleResponse,
   DefaultShiftResponse,
   SubmitAttendanceRecordResponse,
@@ -46,6 +52,42 @@ export class AttendanceController {
     @Inject(AttendanceService)
     private readonly attendanceService: AttendanceService,
   ) {}
+
+  @Get("projects/:projectId/tasks/:taskId/today")
+  @Header("Cache-Control", "no-store")
+  @UseGuards(AccessTokenGuard)
+  taskToday(@CurrentUser() user: AuthenticatedUser, @Param("projectId") projectId: string, @Param("taskId") taskId: string): Promise<AttendanceTodayResponse> {
+    return this.attendanceService.getTaskAttendanceToday(projectId, user.userId, taskId);
+  }
+
+  @Get("projects/:projectId/safety")
+  @Header("Cache-Control", "no-store")
+  @UseGuards(AccessTokenGuard)
+  safetyNotice(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("projectId") projectId: string,
+    @Query() query: unknown,
+  ): Promise<AttendanceSafetyNotice> {
+    return this.attendanceService.getSafetyNotice(
+      projectId,
+      user.userId,
+      parseFaceVerificationPoint(query),
+    );
+  }
+
+  @Post("projects/:projectId/safety-confirmations")
+  @UseGuards(AccessTokenGuard)
+  safetyConfirmation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("projectId") projectId: string,
+    @Body() body: unknown,
+  ): Promise<AttendanceSafetyReceipt> {
+    return this.attendanceService.confirmSafety(
+      projectId,
+      user.userId,
+      parseSafetyConfirmation(body),
+    );
+  }
 
   @Post("projects/:projectId/face-verifications/video")
   @UseGuards(AccessTokenGuard)

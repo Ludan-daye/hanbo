@@ -69,6 +69,7 @@ export const demoMyProject = (
     workType: person.workType,
     enteredAt: person.enteredAt,
     requiresAttendance: person.requiresAttendance,
+    taskAttendanceOnly: person.taskAttendanceOnly === true,
     roles: memberRoleAssignments(person).map((role) => ({
       roleCode: role.roleCode,
       teamName:

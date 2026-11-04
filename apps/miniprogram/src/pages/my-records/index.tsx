@@ -244,7 +244,6 @@ function LegacyMyRecords(): JSX.Element {
       {items?.length === 0 ? (
         <StateView
           title="这段时间还没有打卡记录"
-          sub="完成考勤打卡后，记录会显示在这里。"
         />
       ) : null}
       {(items ?? []).map((record) => (

@@ -10,6 +10,7 @@ import {
   Notice,
   PageHeader,
   Screen,
+  Segmented,
   StateView,
   Subtitle,
 } from "../../components/ui/index";
@@ -18,11 +19,13 @@ import { usePageRefresh } from "../../hooks/use-page-refresh";
 import {
   approveMakeup,
   fetchMakeupInbox,
+  fetchReviewedMakeups,
   type InboxMakeup,
   rejectMakeup,
   type PendingMakeup,
 } from "../../services/makeups";
 
+import { workTimestamp } from "../../components/team-work-fields";
 import { formatChinaHm } from "../../services/time";
 
 const POINT_LABEL: Readonly<Record<PendingMakeup["pointCode"], string>> = {
@@ -40,6 +43,7 @@ export default function TeamMakeups(): JSX.Element {
 
   const { revision, refresh } = usePageRefresh();
 
+  const [tab, setTab] = useState<"PENDING" | "REVIEWED">("PENDING");
   const [items, setItems] = useState<readonly InboxMakeup[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [scope, setScope] = useState<string>("全部范围");
@@ -51,7 +55,10 @@ export default function TeamMakeups(): JSX.Element {
     let cancelled = false;
     setError(null);
     setItems(null);
-    void fetchMakeupInbox(null).then(
+    setNextCursor(null);
+    setOpenId(null);
+    const load = tab === "PENDING" ? fetchMakeupInbox : fetchReviewedMakeups;
+    void load(null).then(
       (page) => {
         if (!cancelled) {
           setItems(page.items);
@@ -66,7 +73,7 @@ export default function TeamMakeups(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [revision]);
+  }, [revision, tab]);
   const review = async (
     id: string,
     action: ReviewAction,
@@ -107,7 +114,9 @@ export default function TeamMakeups(): JSX.Element {
     setBusy("page");
     setError(null);
     try {
-      const page = await fetchMakeupInbox(nextCursor);
+      const page = await (
+        tab === "PENDING" ? fetchMakeupInbox : fetchReviewedMakeups
+      )(nextCursor);
       setItems((rows) => [...(rows ?? []), ...page.items]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
@@ -120,6 +129,16 @@ export default function TeamMakeups(): JSX.Element {
     <Screen>
       <PageHeader title="补卡审批" />
       <View>
+        <Segmented
+          options={[
+            { label: "待审批", value: "PENDING" },
+            { label: "我已处理", value: "REVIEWED" },
+          ]}
+          value={tab}
+          onChange={(value: "PENDING" | "REVIEWED") => {
+            if (busy === null) setTab(value);
+          }}
+        />
         <Picker
           mode="selector"
           range={scopes}
@@ -133,10 +152,13 @@ export default function TeamMakeups(): JSX.Element {
           />
         </Picker>
         <Notice>
-          请核实实际出勤情况后处理申请，审批结果将同步到工人的考勤记录。
+          {tab === "PENDING"
+            ? "核实出勤后审批，结果同步考勤。"
+            : "本人审批记录"}
         </Notice>
         <View className="report-section-title">
-          待处理申请 · {items?.length ?? 0} 条
+          {tab === "PENDING" ? "待处理申请" : "已处理记录"} ·{" "}
+          {items?.length ?? 0} 条
         </View>
         {items === null && error === null ? (
           <StateView title="加载中…" />
@@ -145,10 +167,17 @@ export default function TeamMakeups(): JSX.Element {
           <StateView title="操作未完成" sub={error} onRetry={refresh} />
         ) : null}
         {items?.length === 0 && nextCursor === null ? (
-          <StateView title="全部处理完毕" sub="目前没有待审批的补卡申请。" />
+          <StateView
+            title={tab === "PENDING" ? "全部处理完毕" : "暂无处理记录"}
+            sub={
+              tab === "PENDING"
+                ? "目前没有待审批的补卡申请。"
+                : "处理补卡后，可在这里查看结果。"
+            }
+          />
         ) : null}
         {items?.length === 0 && nextCursor !== null ? (
-          <StateView title="当前页无待办" sub="请继续加载后续申请。" />
+          <StateView title="当前页无记录" sub="请继续加载后续申请。" />
         ) : null}
         {(items ?? [])
           .filter(
@@ -161,7 +190,13 @@ export default function TeamMakeups(): JSX.Element {
                 <ListItem
                   primary={name}
                   secondary={`${item.attendanceDate} · ${item.pointLabel ?? POINT_LABEL[item.pointCode] ?? item.pointCode} · ${formatChinaHm(item.requestedOccurredAt)}`}
-                  chip="待审批"
+                  chip={
+                    {
+                      PENDING: "待审批",
+                      APPROVED: "已通过",
+                      REJECTED: "已驳回",
+                    }[item.status]
+                  }
                   onClick={() => {
                     if (busy === null)
                       setOpenId(openId === item.id ? null : item.id);
@@ -169,7 +204,17 @@ export default function TeamMakeups(): JSX.Element {
                 />
                 <Subtitle>{label(item)}</Subtitle>
                 <Subtitle>申请原因：{item.reason}</Subtitle>
-                {openId === item.id ? (
+                {item.status !== "PENDING" ? (
+                  <>
+                    <Subtitle>审批意见：{item.approvalReason}</Subtitle>
+                    <Subtitle>
+                      处理时间：
+                      {item.approvedAt === null
+                        ? "未记录"
+                        : workTimestamp(item.approvedAt)}
+                    </Subtitle>
+                  </>
+                ) : openId === item.id ? (
                   <View>
                     <Field
                       value={reasons[item.id] ?? ""}
@@ -192,7 +237,7 @@ export default function TeamMakeups(): JSX.Element {
                           void review(
                             item.id,
                             approveMakeup,
-                            "确认通过这条补卡？",
+                            "通过补卡",
                           );
                         }}
                       >
@@ -208,7 +253,7 @@ export default function TeamMakeups(): JSX.Element {
                           void review(
                             item.id,
                             rejectMakeup,
-                            "确认驳回这条补卡？",
+                            "驳回补卡",
                           );
                         }}
                       >

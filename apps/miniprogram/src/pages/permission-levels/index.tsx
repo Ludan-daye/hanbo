@@ -75,16 +75,16 @@ export default function PermissionLevels(): JSX.Element {
             {projects === null && error === null ? <StateView title="加载中…" /> : null}
             {error ? <StateView title="项目身份读取失败" sub={error} onRetry={refresh} /> : null}
             {projects?.map((project) => <ListItem key={project.projectId} primary={project.projectName} secondary={`${displayProjectRole(project.projectRoleLabel)} · ${project.teamName ?? "未分配班组"}`} onClick={() => { void Taro.navigateTo({ url: myProjectDetailUrl(project.projectId) }); }} />)}
-            {projects?.length === 0 ? <View className="worker-permissions__muted">暂无项目成员身份。角色和班组由管理员分配。</View> : null}
+            {projects?.length === 0 ? <View className="worker-permissions__muted">暂无项目身份，请联系管理员分配。</View> : null}
           </View>
           <View className="worker-permissions__section">
-            <View className="worker-permissions__heading">我可以使用的功能</View>
+            <View className="worker-permissions__heading">可用功能</View>
             <View>{level.functions}</View>
             {level.planned ? <View className="worker-permissions__muted">规划中：{level.planned}</View> : null}
           </View>
           <View className="worker-permissions__section">
             <View className="worker-permissions__heading">五级权限说明</View>
-            <View className="worker-permissions__muted">工人权限：一至二级 · 管理人员权限：三至五级</View>
+            <View className="worker-permissions__muted">工人 1–2 级 · 管理人员 3–5 级</View>
             {PERMISSION_LEVELS.map((item) => <View className="worker-permissions__level" key={item.roleCode}>
               <View className="worker-permissions__number">{item.level}</View>
               <View className="worker-permissions__level-body">
@@ -96,7 +96,12 @@ export default function PermissionLevels(): JSX.Element {
               </View>
             </View>)}
           </View>
-          <View className="worker-permissions__notice">权限由管理员分配，高等级在授权范围内继承下级权限。任何人不能审批自己的补卡。是否需要打卡由项目配置；工种、评分或被指定为负责人不会自动提升账号权限。</View>
+          <View className="worker-permissions__notice">
+            <View>权限由管理员分配，仅在授权范围内继承下级权限。</View>
+            <View>本人补卡须由其他审批人处理。</View>
+            <View>打卡要求由项目配置。</View>
+            <View>工种、评分及负责人身份不提升账号权限。</View>
+          </View>
         </View>
       </FlowScreen>
     );
@@ -107,7 +112,7 @@ export default function PermissionLevels(): JSX.Element {
       <ListItem primary="当前权限" secondary={permissionLabel(role)} />
       <Section
         title="从一级到五级"
-        sub="工人权限：一至二级 · 管理人员权限：三至五级"
+        sub="工人 1–2 级 · 管理人员 3–5 级"
       >
         {PERMISSION_LEVELS.map((level) => (
           <View key={level.roleCode} className="permission-level">
@@ -127,7 +132,9 @@ export default function PermissionLevels(): JSX.Element {
         ))}
       </Section>
       <Notice>
-        等级由管理员分配，高等级在授权范围内继承下级权限。任何人不能审批自己的补卡。是否需要打卡由项目配置。
+        <View>权限由管理员分配，仅在授权范围内继承下级权限。</View>
+        <View>本人补卡须由其他审批人处理。</View>
+        <View>打卡要求由项目配置。</View>
       </Notice>
     </Screen>
   );

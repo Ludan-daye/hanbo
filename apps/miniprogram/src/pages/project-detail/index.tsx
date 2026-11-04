@@ -215,7 +215,7 @@ export default function ProjectDetail(): JSX.Element {
                 setProject({ ...project, remark: remark || null })
               }
             />
-            <Notice>修改范围会影响后续打卡，请核对现场位置后保存。</Notice>
+            <Notice>修改范围将影响后续打卡，请核对位置。</Notice>
             <Button
               loading={busy}
               onClick={() => {

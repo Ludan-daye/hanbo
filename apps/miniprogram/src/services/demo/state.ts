@@ -1,3 +1,5 @@
+import type { DemoSafetyConfirmation } from "./attendance-safety";
+import type { DemoTeamWork } from "./team-work";
 import { memberRoleAssignments } from "../member-roles";
 import { ROLE_LEVEL } from "@construction/domain/roles.js";
 import type { ProjectEvaluation } from "../management.types";
@@ -40,6 +42,8 @@ export type DemoTeam = ProjectTeam & {
   readonly leader?: TeamLeaderReference | null;
 };
 export type DemoState = {
+  readonly safetyConfirmations?: readonly DemoSafetyConfirmation[];
+  readonly teamWork?: DemoTeamWork;
   readonly evaluations?: readonly {
     readonly projectId: string;
     readonly memberId: string;

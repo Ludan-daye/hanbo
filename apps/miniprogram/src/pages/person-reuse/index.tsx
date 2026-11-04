@@ -134,7 +134,7 @@ export default function PersonReuse(): JSX.Element {
     }
     const confirmation = await Taro.showModal({
       title: "确认加入本项目",
-      content: "沿用此人的人员档案和微信绑定，保留原项目任职及历史。",
+      content: "沿用档案和微信绑定，保留原项目记录。",
       confirmText: "确认加入",
     });
     if (!confirmation.confirm) return;
@@ -164,7 +164,7 @@ export default function PersonReuse(): JSX.Element {
       <PageHeader title="复用项目人员" />
       {targetName ? <Notice>目标项目：{targetName}</Notice> : null}
       <Notice>
-        同一公司内复用人员，保留工种、微信绑定和原项目历史。来源项目与目标项目均需管理权限。
+        公司内复用人员，保留原档案；需管理两个项目。
       </Notice>
       {error ? <Notice>{error}</Notice> : null}
       {!projectId ? (

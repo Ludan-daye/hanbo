@@ -34,6 +34,8 @@ const roleSeeds: readonly RoleSeed[] = [
 ];
 
 const permissionSeeds: readonly PermissionSeed[] = [
+  { code: "team.work.manage", name: "Manage team work and temporary invitations" },
+  { code: "team.safety.manage", name: "Manage team safety" },
   { code: "attendance.submit", name: "Submit attendance records" },
   { code: "attendance.view", name: "View attendance records" },
   { code: "binding.invitation.create", name: "Create binding invitations" },
@@ -48,6 +50,8 @@ const permissionSeeds: readonly PermissionSeed[] = [
 ];
 
 const rolePermissionSeeds: readonly RolePermissionSeed[] = [
+  { permissionCode: "team.work.manage", roleCode: "TEAM_LEADER" },
+  { permissionCode: "team.safety.manage", roleCode: "TEAM_LEADER" },
   { permissionCode: "system.manage", roleCode: "SYSTEM_ADMIN" },
   { permissionCode: "company.manage", roleCode: "COMPANY_ADMIN" },
   { permissionCode: "project.create", roleCode: "COMPANY_ADMIN" },

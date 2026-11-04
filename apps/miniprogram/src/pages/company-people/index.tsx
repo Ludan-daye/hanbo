@@ -112,7 +112,7 @@ export default function CompanyPeople(): JSX.Element {
         <StateView title="尚无人员" />
       ) : null}
       {items !== null ? (
-        <Subtitle>共 {visible.length} 名成员 · 点击查看或编辑资料</Subtitle>
+        <Subtitle>共 {visible.length} 名成员</Subtitle>
       ) : null}
       <View>
         {visible.map((p) => (

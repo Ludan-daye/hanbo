@@ -149,7 +149,7 @@ export default function Participants(): JSX.Element {
         }}
       />
       <Subtitle>
-        一级：本人 · 二级：班组 · 三级：项目管理；兼任人员可出现在多个职级筛选中
+        一级本人 · 二级班组 · 三级项目；兼任可跨职级。
       </Subtitle>
       {result === null && error === null ? <StateView title="加载中…" /> : null}
       {error !== null ? (

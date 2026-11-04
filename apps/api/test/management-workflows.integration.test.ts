@@ -115,7 +115,8 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         imports: [AppModule],
       }).compile();
       app = moduleRef.createNestApplication();
-      await app.init();
+      // Keep one listener for the suite so concurrent requests cannot close each other's sockets.
+      await app.listen(0, "127.0.0.1");
       database = app.get(PrismaService);
       await database.company.create({
         data: {

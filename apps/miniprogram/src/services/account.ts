@@ -71,7 +71,7 @@ export const saveAccountAvatar = async (
   if (response.statusCode === 413)
     throw new Error("头像不能超过 2MB，请选择较小的图片。");
   if (response.statusCode === 400)
-    throw new Error("头像无效，请选择不超过 2MB 的 JPG 或 PNG 图片。");
+    throw new Error("头像须为 2MB 以内的 JPG 或 PNG。");
   if (response.statusCode === 401)
     throw new Error("登录已过期，请重新登录后设置头像。");
   if (response.statusCode < 200 || response.statusCode >= 300)

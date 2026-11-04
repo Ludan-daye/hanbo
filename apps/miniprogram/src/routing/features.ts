@@ -35,8 +35,11 @@ export const PANEL_LABELS: Readonly<Record<PanelKey, string>> = {
   none: "待分配角色",
 };
 export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
-  worker: [MY_PROJECTS, RECORDS, MAKEUPS],
+  worker: [MY_PROJECTS, { title: "我的任务", sub: "工作安排、安全交底与临时邀请", icon: "calendar", url: "/pages/my-tasks/index" }, RECORDS, MAKEUPS],
   teamLeader: [
+    { title: "工作安排", sub: "安排工人、邀请临时工", icon: "people", url: "/pages/team-work/index" },
+    { title: "班组安全", sub: "安全交底与隐患整改", icon: "shield", url: "/pages/team-safety/index" },
+    { title: "班组日报", sub: "自动汇总出勤与工作日志", icon: "chart", url: "/pages/team-log/index" },
     { title: "打卡安排", sub: "设置本班组下级的打卡要求", icon: "calendar", url: "/pages/schedules/index" },
     {
       title: "补卡审批",

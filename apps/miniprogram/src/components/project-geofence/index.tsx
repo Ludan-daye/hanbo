@@ -19,7 +19,7 @@ const locationError = (cause: unknown): string => {
     const message = String(cause.errMsg);
     if (message.toLowerCase().includes("cancel"))
       return "已取消选址，原位置未更改。";
-    return `地图选址未完成。请检查微信定位授权及小程序的位置接口权限后重试。${message}`;
+    return `选址失败，请检查微信定位权限。${message}`;
   }
   return "地图选址未完成，请重新打开地图。";
 };
@@ -91,7 +91,7 @@ export const ProjectGeofence = ({
           </Button>
           {value === null ? (
             <View className="project-geofence__empty">
-              搜索工地或附近地标，选择中心后再点选范围边界。
+              选择工地中心，再点选范围边界。
             </View>
           ) : (
             <>
@@ -103,7 +103,7 @@ export const ProjectGeofence = ({
                   </View>{" "}
                   米
                 </View>
-                <Subtitle>点选地图上的边界，圆形范围随之调整</Subtitle>
+                <Subtitle>点选边界调整范围</Subtitle>
               </View>
               <Map
                 id="project-geofence-map"
@@ -139,19 +139,19 @@ export const ProjectGeofence = ({
                 onPoiTap={(event) => chooseBoundary(event.detail)}
                 onError={() =>
                   setError(
-                    "地图加载失败，请检查网络和小程序地图权限后重新进入。",
+                    "地图加载失败，请检查网络和定位权限。",
                   )
                 }
               />
               <Subtitle>
-                蓝色圆圈内允许打卡。可双指缩放、拖动地图查看边界。
+                蓝色圆圈为可打卡范围。
               </Subtitle>
             </>
           )}
         </>
       ) : (
         <Notice>
-          请在微信小程序中打开地图选择工地和考勤范围。浏览器预览暂不支持地图选址。
+          地图选址仅支持微信小程序。
         </Notice>
       )}
       {value !== null ? (

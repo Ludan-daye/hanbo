@@ -144,7 +144,7 @@ export default function ProjectManagement(): JSX.Element {
           {teams !== null && teams.length === 0 ? (
             <StateView title="尚无班组" />
           ) : null}
-          <Notice>点击班组可编辑资料、指定负责人或查看成员。</Notice>
+          <Notice>班组资料、负责人及成员</Notice>
           {(teams ?? []).map((t) => (
             <ListItem
               key={t.id}

@@ -90,7 +90,7 @@ export default function MyProjects(): JSX.Element {
                   }
                   sub={
                     entries.length === 0
-                      ? "请联系管理员将你加入工地和班组。"
+                      ? "请联系管理员分配项目、班组。"
                       : "可切换“全部”查看参与的项目。"
                   }
                   onRetry={refresh}
@@ -108,7 +108,7 @@ export default function MyProjects(): JSX.Element {
       <AppHeader title="我的项目" />
       <View className="my-projects-intro">
         <View className="my-projects-intro__title">选择项目，开始打卡</View>
-        <Subtitle>今日安排和考勤记录按项目分别保存。</Subtitle>
+        <Subtitle>按项目查看安排和考勤。</Subtitle>
       </View>
       <Segmented<"ALL" | "TODAY">
         options={[

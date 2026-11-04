@@ -40,3 +40,6 @@ export const submitAttendanceRecord = async (
 
 export const fetchMyAttendanceDays = async (from: string, to: string): Promise<readonly MyAttendanceDay[]> =>
   apiClient.request<readonly MyAttendanceDay[]>(`/me/attendance-days?from=${from}&to=${to}`, { method: "GET" });
+
+export const fetchTaskAttendanceToday = (projectId: string, taskId: string): Promise<AttendanceToday> =>
+  apiClient.request(`/attendance/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/today`, { method: "GET" });

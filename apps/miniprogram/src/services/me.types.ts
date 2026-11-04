@@ -4,6 +4,7 @@ export type AttendanceRecordStatus = "VALID" | "INVALID";
 export type MakeupStatus = "PENDING" | "APPROVED" | "REJECTED";
 
 export type AttendanceRecord = {
+  readonly safetyConfirmationId?: string | null;
   readonly pointLabel?: string | null;
   readonly id: string;
   readonly projectId: string;
@@ -44,6 +45,7 @@ export type Makeup = {
 };
 
 export type MyProjectMembership = {
+  readonly taskAttendanceOnly?: boolean;
   readonly projectId: string;
   readonly projectName: string;
   readonly projectRoleLabel: string;
@@ -103,6 +105,7 @@ export type AttendanceToday = {
 };
 
 export type SubmitAttendanceRecordBody = {
+  readonly safetyConfirmationId?: string;
   readonly faceVerificationSessionId?: string;
   readonly attendanceDate: string;
   readonly latitude: string;

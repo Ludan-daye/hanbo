@@ -157,6 +157,7 @@ const configureDefaultScheduleRequestSchema = z
   );
 
 const submitAttendanceRecordRequestSchema = z.object({
+  safetyConfirmationId: z.string().min(1).optional(),
   faceVerificationSessionId: z.string().uuid().optional(),
   attendanceDate: dateOnlySchema,
   latitude: z
@@ -179,6 +180,7 @@ export const parseFaceVerificationStart = (
 ): FaceVerificationStartRequest => {
   const result = z
     .object({
+      safetyConfirmationId: z.string().min(1).optional(),
       pointCode: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
       latitude: z
         .string()
@@ -251,3 +253,19 @@ export const parseSubmitAttendanceRecordRequest = (
     submitAttendanceRecordRequestSchema,
     "INVALID_SUBMIT_ATTENDANCE_RECORD_REQUEST",
   );
+
+export const parseSafetyConfirmation = (
+  body: unknown,
+): { pointCode: string; baselineVersion: string; briefingIds: string[] } => {
+  const result = z
+    .object({
+      pointCode: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+      baselineVersion: z.string().min(1),
+      briefingIds: z.array(z.string().min(1)).max(200),
+    })
+    .strict()
+    .safeParse(body);
+  if (!result.success)
+    throw new BadRequestException({ message: "SAFETY_CONFIRMATION_INVALID" });
+  return result.data;
+};

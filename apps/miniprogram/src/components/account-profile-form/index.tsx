@@ -160,7 +160,7 @@ export const AccountProfileForm = ({
           <View className="account-avatar-button__sub">
             {avatarPath !== null
               ? "已选择，保存后生效"
-              : "必填 · 点击选择或更换头像"}
+              : "选择头像（必填）"}
           </View>
         </View>
         <View className="account-avatar-button__arrow">›</View>
@@ -199,7 +199,7 @@ export const AccountProfileForm = ({
         label="真实姓名（必填）"
         value={realName}
         maxLength={30}
-        placeholder="请填写与人员档案一致的姓名"
+        placeholder="与人员档案一致"
         onInput={(value: string): void => {
           setRealName(value);
           setError(null);
@@ -211,7 +211,7 @@ export const AccountProfileForm = ({
         value={phone}
         maxLength={11}
         type="number"
-        placeholder="请填写本人 11 位手机号"
+        placeholder="本人手机号"
         onInput={(value: string): void => {
           setPhone(value);
           setError(null);
@@ -219,7 +219,7 @@ export const AccountProfileForm = ({
         }}
       />
       <View className="account-identity-note">
-        姓名和手机号须与管理员登记的本人档案一致。
+        姓名、手机号须与本人档案一致。
       </View>
       {error ? <Notice>{error}</Notice> : null}
       <Button

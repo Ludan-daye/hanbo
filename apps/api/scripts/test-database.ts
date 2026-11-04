@@ -100,7 +100,7 @@ const main = async (): Promise<void> => {
     runPnpm(["exec", "prisma", "db", "seed"], environment);
     runPnpm(["exec", "prisma", "migrate", "diff", "--from-schema-datasource", "prisma/schema.prisma", "--to-schema-datamodel", "prisma/schema.prisma", "--exit-code"], environment);
     runPnpm(
-      ["exec", "vitest", "run", "--no-file-parallelism", "test/database-foundation.integration.test.ts", "test/management-workflows.integration.test.ts", "test/account-onboarding.integration.test.ts", "test/test-login.integration.test.ts", "test/attendance-plans.integration.test.ts"],
+      ["exec", "vitest", "run", "--no-file-parallelism", "test/database-foundation.integration.test.ts", "test/management-workflows.integration.test.ts", "test/account-onboarding.integration.test.ts", "test/test-login.integration.test.ts", "test/attendance-plans.integration.test.ts", "test/team-work.integration.test.ts", "test/attendance-safety.integration.test.ts"],
       environment,
     );
   } finally {

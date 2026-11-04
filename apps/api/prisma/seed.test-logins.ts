@@ -4,8 +4,8 @@ import { provisionTestAccounts } from "../src/auth/provision-test-accounts.js";
 import { loadEnv } from "../src/config/env.js";
 
 const env = loadEnv(process.env);
-if (env.DEPLOYMENT_ENV !== "test" || env.TEST_LOGIN_SECRET_HASH.length === 0) {
-  throw new Error("Test account provisioning requires DEPLOYMENT_ENV=test and TEST_LOGIN_SECRET_HASH.");
+if (env.DEPLOYMENT_ENV !== "test" || !env.TEST_LOGIN_ENABLED) {
+  throw new Error("Test account provisioning requires DEPLOYMENT_ENV=test and TEST_LOGIN_ENABLED=true.");
 }
 const database: PrismaClient = new PrismaClient();
 try {

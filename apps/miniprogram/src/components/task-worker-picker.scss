@@ -1,0 +1,12 @@
+.task-worker-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 16px;
+  border-bottom: 1px solid #e8ebee;
+
+  &--selected { background: #f5f7f8; }
+  &__person { flex: 1; min-width: 0; }
+  &__detail { margin-top: 6px; color: #667078; font-size: 24px; }
+  &__status { color: #667078; font-size: 24px; }
+}

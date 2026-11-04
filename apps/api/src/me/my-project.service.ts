@@ -177,6 +177,7 @@ export class MyProjectService {
       ],
       enteredAt: member.enteredAt.toISOString(),
       requiresAttendance: member.requiresAttendance,
+      taskAttendanceOnly: worker?.taskAttendanceOnly ?? false,
     };
   }
 }

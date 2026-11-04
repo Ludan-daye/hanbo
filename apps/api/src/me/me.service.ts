@@ -64,6 +64,7 @@ export class MeService {
           projectId: m.projectId,
           projectName: m.project.name,
           projectRoleLabel: m.projectRoleLabel,
+          taskAttendanceOnly: m.taskAttendanceOnly,
           teamId: m.teamId,
           teamName: m.team?.name ?? null
         });

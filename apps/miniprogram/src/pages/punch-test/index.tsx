@@ -239,9 +239,9 @@ export default function PunchTest(): JSX.Element {
         <View className="worker-punch-test">
           <View className="worker-punch-test__notice">
             <View className="worker-punch-test__notice-title"><AppIcon name="shield" /><View>测试不计考勤</View></View>
-            <View className="worker-punch-test__muted">定位、现场照片上传、活体与本人比对的流程测试，无需排班，不生成考勤记录。</View>
+            <View className="worker-punch-test__muted">测试定位、拍照及人脸核验。不需排班，不计考勤。</View>
           </View>
-          {!phoneAvailable ? <View className="worker-punch-test__environment">{FRONTEND_DEMO ? "当前为本机演示，不能进行真实定位与人脸测试。请使用已配置服务的微信小程序手机预览。" : "请在微信小程序手机预览中测试摄像头与定位。"}</View> : null}
+          {!phoneAvailable ? <View className="worker-punch-test__environment">{FRONTEND_DEMO ? "当前为模拟演示。真实核验需微信小程序手机预览。" : "请在微信小程序手机预览中测试摄像头与定位。"}</View> : null}
           {error ? <View className="worker-punch-test__error" role="alert">{error}</View> : null}
           {projects === null ? <StateView title={error ? "测试条件读取失败" : "加载中…"} onRetry={error ? refresh : undefined} /> : projects.length === 0 ? <StateView title="尚未加入项目" sub="请管理员将本人加入项目后，再测试范围和打卡设备。" /> : <>
             <Picker mode="selector" disabled={busy} range={projects.map((row) => row.projectName)} value={Math.max(0, projects.findIndex((row) => row.projectId === projectId))} onChange={(event) => {
@@ -262,7 +262,7 @@ export default function PunchTest(): JSX.Element {
                 <View className="worker-punch-test__number">{inside ? <AppIcon name="check" /> : "1"}</View>
                 <View className="worker-punch-test__step-body">
                   <View className="worker-punch-test__step-title">定位{inside ? "通过" : ""}</View>
-                  <View className="worker-punch-test__muted">{phase === "LOCATING" ? "正在获取位置" : location === null ? "待开始 · 获取当前位置，确认在项目现场" : inside ? `在项目范围内 · 距中心${Math.round(location.distanceM)}米` : "定位未通过，请根据提示重试"}</View>
+                  <View className="worker-punch-test__muted">{phase === "LOCATING" ? "正在获取位置" : location === null ? "待定位" : inside ? `在项目范围内 · 距中心${Math.round(location.distanceM)}米` : "定位未通过，请根据提示重试"}</View>
                   {location ? <View className="worker-punch-test__muted">允许半径：{location.geofence.radiusM}米；{location.accuracyPassed ? "定位精度符合要求" : "定位精度不足"}</View> : null}
                   {location && !finished ? <NativeButton className="worker-punch-test__text-button" disabled={busy || !phoneAvailable} onClick={() => { void locate(); }}>重新定位并开始</NativeButton> : null}
                 </View>
@@ -271,7 +271,7 @@ export default function PunchTest(): JSX.Element {
                 <View className="worker-punch-test__number">{upload ? <AppIcon name="check" /> : "2"}</View>
                 <View className="worker-punch-test__step-body">
                   <View className="worker-punch-test__step-title">现场照片{upload ? "已上传" : ""}</View>
-                  <View className="worker-punch-test__muted">{phase === "PHOTO" ? "正在拍摄并上传" : upload ? `已上传${Math.round(upload.sizeBytes / 1024)}KB` : "拍摄现场照片后上传测试服务器，范围外不能继续。"}</View>
+                  <View className="worker-punch-test__muted">{phase === "PHOTO" ? "正在拍摄并上传" : upload ? `已上传${Math.round(upload.sizeBytes / 1024)}KB` : "范围内拍照，上传测试服务器。"}</View>
                   {photoPath ? <Image className="worker-punch-test__photo" src={photoPath} mode="aspectFit" /> : null}
                   {photoPath && !finished ? <NativeButton className="worker-punch-test__text-button" disabled={busy || !inside || !phoneAvailable} onClick={() => { void takePhoto(); }}>重新拍照并上传</NativeButton> : null}
                 </View>
@@ -285,7 +285,7 @@ export default function PunchTest(): JSX.Element {
                   {!faceReady ? <NativeButton className="worker-punch-test__face-link" disabled={busy} onClick={() => { void Taro.navigateTo({ url: "/pages/face-profile/index" }); }}>
                     <View>查看人脸档案</View><View className="worker-punch-test__muted">{face?.profile ? faceStatusLabel(face.profile.status) : "尚未录入底照"}</View>
                   </NativeButton> : null}
-                  {face !== null && face.mode !== "VIDEO_ACTION" ? <View className="worker-punch-test__muted">当前未启用视频动作活体，请管理员检查云端配置。</View> : null}
+                  {face !== null && face.mode !== "VIDEO_ACTION" ? <View className="worker-punch-test__muted">视频活体未启用，请联系管理员。</View> : null}
                 </View>
               </View>
             </View>
@@ -299,9 +299,9 @@ export default function PunchTest(): JSX.Element {
               </View> : null}
             </View> : null}
             <View className="worker-punch-test__primary"><Button appearance="worker" disabled={busy || !phoneAvailable} loading={busy} onClick={runCurrentStep}>{primaryText}</Button></View>
-            {finished ? <><View className="worker-punch-test__muted">定位、照片上传和核验均已通过。未生成考勤记录。</View><NativeButton className="worker-punch-test__text-button worker-punch-test__back" onClick={() => { void Taro.reLaunch({ url: "/pages/profile/index" }); }}>返回我的</NativeButton></> : null}
+            {finished ? <><View className="worker-punch-test__muted">定位、拍照及核验通过，不计考勤。</View><NativeButton className="worker-punch-test__text-button worker-punch-test__back" onClick={() => { void Taro.reLaunch({ url: "/pages/profile/index" }); }}>返回我的</NativeButton></> : null}
           </>}
-          {phase === "VERIFYING" ? <VideoFaceCapture flow={flow} referenceDescription="本次仅测试，不生成考勤记录。请保持在项目范围内。" onCancel={() => { lock.current = false; setPhase("IDLE"); }} onResult={(result) => { void finishFace(result); }} /> : null}
+          {phase === "VERIFYING" ? <VideoFaceCapture flow={flow} referenceDescription="仅测试，不计考勤。请保持在项目范围内。" onCancel={() => { lock.current = false; setPhase("IDLE"); }} onResult={(result) => { void finishFace(result); }} /> : null}
         </View>
       </FlowScreen>
     );
@@ -311,11 +311,11 @@ export default function PunchTest(): JSX.Element {
     <Screen>
       <PageHeader title="打卡流程测试" />
       <Notice>
-        真实定位、拍照上传、腾讯云活体及本人比对；无需排班，不生成正式考勤。
+        测试定位、拍照及腾讯云人脸核验，不计考勤。
       </Notice>
       {!phoneAvailable ? (
         <Notice>
-          请在微信小程序手机预览中测试。网页演示不会调用真实核验。
+          真实核验仅支持微信小程序手机预览。
         </Notice>
       ) : null}
       {error ? <Notice>{error}</Notice> : null}
@@ -380,7 +380,7 @@ export default function PunchTest(): JSX.Element {
                 </Subtitle>
               </>
             ) : (
-              <Subtitle>使用所选项目的真实圆形围栏，范围内才能继续。</Subtitle>
+              <Subtitle>按所选项目范围核验定位。</Subtitle>
             )}
             <Button
               disabled={busy || !phoneAvailable}
@@ -406,7 +406,7 @@ export default function PunchTest(): JSX.Element {
             <Subtitle>
               {upload
                 ? `已上传 ${Math.round(upload.sizeBytes / 1024)} KB`
-                : "现场拍照后上传测试服务器，范围外不能继续。"}
+                : "范围内拍照，上传测试服务器。"}
             </Subtitle>
             <Button
               variant="outline"
@@ -430,7 +430,7 @@ export default function PunchTest(): JSX.Element {
             }
           >
             <Subtitle>
-              按提示录制动作视频，发送腾讯云，与本人登记底照比对。
+              录像提交腾讯云，与本人底照比对。
             </Subtitle>
             {!faceReady ? (
               <ListItem
@@ -447,11 +447,11 @@ export default function PunchTest(): JSX.Element {
               />
             ) : null}
             {face?.mode !== "VIDEO_ACTION" && face !== null ? (
-              <Notice>当前未启用视频动作活体，请管理员检查云端配置。</Notice>
+              <Notice>视频活体未启用，请联系管理员。</Notice>
             ) : null}
             {face?.profile?.status === "PENDING" ? (
               <Subtitle>
-                待审核底照可用于本次测试；正式打卡仍须管理员审核通过。
+                待审核底照仅限测试，正式打卡须审核通过。
               </Subtitle>
             ) : null}
             {faceResult?.score !== null && faceResult?.score !== undefined ? (
@@ -481,7 +481,7 @@ export default function PunchTest(): JSX.Element {
           </Section>
           {finished ? (
             <Notice>
-              测试通过：定位、现场照片上传、活体与本人比对均成功。未生成考勤记录。
+              定位、照片上传及人脸核验通过，未生成考勤记录。
             </Notice>
           ) : null}
         </>
@@ -489,7 +489,7 @@ export default function PunchTest(): JSX.Element {
       {phase === "VERIFYING" ? (
         <VideoFaceCapture
           flow={flow}
-          referenceDescription="本次仅测试，不生成考勤记录。请保持在项目范围内。"
+          referenceDescription="仅测试，不计考勤。请保持在项目范围内。"
           onCancel={() => {
             lock.current = false;
             setPhase("IDLE");

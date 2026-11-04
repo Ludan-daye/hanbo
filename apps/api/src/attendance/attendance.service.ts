@@ -1,3 +1,14 @@
+import { parseTaskPoint, taskPointCode } from "@construction/domain";
+import { assertNoOpenTask, applyTaskPunch, ownTaskAssignment, recalculateTaskResult, resolveTaskPunch, workerClockLock } from "./task-attendance.js";
+import type {
+  AttendanceSafetyNotice,
+  AttendanceSafetyReceipt,
+  ConfirmAttendanceSafety,
+} from "@construction/domain";
+import {
+  AttendanceSafetyService,
+  type AttendanceSafetyContext,
+} from "./attendance-safety.service.js";
 import {
   BadRequestException,
   ConflictException,
@@ -321,6 +332,7 @@ const getValidWorkerMember = (
 
   return {
     memberId: member.id,
+    taskAttendanceOnly: member.taskAttendanceOnly,
     participantId: profile.id,
     participantType: "WORKER",
     teamId: member.teamId,
@@ -370,7 +382,76 @@ export class AttendanceService {
     @Inject(API_ENV) private readonly env: ApiEnv,
     @Inject(FaceService) private readonly faces: FaceService,
     @Inject(UploadsService) private readonly uploads: UploadsService,
+    @Inject(AttendanceSafetyService)
+    private readonly safety: AttendanceSafetyService,
   ) {}
+
+  private safetyContext(
+    projectId: string,
+    userId: string,
+    participant: AttendanceParticipant,
+    attendanceDate: string,
+    pointCode: string,
+  ): AttendanceSafetyContext {
+    return {
+      projectId,
+      userId,
+      memberId: participant.memberId,
+      teamId: participant.teamId,
+      participantType: participant.participantType,
+      participantId: participant.participantId,
+      attendanceDate,
+      pointCode,
+    };
+  }
+
+  async getSafetyNotice(
+    projectId: string,
+    userId: string,
+    pointCode: string,
+  ): Promise<AttendanceSafetyNotice> {
+    const context = await this.nativeFaceContext(projectId, userId, pointCode);
+    const participant = await this.resolveAttendanceParticipant(
+      userId,
+      projectId,
+    );
+    return this.safety.notice(
+      this.prisma,
+      this.safetyContext(
+        projectId,
+        userId,
+        participant,
+        context.attendanceDate,
+        pointCode,
+      ),
+    );
+  }
+
+  async confirmSafety(
+    projectId: string,
+    userId: string,
+    input: ConfirmAttendanceSafety,
+  ): Promise<AttendanceSafetyReceipt> {
+    const context = await this.nativeFaceContext(
+      projectId,
+      userId,
+      input.pointCode,
+    );
+    const participant = await this.resolveAttendanceParticipant(
+      userId,
+      projectId,
+    );
+    return this.safety.confirm(
+      this.safetyContext(
+        projectId,
+        userId,
+        participant,
+        context.attendanceDate,
+        input.pointCode,
+      ),
+      input,
+    );
+  }
 
   async createNativeFaceSession(
     projectId: string,
@@ -435,10 +516,31 @@ export class AttendanceService {
     userId: string,
     request: FaceVerificationStartRequest,
   ): Promise<FaceSessionContext> {
-    const context = await this.nativeFaceContext(projectId, userId, request.pointCode);
+    const context = await this.nativeFaceContext(
+      projectId,
+      userId,
+      request.pointCode,
+    );
     const project = await this.getProjectOrThrow(projectId);
     this.requireAttendanceLocation(project, request);
-    return context;
+    const participant = await this.resolveAttendanceParticipant(
+      userId,
+      projectId,
+    );
+    const safety = await this.prisma.$transaction((tx) =>
+      this.safety.requireConfirmation(
+        tx,
+        this.safetyContext(
+          projectId,
+          userId,
+          participant,
+          context.attendanceDate,
+          request.pointCode,
+        ),
+        request.safetyConfirmationId,
+      ),
+    );
+    return { ...context, safetyConfirmationId: safety.id };
   }
 
   private async nativeFaceContext(
@@ -448,6 +550,10 @@ export class AttendanceService {
   ): Promise<FaceSessionContext> {
     const project = await this.getProjectOrThrow(projectId);
     this.assertProjectAcceptsPunch(project);
+    if (parseTaskPoint(pointCode) !== null) {
+      const target = await resolveTaskPunch(this.prisma, projectId, userId, pointCode, new Date());
+      return { projectId, userId, attendanceDate: getChinaDateOnly(new Date()), pointCode, owner: { ownerType: "WORKER", ownerId: target.assignment.member.workerId } };
+    }
     const today = await this.getAttendanceToday(projectId, userId);
     if (
       !today.configured ||
@@ -646,11 +752,12 @@ export class AttendanceService {
       occurredAt,
       request.attendanceDate,
     );
-    const plan = await this.getParticipantPlan(
-      projectId,
-      participant,
-      request.attendanceDate,
-    );
+    const taskPoint = parseTaskPoint(request.pointCode);
+    const taskTarget = taskPoint === null ? null : await resolveTaskPunch(this.prisma, projectId, userId, request.pointCode, occurredAt);
+    const plan: EffectivePlan = taskTarget === null ? await this.getParticipantPlan(projectId, participant, request.attendanceDate) : {
+      name: taskTarget.assignment.task.title, isWorkday: true,
+      points: [{ code: request.pointCode, label: taskTarget.kind === "START" ? "任务开工" : "任务完工", kind: taskTarget.kind, time: "00:00", graceMins: 0 }],
+    };
     if (
       !plan.isWorkday ||
       !plan.points.some((point) => point.code === request.pointCode)
@@ -664,6 +771,20 @@ export class AttendanceService {
       userId,
       request.sitePhotoObjectKey,
       request.sitePhotoHash,
+    );
+    const safetyContext = this.safetyContext(
+      projectId,
+      userId,
+      participant,
+      request.attendanceDate,
+      request.pointCode,
+    );
+    const confirmation = await this.prisma.$transaction((tx) =>
+      this.safety.requireConfirmation(
+        tx,
+        safetyContext,
+        request.safetyConfirmationId,
+      ),
     );
     const proof = this.env.FACE_DEV_STUB
       ? null
@@ -680,6 +801,10 @@ export class AttendanceService {
           },
           request.faceVerificationSessionId,
         );
+    if (proof !== null && proof.safetyConfirmationId !== confirmation.id)
+      throw new BadRequestException({
+        message: "SAFETY_FACE_SESSION_MISMATCH",
+      });
     const selfieObjectKey =
       proof === null ? request.selfieObjectKey : proof.selfieObjectKey;
     const selfieHash = proof === null ? request.selfieHash : proof.selfieHash;
@@ -702,7 +827,9 @@ export class AttendanceService {
     const recordData: Prisma.AttendanceRecordUncheckedCreateInput = {
       abnormalReason,
       attendanceDate,
+      taskAssignmentId: taskTarget?.assignment.id ?? null,
       faceVerificationSessionId: proof?.id ?? null,
+      safetyConfirmationId: confirmation.id,
       facePassed,
       faceScore: String(faceResult.score),
       geofenceDistanceM: formatMeters(
@@ -734,6 +861,12 @@ export class AttendanceService {
       status,
     };
     const { record, result } = await this.prisma.$transaction(async (tx) => {
+      if (participant.participantType === "WORKER") await workerClockLock(tx, userId);
+      if (taskTarget === null && participant.participantType === "WORKER" && plan.points.find((point) => point.code === request.pointCode)?.kind === "START") await assertNoOpenTask(tx, participant.participantId);
+      if (taskTarget !== null) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team-task:${taskTarget.assignment.taskId}`}))`;
+      }
+      const currentTask = taskTarget === null ? null : await resolveTaskPunch(tx, projectId, userId, request.pointCode, occurredAt);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${attendanceLockKey(projectId, participant.participantType, participant.participantId, request.attendanceDate)}, 0))`;
       await this.assertPointAvailable(
         tx,
@@ -743,8 +876,18 @@ export class AttendanceService {
         request.attendanceDate,
         request.pointCode,
       );
+      await this.safety.requireConfirmation(tx, safetyContext, confirmation.id);
       if (proof !== null) await this.faces.consumeProof(tx, proof);
       const record = await tx.attendanceRecord.create({ data: recordData });
+      if (currentTask !== null) {
+        await applyTaskPunch(tx, currentTask, record);
+        if (currentTask.assignment.startedAt !== null) {
+          const startDay: string = getChinaDateOnly(currentTask.assignment.startedAt);
+          if (startDay !== request.attendanceDate) await recalculateTaskResult(tx, participant.memberId, projectId, participant.participantId, startDay, new Date());
+        }
+        const result = await recalculateTaskResult(tx, participant.memberId, projectId, participant.participantId, request.attendanceDate, new Date());
+        return { record, result };
+      }
       const result = await this.recalculateAttendanceResult(
         tx,
         projectId,
@@ -760,6 +903,18 @@ export class AttendanceService {
       record: createAttendanceRecordResponse(record),
       result: createAttendanceResultResponse(result),
     };
+  }
+
+  async getTaskAttendanceToday(projectId: string, userId: string, taskId: string): Promise<AttendanceTodayResponse> {
+    const row = await ownTaskAssignment(this.prisma, projectId, userId, taskId);
+    const project = row.task.team.project;
+    const date: string = getChinaDateOnly(new Date());
+    const points = (["START", "END"] as const).map((kind) => {
+      const stamp = kind === "START" ? row.startedAt : row.finishedAt;
+      const planned = kind === "START" ? row.task.startsAt : row.task.endsAt;
+      return { pointCode: taskPointCode(taskId, kind), kind, label: kind === "START" ? "开工" : "完工", graceMins: 0, scheduledTime: new Date(planned.getTime() + 8 * 3600000).toISOString().slice(11, 16), record: stamp === null ? null : { occurredAt: stamp.toISOString(), status: "VALID" as const, abnormalReason: null } };
+    });
+    return { attendanceDate: date, configured: true, isWorkday: row.task.status === "OPEN" && row.member.status === "ACTIVE" && project.status === "ACTIVE", shiftName: `临时任务 · ${row.task.title}`, geofence: { centerLatitude: String(project.centerLatitude), centerLongitude: String(project.centerLongitude), radiusM: project.geofenceRadiusM, locationAccuracyLimitM: project.locationAccuracyLimitM }, points, result: null };
   }
 
   async getAttendanceToday(
@@ -1133,15 +1288,31 @@ export class AttendanceService {
     });
   }
 
-  private requireAttendanceLocation(project: Project, position: AttendancePosition): GeofenceDecision {
-    const decision = this.createGeofenceDecision(project, position.latitude, position.longitude);
-    if (!decision.isInside) throw new BadRequestException({
-      message: "OUTSIDE_GEOFENCE", projectId: project.id,
-      distanceM: Math.round(decision.distanceM), radiusM: project.geofenceRadiusM,
-    });
-    if (project.locationAccuracyLimitM !== null &&
-        (position.locationAccuracyM === null || Number(position.locationAccuracyM) > project.locationAccuracyLimitM))
-      throw new BadRequestException({ message: "LOCATION_ACCURACY_INSUFFICIENT", limitM: project.locationAccuracyLimitM });
+  private requireAttendanceLocation(
+    project: Project,
+    position: AttendancePosition,
+  ): GeofenceDecision {
+    const decision = this.createGeofenceDecision(
+      project,
+      position.latitude,
+      position.longitude,
+    );
+    if (!decision.isInside)
+      throw new BadRequestException({
+        message: "OUTSIDE_GEOFENCE",
+        projectId: project.id,
+        distanceM: Math.round(decision.distanceM),
+        radiusM: project.geofenceRadiusM,
+      });
+    if (
+      project.locationAccuracyLimitM !== null &&
+      (position.locationAccuracyM === null ||
+        Number(position.locationAccuracyM) > project.locationAccuracyLimitM)
+    )
+      throw new BadRequestException({
+        message: "LOCATION_ACCURACY_INSUFFICIENT",
+        limitM: project.locationAccuracyLimitM,
+      });
     return decision;
   }
 

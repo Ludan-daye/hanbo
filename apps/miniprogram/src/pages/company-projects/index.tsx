@@ -84,7 +84,7 @@ export default function CompanyProjects(): JSX.Element {
             value={filter}
             onChange={setFilter}
           />
-          <Subtitle>共 {visible.length} 个项目 · 点击卡片查看详情</Subtitle>
+          <Subtitle>共 {visible.length} 个项目</Subtitle>
           {items === null && error === null ? (
             <StateView title="加载中…" />
           ) : null}
@@ -94,7 +94,7 @@ export default function CompanyProjects(): JSX.Element {
           {items !== null && visible.length === 0 ? (
             <StateView
               title="没有找到相关项目"
-              sub="尝试调整筛选条件，或新建一个项目。"
+              sub="可调整筛选或新建项目。"
             />
           ) : null}
           {visible.map((project) => (

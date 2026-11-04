@@ -15,6 +15,7 @@ import type {
 import type { AttendanceResultSummary } from "../me.types";
 import type { DemoState } from "./state";
 import { chinaToday } from "../time";
+import { demoTaskSummary } from "./task-attendance";
 
 export const demoDaySummary = (
   state: DemoState,
@@ -44,7 +45,7 @@ export const demoDaySummary = (
       isValid: true,
     }));
   const plan = effectiveDemoPlan(state, person, date);
-  const summary = summarizeScheduledAttendance(
+  const summary = person.taskAttendanceOnly ? { ...demoTaskSummary(state, person, date), selectedRecords: {} } : summarizeScheduledAttendance(
     plan.points,
     date,
     [
@@ -74,6 +75,7 @@ const attended = (
   person: ProjectParticipant,
   date: string,
 ): boolean => {
+  if (person.taskAttendanceOnly) return demoTaskSummary(state, person, date).hasResult;
   const points = effectiveDemoPlan(state, person, date).points;
   return (
     state.records.some(
@@ -98,7 +100,7 @@ export const scheduled = (
   state: DemoState,
   person: ProjectParticipant,
   date: string,
-): boolean =>
+): boolean => person.taskAttendanceOnly ? date <= chinaToday() && demoTaskSummary(state, person, date).isScheduled :
   date <= chinaToday() &&
   demoMemberEligible(demoMemberOn(state, person, date), date) &&
   effectiveDemoPlan(state, person, date).isWorkday;

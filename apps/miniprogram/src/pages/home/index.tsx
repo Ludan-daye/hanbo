@@ -7,7 +7,6 @@ import {
   AppHeader,
   BottomNav,
   Button,
-  ListItem,
   Notice,
   Screen,
   Section,
@@ -16,6 +15,7 @@ import {
 import { RolePanel } from "../../components/role-panels/index";
 import { WorkerProjectOverview } from "../../components/worker-project-overview";
 import { WorkerHome } from "../../components/worker-home";
+import { TeamLeaderOverview } from "../../components/team-leader-overview";
 import { AccountAvatar } from "../../components/account-avatar";
 import { useAccountProfile } from "../../hooks/use-account-profile";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
@@ -23,13 +23,10 @@ import { useSessionGuard } from "../../hooks/use-session-guard";
 import { roleHomePanel } from "../../routing/roleHome";
 import { resolveAdminProjectId } from "../../routing/projectAdmin";
 import { resolveCompanyAdminCompanyId } from "../../routing/companyAdmin";
-import { resolveTeamLeaderTeamId } from "../../routing/teamLeader";
 import {
   fetchCompanyDailyReport,
   fetchDailyReport,
-  fetchTeamDailyReport,
 } from "../../services/management";
-import { fetchPendingMakeups } from "../../services/makeups";
 import { chinaDateLabel, chinaToday } from "../../services/time";
 import type { ReportTotals } from "../../services/management.types";
 import { API_BASE_URL, FRONTEND_DEMO } from "../../config/env";
@@ -49,7 +46,6 @@ export default function Home(): JSX.Element {
   const panel = roleHomePanel(state.me?.roles.highestRoleCode ?? null);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [totals, setTotals] = useState<ReportTotals | null>(null);
-  const [pending, setPending] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -57,6 +53,10 @@ export default function Home(): JSX.Element {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    if (panel === "teamLeader") {
+      setLoading(false);
+      return;
+    }
     void (async (): Promise<void> => {
       try {
         if (FRONTEND_DEMO) {
@@ -66,22 +66,14 @@ export default function Home(): JSX.Element {
         if (panel !== "worker") {
           const companyId = resolveCompanyAdminCompanyId(state.me);
           const projectId = resolveAdminProjectId(state.me);
-          const teamId = resolveTeamLeaderTeamId(state.me);
           const report =
             panel === "companyAdmin" && companyId !== null
               ? await fetchCompanyDailyReport(companyId, chinaToday())
               : panel === "projectAdmin" && projectId !== null
                 ? await fetchDailyReport(projectId, chinaToday())
-                : panel === "teamLeader" && teamId !== null
-                  ? await fetchTeamDailyReport(teamId, chinaToday())
-                  : null;
-          const requests =
-            panel === "teamLeader" && teamId !== null
-              ? await fetchPendingMakeups(teamId)
-              : [];
+                : null;
           if (!cancelled) {
             setTotals(report?.totals ?? null);
-            setPending(requests.length);
           }
         }
       } catch (reason) {
@@ -141,6 +133,8 @@ export default function Home(): JSX.Element {
           onRefresh={refresh}
           account={account}
         />
+      ) : panel === "teamLeader" ? (
+        <TeamLeaderOverview revision={revision} onRefresh={refresh} />
       ) : (
         <View className="home-hero">
           <View className="home-hero__label">
@@ -169,9 +163,7 @@ export default function Home(): JSX.Element {
                     ? "请联系管理员分配角色"
                     : panel === "companyAdmin"
                       ? "全部项目"
-                      : panel === "teamLeader"
-                        ? "当前班组"
-                        : "当前项目"}
+                      : "当前项目"}
               </View>
             </View>
             <View
@@ -183,11 +175,9 @@ export default function Home(): JSX.Element {
                       ? "/pages/company-reports/index"
                       : panel === "projectAdmin"
                         ? "/pages/reports/index"
-                        : panel === "teamLeader"
-                          ? "/pages/team-attendance/index"
-                          : panel === "systemAdmin"
-                            ? "/pages/system-management/index"
-                            : "/pages/profile/index",
+                        : panel === "systemAdmin"
+                          ? "/pages/system-management/index"
+                          : "/pages/profile/index",
                 });
               }}
             >
@@ -196,13 +186,13 @@ export default function Home(): JSX.Element {
           </View>
         </View>
       )}
-      {panel !== "worker" && loading ? (
+      {panel !== "worker" && panel !== "teamLeader" && loading ? (
         <View className="home-loading">正在同步工作信息…</View>
       ) : null}
-      {error ? (
+      {panel !== "teamLeader" && error ? (
         <StateView title="概览加载失败" sub={error} onRetry={refresh} />
       ) : null}
-      {panel !== "worker" && totals ? (
+      {panel !== "worker" && panel !== "teamLeader" && totals ? (
         <View className="home-summary">
           <View>
             <View>{totals.participantCount}</View>
@@ -218,22 +208,14 @@ export default function Home(): JSX.Element {
           </View>
         </View>
       ) : null}
-      {panel === "teamLeader" ? (
-        <ListItem
-          primary={`待处理补卡 · ${pending} 条`}
-          secondary="及时处理申请，让考勤记录更完整"
-          chip="去审批"
-          onClick={() => {
-            void Taro.navigateTo({ url: "/pages/team-makeups/index" });
-          }}
-        />
-      ) : null}
       {settings?.announcement ? <Notice>{settings.announcement}</Notice> : null}
-      <Section title={panel === "worker" ? "快捷入口" : "常用功能"}>
-        <View className="home-shortcuts">
-          <RolePanel panel={panel} limit={4} />
-        </View>
-      </Section>
+      {panel !== "teamLeader" ? (
+        <Section title={panel === "worker" ? "快捷入口" : "常用功能"}>
+          <View className="home-shortcuts">
+            <RolePanel panel={panel} limit={4} />
+          </View>
+        </Section>
+      ) : null}
       {panel === "none" ? (
         <Button
           variant="outline"

@@ -1,3 +1,4 @@
+import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
@@ -182,7 +183,8 @@ export default function TeamDetail(): JSX.Element {
               </Button>
             ) : null}
             <Notice>
-              负责人用于班组联络；考勤审批权限按成员的班组长角色配置。负责人转组、暂停或退场后自动取消。
+              <View>负责人负责联络，审批需班组长权限。</View>
+              <View>转组、暂停或退场后取消负责人。</View>
             </Notice>
             <Field
               value={searchInput}
@@ -215,7 +217,7 @@ export default function TeamDetail(): JSX.Element {
             ))}
             {people !== null && people.items.length === 0 ? (
               <Notice>
-                没有符合条件的在场成员，可调整搜索或前往成员管理分配人员。
+                暂无匹配成员，可调整筛选或添加人员。
               </Notice>
             ) : null}
             {page > 1 ? (

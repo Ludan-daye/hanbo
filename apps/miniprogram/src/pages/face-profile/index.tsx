@@ -28,6 +28,7 @@ import "./index.scss";
 import { useSession } from "../../store/session";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
+import { WorkEntryNotice } from "../../components/work-entry-notice";
 import {
   VideoFaceCapture,
   type VideoFaceFlow,
@@ -123,7 +124,7 @@ export default function FaceProfilePage(): JSX.Element {
       if ((state.me?.roles.highestRoleCode === "WORKER" || onboarding) && replacementNeedsConfirmation(data.profile?.status, photo, confirmedPhoto.current)) {
         const answer = await Taro.showModal({
           title: "重新提交底照",
-          content: "重新提交成功后，旧底照将停止使用。新底照需要管理员重新审核，通过后才能正式刷脸打卡。",
+          content: "重新提交后旧底照失效，新照审核通过后可打卡。",
           confirmText: "重新提交",
           cancelText: "再核对",
         });
@@ -183,7 +184,7 @@ export default function FaceProfilePage(): JSX.Element {
     return (
       <FlowScreen title="人脸档案" enabled root={onboarding}>
         <View className="worker-face-profile">
-          {testing ? <VideoFaceCapture flow={livenessTestFlow} referenceDescription="与当前登记底照比对。本次仅测试，不生成考勤记录。" onCancel={() => setTesting(false)} onResult={(result) => { setTestResult(result); setTesting(false); setTestDetailsOpen(false); }} /> : null}
+          {testing ? <VideoFaceCapture flow={livenessTestFlow} referenceDescription="与本人底照比对，不计考勤。" onCancel={() => setTesting(false)} onResult={(result) => { setTestResult(result); setTesting(false); setTestDetailsOpen(false); }} /> : null}
           {error ? <View className="worker-face-profile__error" role="alert">{error}</View> : null}
           {data === null ? <StateView title={error ? "人脸档案读取失败" : "加载中…"} onRetry={error ? refresh : undefined} /> : <>
             <View className="worker-face-profile__heading">{statusTitle}</View>
@@ -197,16 +198,16 @@ export default function FaceProfilePage(): JSX.Element {
               </> : data.profile === null ? <View className="worker-face-profile__capture">
                 <AppIcon name="user" />
                 <View>拍摄清晰正脸，最大2MB</View>
-                <View className="worker-face-profile__muted">请在光线充足的环境下拍摄，确保面部完整、清晰可见。</View>
+                <View className="worker-face-profile__muted">光线充足，正脸完整清晰。</View>
               </View> : <>
                 <View className="worker-face-profile__status"><AppIcon name={status === "APPROVED" ? "shield" : status === "REJECTED" ? "user" : "clock"} /><View>{faceStatusLabel(status ?? "")}</View></View>
                 <View className="worker-face-profile__meta"><View>提交时间</View><View>{formatChinaDate(data.profile.createdAt)} {formatChinaHm(data.profile.createdAt)}</View></View>
                 {data.profile.reviewedAt ? <View className="worker-face-profile__meta"><View>审核时间</View><View>{formatChinaDate(data.profile.reviewedAt)} {formatChinaHm(data.profile.reviewedAt)}</View></View> : null}
                 {data.profile.reviewReason ? <View className="worker-face-profile__error">审核意见：{data.profile.reviewReason}</View> : null}
-                <View className="worker-face-profile__muted">{status === "PENDING" ? "审核时间以管理员处理为准，可在此查看状态。" : "登记底照由管理员核对，用于与打卡时采集的人脸比对。"}</View>
+                <View className="worker-face-profile__muted">{status === "PENDING" ? "等待管理员审核。" : "底照审核后用于打卡人脸比对。"}</View>
               </>}
             </View>
-            {data.mode === "UNCONFIGURED" ? <Notice>活体核验暂未启用。可以先提交底照审核，服务开通后再刷脸打卡。</Notice> : null}
+            {data.mode === "UNCONFIGURED" ? <Notice>活体服务未启用，可先提交底照。</Notice> : null}
             {saved && status !== "APPROVED" ? <View className="worker-face-profile__muted">底照已提交，请等待管理员审核。</View> : null}
             <View className="worker-face-profile__consent">
               {photo !== null || data.profile === null ? <CheckboxGroup onChange={(event) => setConsented(event.detail.value.includes("agree"))}>
@@ -214,7 +215,7 @@ export default function FaceProfilePage(): JSX.Element {
               </CheckboxGroup> : null}
               <NativeButton className="worker-face-profile__text-button" onClick={() => setConsentOpen(!consentOpen)}>{consentOpen ? "收起采集说明" : "查看采集说明"}</NativeButton>
               {consentOpen ? <View className="worker-face-profile__muted">{data.consentText}</View> : null}
-              {photo !== null && data.profile !== null ? <View className="worker-face-profile__muted">新照片尚未提交。重新提交成功后，旧底照停止使用，需要重新审核。</View> : null}
+              {photo !== null && data.profile !== null ? <View className="worker-face-profile__muted">新照待提交，提交后旧照失效，须重新审核。</View> : null}
             </View>
             <View className="worker-face-profile__primary">
               {photo !== null ? <Button appearance="worker" loading={busy} disabled={!consented || busy} onClick={() => { void submit(); }}>{data.profile ? "重新提交审核" : "提交审核"}</Button>
@@ -229,10 +230,10 @@ export default function FaceProfilePage(): JSX.Element {
             {canTest ? <View className="worker-face-profile__test">
               <NativeButton className="worker-face-profile__test-toggle" disabled={busy || testing} onClick={() => setTestOpen(!testOpen)}><View>活体测试（不计考勤）</View><View className="worker-face-profile__muted">{testOpen ? "收起" : "展开"}</View></NativeButton>
               {testOpen ? <>
-                <View className="worker-face-profile__muted">无需排班或定位。使用已上传的本人底照，按提示录制约8秒视频进行活体与本人比对，不生成考勤记录。</View>
-                {status === "PENDING" ? <View className="worker-face-profile__muted">待审核底照可测试，不代表可以正式打卡。</View> : null}
-                {!enrollmentSubmitted ? <View className="worker-face-profile__muted">请先提交本人底照；仅待审核或已通过底照可测试。</View> : null}
-                {process.env.TARO_ENV !== "weapp" ? <Notice>请用微信小程序手机预览测试摄像头录像。</Notice> : null}
+                <View className="worker-face-profile__muted">无需排班、定位，不计考勤。</View>
+                {status === "PENDING" ? <View className="worker-face-profile__muted">待审核底照仅限测试。</View> : null}
+                {!enrollmentSubmitted ? <View className="worker-face-profile__muted">需先提交底照，待审核或已通过时可测试。</View> : null}
+                {process.env.TARO_ENV !== "weapp" ? <Notice>摄像头测试需小程序手机预览。</Notice> : null}
                 <Button appearance="worker" variant="outline" disabled={busy || !testReady} onClick={() => { setTestResult(null); setTesting(true); }}>开始活体人脸测试</Button>
                 {testResult ? <>
                   <View className="worker-face-profile__test-result">{testResult.status === "VERIFIED" ? "测试通过，未生成考勤记录" : "测试未通过，请按动作顺序重新测试"}</View>
@@ -244,7 +245,7 @@ export default function FaceProfilePage(): JSX.Element {
                   </View> : null}
                 </> : null}
               </> : null}
-            </View> : params.test === "1" && !onboarding ? <Notice>当前未启用视频动作活体测试，测试条件不满足。请联系管理员确认服务配置。</Notice> : null}
+            </View> : params.test === "1" && !onboarding ? <Notice>视频活体未启用，请联系管理员。</Notice> : null}
           </>}
           {onboarding ? <NativeButton className="worker-face-profile__text-button worker-face-profile__sign-out" disabled={busy} onClick={() => { void signOut(); }}>退出登录</NativeButton> : null}
         </View>
@@ -256,7 +257,7 @@ export default function FaceProfilePage(): JSX.Element {
       {testing ? (
         <VideoFaceCapture
           flow={livenessTestFlow}
-          referenceDescription="与当前登记底照比对，无需身份证照片。本次仅测试，不生成考勤记录。"
+          referenceDescription="与本人底照比对，无需证件照，不计考勤。"
           onCancel={() => setTesting(false)}
           onResult={(result) => {
             setTestResult(result);
@@ -274,10 +275,11 @@ export default function FaceProfilePage(): JSX.Element {
           <Title>
             {enrollmentSubmitted ? "底照已录入" : "最后一步，录入本人正脸"}
           </Title>
+          <WorkEntryNotice />
           <Subtitle>
             {enrollmentSubmitted
-              ? "资料和底照均已提交，可以进入首页查看项目。审核通过后才能刷脸打卡。"
-              : "用工资料已保存。请拍摄本人清晰正脸，作为以后打卡的人脸比对底照；微信头像不会用作底照。"}
+              ? "资料和底照已提交，底照审核通过后可打卡。"
+              : "资料已保存，请录入本人正脸。微信头像不作底照。"}
           </Subtitle>
         </>
       ) : null}
@@ -288,7 +290,7 @@ export default function FaceProfilePage(): JSX.Element {
         <>
           {data.mode === "UNCONFIGURED" ? (
             <Notice>
-              活体核验暂未启用。你可以先提交底照审核，服务开通后再进行刷脸打卡。
+              活体服务未启用，可先提交底照。
             </Notice>
           ) : null}
           <Section
@@ -300,7 +302,7 @@ export default function FaceProfilePage(): JSX.Element {
             }
           >
             <Subtitle>
-              底照由管理员核对后生效，用于与每次打卡时采集的人脸进行比对。
+              底照审核通过后，用于打卡人脸比对。
             </Subtitle>
             {data.profile?.reviewReason ? (
               <Notice>{data.profile.reviewReason}</Notice>
@@ -310,11 +312,11 @@ export default function FaceProfilePage(): JSX.Element {
           {data.mode === "VIDEO_ACTION" && !onboarding ? (
             <Section
               title="活体与本人比对测试"
-              sub="无需排班或定位，可直接验证云端功能"
+              sub="无需排班、定位"
             >
               <Subtitle>
-                使用已上传的本人底照，按提示录制约 8
-                秒动作视频，发送至腾讯云完成活体检测及人脸比对。本次测试不计入考勤。
+                <View>录制约 8 秒视频，由腾讯云检测活体并比对本人底照。</View>
+                <View>仅测试，不计考勤。</View>
               </Subtitle>
               {testResult !== null ? (
                 <View>
@@ -337,7 +339,7 @@ export default function FaceProfilePage(): JSX.Element {
                 </View>
               ) : null}
               {process.env.TARO_ENV !== "weapp" ? (
-                <Notice>请用微信小程序手机预览测试摄像头录像。</Notice>
+                <Notice>摄像头测试需小程序手机预览。</Notice>
               ) : null}
               <Button
                 disabled={
@@ -354,7 +356,7 @@ export default function FaceProfilePage(): JSX.Element {
                 开始活体人脸测试
               </Button>
               {data.profile === null ? (
-                <Subtitle>请先拍摄并提交下方的本人底照。</Subtitle>
+                <Subtitle>请先拍摄并提交本人底照。</Subtitle>
               ) : null}
             </Section>
           ) : null}
@@ -362,7 +364,7 @@ export default function FaceProfilePage(): JSX.Element {
             <>
               <Section
                 title="录入本人正脸"
-                sub="正对镜头、光线均匀，保证只有本人一张脸"
+                sub="单人正脸，光线均匀"
               >
                 {photo !== null ? (
                   <Image
@@ -390,7 +392,7 @@ export default function FaceProfilePage(): JSX.Element {
                 </Button>
                 {data.profile !== null ? (
                   <Notice>
-                    重新提交后，旧底照停止使用，需要管理员重新审核后才能刷脸打卡。
+                    提交后旧照失效，新照审核通过后可打卡。
                   </Notice>
                 ) : null}
               </Section>

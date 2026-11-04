@@ -95,6 +95,7 @@ enum ReportExportStatus {
 }
 
 model User {
+  attendanceSafetyConfirmations AttendanceSafetyConfirmation[]
   authoredAttendancePlans    AttendancePlan[]
   id                         String                    @id @default(uuid())
   openid                     String                    @unique
@@ -293,6 +294,7 @@ model Company {
 }
 
 model Project {
+  attendanceSafetyConfirmations AttendanceSafetyConfirmation[]
   attendancePlans          AttendancePlan[]
   id                       String                    @id @default(uuid())
   companyId                String
@@ -333,6 +335,11 @@ model Project {
 }
 
 model Team {
+  attendanceSafetyConfirmations AttendanceSafetyConfirmation[]
+  workTasks TeamWorkTask[]
+  safetyBriefings TeamSafetyBriefing[]
+  safetyIssues TeamSafetyIssue[]
+  dailyLogs TeamDailyLog[]
   id                    String                 @id @default(uuid())
   projectId             String
   name                  String
@@ -359,6 +366,10 @@ model Team {
 }
 
 model ProjectWorkerMember {
+  taskAttendanceOnly Boolean @default(false)
+  workAssignments TeamTaskAssignment[]
+  safetyAcknowledgements TeamSafetyAcknowledgement[]
+  safetyIssues TeamSafetyIssue[]
   id                 String                   @id @default(uuid())
   projectId          String
   workerId           String
@@ -505,6 +516,8 @@ model FaceProfile {
 }
 
 model FaceVerificationSession {
+  safetyConfirmationId String?
+  safetyConfirmation AttendanceSafetyConfirmation? @relation(fields: [safetyConfirmationId], references: [id], onDelete: Restrict)
   id                 String            @id @default(uuid())
   userId             String
   projectId          String
@@ -560,6 +573,10 @@ model FaceLivenessTestSession {
 }
 
 model AttendanceRecord {
+  taskAssignmentId String?
+  taskAssignment TeamTaskAssignment? @relation(fields: [taskAssignmentId], references: [id], onDelete: Restrict)
+  safetyConfirmationId String? @unique
+  safetyConfirmation AttendanceSafetyConfirmation? @relation(fields: [safetyConfirmationId], references: [id], onDelete: Restrict)
   pointLabel                String?
   id                        String                   @id @default(uuid())
   projectId                 String
@@ -655,6 +672,7 @@ model AuditLog {
 }
 
 model ProjectMemberHistory {
+  taskAttendanceOnly Boolean @default(false)
   id                 String                @id @default(uuid())
   projectId          String
   workerMemberId     String?
@@ -774,4 +792,155 @@ model AttendancePlan {
 
   @@index([projectId, scopeType, scopeId, startsOn, createdAt])
   @@map("attendance_plans")
+}
+
+model TeamWorkTask {
+  id              String                    @id @default(uuid())
+  teamId          String
+  title           String
+  description     String
+  workType        String
+  startsAt        DateTime
+  endsAt          DateTime
+  status          String                    @default("OPEN")
+  createdByUserId String
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  team            Team                      @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  assignments     TeamTaskAssignment[]
+  invitations     TemporaryTaskInvitation[]
+
+  @@index([teamId, startsAt])
+  @@map("team_work_tasks")
+}
+
+model TeamTaskAssignment {
+  startedAt DateTime?
+  finishedAt DateTime?
+  exitConfirmedAt DateTime?
+  exitConfirmedByUserId String?
+  records AttendanceRecord[]
+  id        String              @id @default(uuid())
+  taskId    String
+  memberId  String
+  source    String
+  createdAt DateTime            @default(now())
+  task      TeamWorkTask        @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  member    ProjectWorkerMember @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@unique([taskId, memberId])
+  @@index([memberId])
+  @@map("team_task_assignments")
+}
+
+model TemporaryTaskInvitation {
+  id               String                  @id @default(uuid())
+  codeHash         String                  @unique
+  taskId           String
+  encryptedName    String
+  phone            String
+  createdByUserId  String
+  expiresAt        DateTime
+  acceptedByUserId String?
+  acceptedAt       DateTime?
+  status           BindingInvitationStatus @default(PENDING)
+  createdAt        DateTime                @default(now())
+  task             TeamWorkTask            @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, status])
+  @@map("temporary_task_invitations")
+}
+
+model TemporaryInviteAttempt {
+  userId          String   @id
+  windowStartedAt DateTime
+  count           Int
+
+  @@map("temporary_invite_attempts")
+}
+
+model TeamSafetyBriefing {
+  id               String                      @id @default(uuid())
+  teamId           String
+  workDate         DateTime                    @db.Date
+  title            String
+  content          String
+  createdByUserId  String
+  createdAt        DateTime                    @default(now())
+  team             Team                        @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  acknowledgements TeamSafetyAcknowledgement[]
+
+  @@index([teamId, workDate])
+  @@map("team_safety_briefings")
+}
+
+model TeamSafetyAcknowledgement {
+  id             String              @id @default(uuid())
+  briefingId     String
+  memberId       String
+  userId         String
+  acknowledgedAt DateTime            @default(now())
+  briefing       TeamSafetyBriefing  @relation(fields: [briefingId], references: [id], onDelete: Restrict)
+  member         ProjectWorkerMember @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@unique([briefingId, memberId])
+  @@index([memberId])
+  @@map("team_safety_acknowledgements")
+}
+
+model TeamSafetyIssue {
+  id               String               @id @default(uuid())
+  teamId           String
+  memberId         String?
+  workDate         DateTime             @db.Date
+  description      String
+  severity         String
+  resolution       String?
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+  createdByUserId  String
+  createdAt        DateTime             @default(now())
+  team             Team                 @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  member           ProjectWorkerMember? @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@index([teamId, workDate])
+  @@map("team_safety_issues")
+}
+
+model TeamDailyLog {
+  id                String   @id @default(uuid())
+  teamId            String
+  workDate          DateTime @db.Date
+  snapshot          Json
+  generatedByUserId String
+  generatedAt       DateTime @default(now())
+  team              Team     @relation(fields: [teamId], references: [id], onDelete: Restrict)
+
+  @@unique([teamId, workDate])
+  @@map("team_daily_logs")
+}
+
+model AttendanceSafetyConfirmation {
+  id String @id @default(uuid())
+  userId String
+  projectId String
+  teamId String?
+  memberId String
+  participantType ProfileOwnerType
+  participantId String
+  attendanceDate DateTime @db.Date
+  pointCode String
+  baselineVersion String
+  briefingIds String[]
+  snapshot Json
+  confirmedAt DateTime @default(now())
+  expiresAt DateTime
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  team Team? @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  faceSessions FaceVerificationSession[]
+  attendanceRecord AttendanceRecord?
+  @@index([projectId, attendanceDate, teamId])
+  @@index([userId, confirmedAt])
+  @@map("attendance_safety_confirmations")
 }

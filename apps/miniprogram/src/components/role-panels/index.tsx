@@ -45,7 +45,7 @@ export const RolePanel = ({
     {panel === "none" ? (
       <StateView
         title="等待管理员分配角色"
-        sub="身份已绑定，分配角色后即可使用对应的工作功能。"
+        sub="已绑定，待分配角色。"
       />
     ) : null}
   </View>

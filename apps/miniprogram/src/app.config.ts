@@ -13,6 +13,10 @@ export default defineAppConfig({
     "pages/invitation/index",
     "pages/team-makeups/index",
     "pages/team-attendance/index",
+    "pages/team-work/index",
+    "pages/team-safety/index",
+    "pages/team-log/index",
+    "pages/my-tasks/index",
     "pages/company-projects/index",
     "pages/company-people/index",
     "pages/my-records/index",
@@ -41,7 +45,7 @@ export default defineAppConfig({
   ],
   permission: {
     "scope.userLocation": {
-      desc: "用于在地图上设置工地位置与考勤范围，并核对现场打卡位置。",
+      desc: "用于工地选址、考勤范围设置与打卡定位。",
     },
   },
   requiredPrivateInfos: ["getLocation", "chooseLocation"],

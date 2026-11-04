@@ -169,7 +169,7 @@ export default function Schedules(): JSX.Element {
       startsOn < tomorrow() ||
       (endsOn !== null && endsOn < startsOn)
     ) {
-      setError("请填写名称、工作日和有效日期；调整最早从明天生效。");
+      setError("填写名称、工作日及日期，最早次日生效。");
       return;
     }
     operation.current = true;
@@ -225,7 +225,8 @@ export default function Schedules(): JSX.Element {
     <Screen>
       <PageHeader title="打卡安排" />
       <Notice>
-        默认每天上、下班两次。上级可调整下级的次数和时间，个人安排优先于班组，班组优先于项目；新规则最早次日生效。
+        <View>默认上、下班各一次，上级可调整下级安排。</View>
+        <View>优先级：个人 ＞ 班组 ＞ 项目。最早次日生效。</View>
       </Notice>
       {error ? (
         <StateView title="操作未完成" sub={error} onRetry={refresh} />
@@ -252,11 +253,11 @@ export default function Schedules(): JSX.Element {
       {configuration ? (
         <View>
           {configuration.id === null && scope?.scopeType !== "PROJECT" ? (
-            <Notice>尚未设置专属安排，当前继承上级。以下设置保存后才生效。</Notice>
+            <Notice>当前继承上级，保存后启用专属安排。</Notice>
           ) : null}
           {configuration.inherit ? (
             <Notice>
-              已设置继承上级排班。保存新的打卡安排可重新启用专属规则。
+              当前继承上级，可保存专属安排。
             </Notice>
           ) : null}
           <Section

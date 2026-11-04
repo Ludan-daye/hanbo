@@ -25,6 +25,7 @@ import { sessionEntryUrl } from "../../routing/session";
 import { FRONTEND_DEMO } from "../../config/env";
 import { chinaToday } from "../../services/time";
 import { RegistrationRegionPicker } from "../../components/registration-region-picker";
+import { WorkEntryNotice } from "../../components/work-entry-notice";
 import {
   cleanIdNumber,
   cleanCardNumber,
@@ -308,10 +309,10 @@ export default function WorkerRegistrationPage(): JSX.Element {
     >
       {!workerFlow ? (
         <>
-          <Title>{required ? "入场前，完善本人资料" : "我的用工资料"}</Title>
+          <Title>{required ? "用工登记" : "我的用工资料"}</Title>
           <Subtitle>
-            除标注“选填”外，其余资料均需填写。
-            {required ? "保存后继续录入本人正脸，用于打卡时的人脸比对。" : ""}
+            未标注“选填”的资料均为必填。
+            {required ? "保存后录入本人底照。" : ""}
           </Subtitle>
         </>
       ) : step !== null ? (
@@ -323,9 +324,8 @@ export default function WorkerRegistrationPage(): JSX.Element {
             {registrationGroups.find((group) => group.step === step)?.title}
           </View>
         </View>
-      ) : (
-        <Subtitle>选择要修改的资料分组。</Subtitle>
-      )}
+      ) : null}
+      {required ? <WorkEntryNotice /> : null}
       {FRONTEND_DEMO ? <Notice>本机演示，请只填写虚构测试资料。</Notice> : null}
       {!workerFlow && state.accountProfile ? (
         <ListItem
@@ -368,8 +368,8 @@ export default function WorkerRegistrationPage(): JSX.Element {
                     required
                       ? value.idNumber
                         ? `已输入 ${cleanIdNumber(value.idNumber).length} / 18 位`
-                        : "支持直接粘贴，末位 x 自动转为 X"
-                      : "需更正身份证信息时，请联系管理员核实"
+                        : "支持粘贴，自动规范格式"
+                      : "身份证更正请联系管理员"
                   }
                   onInput={(idNumber) =>
                     update({ idNumber: cleanIdNumber(idNumber) })
@@ -418,9 +418,9 @@ export default function WorkerRegistrationPage(): JSX.Element {
                         readAddressDraft(value.residentialAddress).region
                           .length === 0
                           ? required
-                            ? "原有地址已保留，请选地区后核对详细地址"
-                            : "原有地址已保留；更改地址时请选地区并核对详细地址"
-                          : "填写现居住地址，无需重复填写省市区"}
+                            ? "原地址已保留，请核对地区和详细地址"
+                            : "原地址已保留，修改时核对地区和地址"
+                          : "详细地址不含省市区"}
                       </View>
                     )}
                   </View>
@@ -438,9 +438,9 @@ export default function WorkerRegistrationPage(): JSX.Element {
                       readAddressDraft(value.residentialAddress).region
                         .length === 0
                         ? required
-                          ? "原有地址已保留，请选地区后核对详细地址"
-                          : "原有地址已保留；更改地址时请选地区并核对详细地址"
-                        : "填现居住地址，无需重复填写省市区"
+                          ? "原地址已保留，请核对地区和详细地址"
+                          : "原地址已保留，修改时核对地区和地址"
+                        : "详细地址不含省市区"
                     }
                     onInput={(detail) => updateAddress({ detail })}
                     onBlur={() => markTouched("residentialAddress")}
@@ -491,7 +491,7 @@ export default function WorkerRegistrationPage(): JSX.Element {
                               /^(\d{3})(\d{4})(\d{1,4})$/,
                               "$1 $2 $3",
                             )
-                          : "可直接粘贴，自动去除空格和 +86"
+                          : "支持粘贴，自动规范号码"
                       }
                       onInput={(mobile) =>
                         updateTelephone({ mobile: cleanTelephone(mobile) })
@@ -543,7 +543,7 @@ export default function WorkerRegistrationPage(): JSX.Element {
           ) : null}
           {!workerFlow || step === 3 ? (
             <View className={workerFlow ? "registration-group" : ""}>
-              <Section title="健康情况" sub="是否有需要长期服药的疾病？">
+              <Section title="长期用药疾病">
                 <Segmented<Choice>
                   value={choiceValue(value.hasLongTermMedication)}
                   options={[
@@ -585,7 +585,7 @@ export default function WorkerRegistrationPage(): JSX.Element {
                   </>
                 ) : null}
               </Section>
-              <Section title="保险情况" sub="是否已购买人身保险？">
+              <Section title="人身保险">
                 <Segmented<Choice>
                   value={choiceValue(value.hasPersonalInsurance)}
                   options={[
@@ -609,7 +609,7 @@ export default function WorkerRegistrationPage(): JSX.Element {
                       value={insurance.name}
                       maxLength={80}
                       type="text"
-                      placeholder="填写名称，或点选下方常见险种"
+                      placeholder="填写或选择险种"
                       disabled={busy}
                       error={fieldError("insuranceName")}
                       hint=""
@@ -714,8 +714,8 @@ export default function WorkerRegistrationPage(): JSX.Element {
                     !readInsuranceDraft(value.insuranceDetails).name ? (
                       <View className="registration-hint">
                         {required
-                          ? "原有保险说明已保留在下方，请核对名称与保障日期。"
-                          : "原有保险说明已保留；修改保险信息时请补齐名称与保障日期。"}
+                          ? "原说明已保留，请核对名称和保障日期。"
+                          : "原保险说明已保留，修改时补齐名称和保障日期。"}
                       </View>
                     ) : null}
                     <View className="registration-field">
@@ -802,7 +802,8 @@ export default function WorkerRegistrationPage(): JSX.Element {
                 </View>
               ) : null}
               <View className="registration-note">
-                资料用于用工登记、紧急联络、健康安全及工资发放。填写内容为本人申报，不代表已完成实名认证、保险核验或银行卡认证。
+                <View>资料用于用工登记、紧急联络、健康安全及工资发放。</View>
+                <View>本人申报不等于实名认证、保险核验或银行卡认证。</View>
               </View>
             </View>
           ) : null}

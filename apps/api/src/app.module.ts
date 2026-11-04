@@ -1,3 +1,4 @@
+import { TeamWorkModule } from "./team-work/team-work.module.js";
 import { Module } from "@nestjs/common";
 
 import { AccountModule } from "./account/account.module.js";
@@ -27,6 +28,7 @@ import { UploadsModule } from "./uploads/uploads.module.js";
     MakeupModule,
     MeModule,
     ReportsModule,
+    TeamWorkModule,
     UploadsModule,
   ],
   controllers: [HealthController],

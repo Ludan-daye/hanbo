@@ -1,3 +1,4 @@
+import { AttendanceSafetyService } from "./attendance-safety.service.js";
 import { Module } from "@nestjs/common";
 
 import { UploadsModule } from "../uploads/uploads.module.js";
@@ -20,6 +21,7 @@ import { AttendanceService } from "./attendance.service.js";
   controllers: [AttendanceController, AttendancePlansController],
   providers: [
     AttendanceService,
+    AttendanceSafetyService,
     {
       provide: FACE_VERIFICATION_CONNECTOR,
       useFactory: (env: ApiEnv): FaceVerificationConnector =>

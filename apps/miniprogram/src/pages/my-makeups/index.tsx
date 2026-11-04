@@ -106,7 +106,7 @@ export default function MyMakeups(): JSX.Element {
               role="button"
               onClick={refresh}
             >
-              部分项目名称未读取，申请记录仍可查看。点击重试
+              项目名加载失败，记录仍可查看。点击重试
             </View>
           ) : null}
           {items === null && error === null ? (
@@ -118,7 +118,6 @@ export default function MyMakeups(): JSX.Element {
           {!error && items !== null && visible.length === 0 ? (
             <StateView
               title="暂无这类补卡申请"
-              sub="新申请和审批进度会显示在这里。"
             />
           ) : null}
           {!error
@@ -190,7 +189,7 @@ export default function MyMakeups(): JSX.Element {
                           primary="当前状态"
                           secondary={
                             item.status === "PENDING"
-                              ? "已提交，等待所属上级处理"
+                              ? "已提交，待审批"
                               : STATUS_LABEL[item.status]
                           }
                         />
@@ -222,7 +221,7 @@ export default function MyMakeups(): JSX.Element {
   return (
     <Screen>
       <PageHeader title="补卡申请" />
-      <Notice>漏打卡或打卡异常？提交补卡申请，经班组长审批后更新考勤。</Notice>
+      <Notice>缺卡、异常可申请补卡，审批后更新考勤。</Notice>
       <Button
         onClick={() => {
           void Taro.navigateTo({ url: "/pages/submit-makeup/index" });
@@ -247,7 +246,6 @@ export default function MyMakeups(): JSX.Element {
       {items !== null && visible.length === 0 ? (
         <StateView
           title="暂无这类补卡申请"
-          sub="新申请和审批进度都会同步在这里。"
         />
       ) : null}
       {visible.map((item) => (

@@ -66,7 +66,7 @@ export const ProjectManagerPicker = ({
   return (
     <Section
       title="项目管理员 *"
-      sub="至少选择 1 人，可多选。负责项目人员、班组、考勤与报表。"
+      sub="至少选择 1 名项目管理员。"
     >
       {value.map((person) => (
         <ListItem
@@ -99,7 +99,7 @@ export const ProjectManagerPicker = ({
                 ? `已选 ${value.length} 人 · 点击已选人员可移除`
                 : undefined
             }
-            placeholder="搜索本公司管理人员姓名 / 手机号"
+            placeholder="搜索姓名、手机号"
             maxLength={60}
             disabled={disabled}
             onInput={setSearch}
@@ -126,15 +126,15 @@ export const ProjectManagerPicker = ({
           {candidates?.length === 0 ? (
             <Subtitle>
               {search.trim()
-                ? "未找到匹配人员，请更换姓名或手机号。"
-                : "暂无可选管理人员。请先完善本公司的管理人员档案；公司管理员也可作为项目负责人。"}
+                ? "无匹配人员。"
+                : "暂无管理人员，请先添加档案。公司管理员可兼任。"}
             </Subtitle>
           ) : null}
           {candidates?.length === 50 ? (
-            <Subtitle>已显示前 50 人，请搜索姓名或手机号缩小范围。</Subtitle>
+            <Subtitle>显示前 50 人，可搜索筛选。</Subtitle>
           ) : null}
           {value.length >= 20 ? (
-            <Subtitle>已选满 20 人，可先移除已选人员再调整。</Subtitle>
+            <Subtitle>最多 20 人，请先移除再添加。</Subtitle>
           ) : null}
           <Button variant="outline" onClick={() => setExpanded(false)}>
             完成选择{value.length > 0 ? ` · ${value.length} 人` : ""}
@@ -143,7 +143,7 @@ export const ProjectManagerPicker = ({
       )}
       {value.some((person) => !person.isBound) ? (
         <Subtitle>
-          待绑定人员创建后需领取项目邀请码，绑定微信后才能操作。
+          未绑定人员需通过邀请码绑定微信。
         </Subtitle>
       ) : null}
     </Section>

@@ -42,7 +42,7 @@ export const MemberRoleEditor = ({
 }: Props): JSX.Element => (
   <Section
     title="本项目职级 · 可多选"
-    sub="兼任不会新增人员档案；考勤与评分仍按一人统计。"
+    sub="兼任共用档案，考勤和评分不重复统计。"
   >
     {options.map((option) => {
       const selected = value.some((role) => role.roleCode === option.roleCode);
@@ -104,7 +104,7 @@ export const MemberRoleEditor = ({
     {value.some((role) => role.roleCode === "TEAM_LEADER") ? (
       <>
         {teams.length === 0 ? (
-          <Subtitle>请先在本项目建立班组，再分配班组长职级。</Subtitle>
+          <Subtitle>先建立班组，再分配班组长。</Subtitle>
         ) : null}
         <Button
           variant="outline"
