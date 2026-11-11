@@ -11,6 +11,7 @@ import {
   attendanceRangeError,
   attendanceProjectOptions,
   attendanceRequestKey,
+  workerRecordDayStatus,
 } from "../src/services/worker-records";
 import { summarizeWorkerMonth } from "../src/services/worker-home";
 
@@ -59,6 +60,36 @@ const day = (
     isEarlyLeave: false,
     teamName: "钢筋班",
   }) as MyAttendanceDay;
+
+describe("worker record status describes recorded results without guessing the schedule", () => {
+  test.each([0, 1, 2, 4])("%i recorded points today cannot by themselves imply work is ongoing or complete", (count) => {
+    const [group] = groupAttendanceDays(
+      [day("2026-11-12")],
+      Array.from({ length: count }, (_, i) => raw(`r${i}`, "2026-11-12")),
+      [],
+    );
+    expect(workerRecordDayStatus(group, "2026-11-12")).toBe("今日记录");
+    expect(workerRecordDayStatus(group, "2026-11-13")).toBe("无异常");
+  });
+  test("missing punches still take priority over approved makeup", () => {
+    const [group] = groupAttendanceDays(
+      [{ ...day("2026-11-12"), isMissingPunch: true }],
+      [],
+      [makeup("approved", "2026-11-12")],
+    );
+    expect(workerRecordDayStatus(group, "2026-11-12")).toBe("缺卡");
+  });
+  test("invalid records and absent summaries keep their own recovery feedback", () => {
+    const [invalid] = groupAttendanceDays([], [raw("bad", "2026-11-12", "p1", "INVALID")], []);
+    const [pending] = groupAttendanceDays([], [raw("ok", "2026-11-12")], []);
+    expect(workerRecordDayStatus(invalid, "2026-11-12")).toBe("核验异常");
+    expect(workerRecordDayStatus(pending, "2026-11-12")).toBe("汇总待确认");
+  });
+  test("approved makeup remains visible even without an original punch", () => {
+    const [group] = groupAttendanceDays([], [], [makeup("approved", "2026-11-12")]);
+    expect(workerRecordDayStatus(group, "2026-11-12")).toBe("已补卡 1 次");
+  });
+});
 
 describe("worker attendance date windows", () => {
   test("month and today follow China date rollover", () => {

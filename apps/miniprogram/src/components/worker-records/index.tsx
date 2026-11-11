@@ -22,9 +22,9 @@ import {
   attendanceProjectOptions,
   filterAttendance,
   groupAttendanceDays,
+  workerRecordDayStatus as dayStatus,
   type AttendanceLayers,
   type AttendanceRange,
-  type WorkerRecordDay,
 } from "../../services/worker-records";
 import "./index.scss";
 
@@ -58,23 +58,6 @@ const dayLabel = (value: string): string => {
   const date = new Date(`${value}T00:00:00Z`);
   return `${date.getUTCMonth() + 1}月${date.getUTCDate()}日 · 星期${"日一二三四五六"[date.getUTCDay()]}`;
 };
-const dayStatus = (group: WorkerRecordDay, today: string): string => {
-  const day = group.summary;
-  const flags = day
-    ? [
-        day.isAbsent ? "缺勤" : "",
-        day.isLate ? "迟到" : "",
-        day.isEarlyLeave ? "早退" : "",
-        day.isMissingPunch ? "缺卡" : "",
-      ].filter(Boolean)
-    : [];
-  if (flags.length) return flags.join(" / ");
-  if (group.records.some((row) => row.status === "INVALID")) return "核验异常";
-  if (group.makeups.length) return `已补卡 ${group.makeups.length} 次`;
-  if (!day) return "汇总待确认";
-  return group.date === today ? "进行中" : "无异常";
-};
-
 const RawRecord = ({
   row,
 }: {

@@ -542,8 +542,18 @@ export default function WorkerRegistrationPage(): JSX.Element {
             </View>
           ) : null}
           {!workerFlow || step === 3 ? (
-            <View className={workerFlow ? "registration-group" : ""}>
-              <Section title="长期用药疾病">
+            <View
+              className={
+                workerFlow
+                  ? "registration-group registration-group--health"
+                  : ""
+              }
+            >
+              <Section
+                title={
+                  workerFlow ? "是否有需要长期用药的疾病？" : "长期用药疾病"
+                }
+              >
                 <Segmented<Choice>
                   value={choiceValue(value.hasLongTermMedication)}
                   options={[
@@ -585,7 +595,7 @@ export default function WorkerRegistrationPage(): JSX.Element {
                   </>
                 ) : null}
               </Section>
-              <Section title="人身保险">
+              <Section title={workerFlow ? "是否已购买人身保险？" : "人身保险"}>
                 <Segmented<Choice>
                   value={choiceValue(value.hasPersonalInsurance)}
                   options={[

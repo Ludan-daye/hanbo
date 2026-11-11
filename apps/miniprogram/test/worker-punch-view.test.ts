@@ -10,12 +10,37 @@ const ready: WorkerPunchStepInput = {
   inside: true,
   hasPhoto: true,
   faceReady: true,
+  safetyReady: true,
   validProof: false,
   locationDenied: false,
   cameraDenied: false,
 };
 
 describe("worker punch exposes one action for the existing workflow", () => {
+  test("a photo and approved face cannot skip the outstanding safety acknowledgement", () => {
+    expect(workerPunchStep({ ...ready, safetyReady: false })).toEqual({
+      stage: "face",
+      action: "confirm-safety",
+    });
+    expect(workerPunchStep({ ...ready, safetyReady: true })).toEqual({
+      stage: "face",
+      action: "verify",
+    });
+  });
+  test("lost or expired safety acknowledgement returns the next action to safety", () => {
+    expect(workerPunchStep({ ...ready, safetyReady: false }).action).not.toBe("verify");
+  });
+  test("safety guidance does not replace unfinished location, photo or face-profile steps", () => {
+    expect(workerPunchStep({ ...ready, safetyReady: false, inside: false }).action).toBe("locate");
+    expect(workerPunchStep({ ...ready, safetyReady: false, hasPhoto: false }).action).toBe("capture");
+    expect(workerPunchStep({ ...ready, safetyReady: false, faceReady: false }).action).toBe("face-profile");
+  });
+  test("an already verified proof still offers saving, not a new safety or face step", () => {
+    expect(workerPunchStep({ ...ready, safetyReady: false, validProof: true })).toEqual({
+      stage: "saving",
+      action: "retry-save",
+    });
+  });
   test("saving must wait rather than offer a second submission with the available proof", () => {
     expect(
       workerPunchStep({ ...ready, phase: "SUBMITTING", validProof: true }),

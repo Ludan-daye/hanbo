@@ -146,9 +146,7 @@ export default function SubmitMakeup(): JSX.Element {
     try {
       await Taro.redirectTo({ url: "/pages/my-makeups/index?status=PENDING" });
     } catch {
-      setError(
-        "申请已提交，返回失败。点击“查看我的补卡”，勿重复提交。",
-      );
+      setError("申请已提交，返回失败。点击“查看我的补卡”，勿重复提交。");
     }
   };
   const workerCanSubmit = canSubmitWorkerMakeup({
@@ -219,8 +217,13 @@ export default function SubmitMakeup(): JSX.Element {
       pointIndex >= 0 ? currentPlan?.points[pointIndex] : null;
     const locked = busy || submitted;
     return (
-      <FlowScreen title="申请补卡">
+      <FlowScreen title={taskId ? "申请完工补卡" : "申请补卡"}>
         <View className="worker-makeup-form">
+          {taskId && (
+            <View className="worker-makeup-form__hint">
+              实际完工须晚于开工，间隔不超过 24 小时。审批后计工。
+            </View>
+          )}
           {projectError ? (
             <StateView
               title="项目加载失败"
@@ -259,7 +262,9 @@ export default function SubmitMakeup(): JSX.Element {
                   <View className="worker-makeup-form__label">项目</View>
                   <View className="worker-makeup-form__value-row">
                     <View>{selectedProject?.projectName ?? "选择项目"}</View>
-                    <View className="worker-makeup-form__change">选择</View>
+                    {!taskId && (
+                      <View className="worker-makeup-form__change">选择</View>
+                    )}
                   </View>
                   {selectedProject?.teamName ? (
                     <View className="worker-makeup-form__hint">
@@ -352,7 +357,7 @@ export default function SubmitMakeup(): JSX.Element {
                       data-makeup-field="time"
                     >
                       <View className="worker-makeup-form__label">
-                        实际时间
+                        {taskId ? "实际完工时间" : "实际时间"}
                       </View>
                       <View className="worker-makeup-form__value-row">
                         <View>{time}</View>
@@ -481,10 +486,7 @@ export default function SubmitMakeup(): JSX.Element {
               <ListItem primary="实际打卡时间" secondary={time} />
             </Picker>
           </View>
-          <Section
-            title="补卡原因"
-            sub="填写缺卡原因"
-          >
+          <Section title="补卡原因" sub="填写缺卡原因">
             <Textarea
               className="reason-textarea"
               value={reason}

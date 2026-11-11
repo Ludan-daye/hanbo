@@ -56,11 +56,17 @@ import {
 } from "../../services/me";
 import type {
   AttendancePointCode,
-  AttendanceToday,
   MyProjectMembership,
   SubmitAttendanceRecordBody,
 } from "../../services/me.types";
 import { chinaToday, formatChinaHm } from "../../services/time";
+import { fetchMyTasks } from "../../services/team-work";
+import {
+  canSelectPunchPoint,
+  selectPunchPoint,
+  taskPunchBlock,
+  type PunchSchedule as AttendanceToday,
+} from "./point-selection";
 import { useSession } from "../../store/session";
 import { uploadImage } from "../../services/uploads";
 import {
@@ -113,23 +119,15 @@ const errorText = (reason: unknown): string => {
     return String(reason.errMsg);
   return "操作未完成，请重试。";
 };
-const nextOpenPoint = (today: AttendanceToday): AttendancePointCode | null => {
-  const points = today.points.filter((point) => point.record === null);
-  const now = formatChinaHm(new Date().toISOString());
-  const due = points.filter((point) => point.scheduledTime <= now);
-  return (due[due.length - 1] ?? points[0])?.pointCode ?? null;
-};
 const requireOpenPoint = (
   today: AttendanceToday,
   point: AttendancePointCode,
 ): void => {
   if (!today.configured || !today.isWorkday)
     throw new Error("当前没有可打卡的安排，请联系管理员。");
-  if (
-    !today.points.some(
-      (item) => item.pointCode === point && item.record === null,
-    )
-  )
+  const blocked = taskPunchBlock(today);
+  if (blocked) throw new Error(blocked);
+  if (!canSelectPunchPoint(today, point))
     throw new Error("该时段已完成或不可打卡，请刷新今日安排。");
 };
 
@@ -140,10 +138,23 @@ export default function Punch(): JSX.Element {
   const requestedProjectId = useRouter().params.projectId ?? null;
   const requestedTaskId = useRouter().params.taskId ?? null;
   const readToday = useCallback(
-    (id: string): Promise<AttendanceToday> =>
-      requestedTaskId === null
-        ? fetchAttendanceToday(id)
-        : fetchTaskAttendanceToday(id, requestedTaskId),
+    async (id: string): Promise<AttendanceToday> => {
+      if (requestedTaskId === null) return fetchAttendanceToday(id);
+      const [data, tasks] = await Promise.all([
+        fetchTaskAttendanceToday(id, requestedTaskId),
+        fetchMyTasks(chinaToday()),
+      ]);
+      const task = tasks.find(
+        (item) => item.id === requestedTaskId && item.projectId === id,
+      );
+      if (!task)
+        throw new Error("未找到当前任务，请返回任务列表刷新，或联系班组长。");
+      return {
+        ...data,
+        taskName: task.title,
+        taskWindow: { startsAt: task.startsAt, endsAt: task.endsAt },
+      };
+    },
     [requestedTaskId],
   );
   const { revision, refresh } = usePageRefresh();
@@ -327,11 +338,11 @@ export default function Punch(): JSX.Element {
         if (sequence !== loadSeq.current) return;
         setToday(data);
         setPointCode((current) =>
-          data.points.some(
-            (point) => point.pointCode === current && point.record === null,
-          )
-            ? current
-            : nextOpenPoint(data),
+          selectPunchPoint(
+            data,
+            current,
+            formatChinaHm(new Date().toISOString()),
+          ),
         );
       } catch (reason: unknown) {
         if (sequence === loadSeq.current) {
@@ -399,6 +410,7 @@ export default function Punch(): JSX.Element {
       setLocation(null);
       setLocationError(null);
       try {
+        requireOpenPoint(data, point);
         let position: AttendanceLocation;
         if (FRONTEND_DEMO) {
           if (demoPosition === "DENIED")
@@ -484,7 +496,8 @@ export default function Punch(): JSX.Element {
       projectId !== null &&
       pointCode !== null &&
       today?.configured &&
-      today.isWorkday
+      today.isWorkday &&
+      !taskPunchBlock(today)
     )
       void locate(projectId, pointCode, today);
   }, [projectId, pointCode, today?.attendanceDate, revision, locate]);
@@ -784,6 +797,7 @@ export default function Punch(): JSX.Element {
     inside: Boolean(inside),
     hasPhoto: sitePhotoPath !== null,
     faceReady: Boolean(faceReady),
+    safetyReady,
     validProof,
     locationDenied: deniedPermissions.location,
     cameraDenied: deniedPermissions.camera,
@@ -798,6 +812,7 @@ export default function Punch(): JSX.Element {
         : faceInfo?.mode === "UNCONFIGURED"
           ? "人脸核验暂不可用，请联系项目管理员。"
           : "请先录入本人底照并通过审核。";
+  const safetyBlocked = step.action === "confirm-safety";
   const taskTitle =
     phase === "SUBMITTING"
       ? "正在保存打卡记录"
@@ -829,7 +844,9 @@ export default function Punch(): JSX.Element {
                             ? faceInfo?.profile?.status === "PENDING"
                               ? "底照审核中"
                               : "请查看人脸档案"
-                            : "现场照片已就绪";
+                            : safetyBlocked
+                              ? "请阅读安全交底"
+                              : "现场照片已就绪";
   const taskDescription =
     phase === "SUBMITTING"
       ? isDemoFace
@@ -851,8 +868,9 @@ export default function Punch(): JSX.Element {
                     ? "定位通过，可拍摄现场。"
                     : !faceReady
                       ? faceDescription
-                      : "按提示完成人脸核验，通过后自动保存打卡。";
-  const safetyBlocked = step.action === "verify" && !safetyReady;
+                      : safetyBlocked
+                        ? "阅读下方内容，确认理解后再进行人脸核验。"
+                        : "按提示完成人脸核验，通过后自动保存打卡。";
   const workerPrimaryLabel = safetyBlocked
     ? "请先确认安全交底"
     : step.action === "wait"
@@ -925,13 +943,58 @@ export default function Punch(): JSX.Element {
     return (
       <Screen
         appearance="worker"
-        header={<PageHeader title="考勤打卡" appearance="worker" />}
+        header={
+          <PageHeader
+            title="考勤打卡"
+            appearance="worker"
+            footer={
+              activeProject ? (
+                <View className="worker-punch__context">
+                  <View className="worker-punch__project-row">
+                    <View className="worker-punch__project">
+                      {activeProject.projectName}
+                    </View>
+                    {projects !== null && projects.length > 1 ? (
+                      <NativeButton
+                        className="worker-punch__text-button"
+                        disabled={isBusy}
+                        onClick={() => {
+                          void Taro.redirectTo({
+                            url: "/pages/my-projects/index",
+                          });
+                        }}
+                      >
+                        切换项目
+                      </NativeButton>
+                    ) : null}
+                  </View>
+                  {requestedTaskId !== null && today?.taskName ? (
+                    <View className="worker-punch__task-name">
+                      任务：{today.taskName}
+                    </View>
+                  ) : null}
+                  <View className="worker-punch__muted">
+                    {activeProject.teamName ?? "项目直属"} ·{" "}
+                    {displayProjectRole(activeProject.projectRoleLabel)}
+                  </View>
+                  <View className="worker-punch__date">{taskDate}</View>
+                  {taskLabel ? (
+                    <View className="worker-punch__task-label">
+                      {taskLabel}
+                      {taskTime ? ` · 应打卡 ${taskTime}` : ""}
+                    </View>
+                  ) : null}
+                </View>
+              ) : null
+            }
+          />
+        }
       >
         <View className="worker-punch">
           {attempt !== null && videoFlow !== null ? (
             <VideoFaceCapture
               flow={videoFlow}
-              referenceDescription={`${activeProject?.projectName ?? "当前项目"} · ${activeProject?.teamName ?? "项目直属"}。${attempt.attendanceDate} · ${selected?.label ?? attempt.pointCode} ${selected?.scheduledTime ?? ""}。完成本人核验后自动保存，请保持在工地范围内。`}
+              referenceDescription={`${activeProject?.projectName ?? "当前项目"} · ${activeProject?.teamName ?? "项目直属"}。${today?.taskName ? `任务：${today.taskName}。` : ""}${attempt.attendanceDate} · ${selected?.label ?? attempt.pointCode} ${selected?.scheduledTime ?? ""}。完成本人核验后自动保存，请保持在工地范围内。`}
               onCancel={() => {
                 setAttempt(null);
                 busy.current = false;
@@ -941,37 +1004,6 @@ export default function Punch(): JSX.Element {
                 void finishFace(attempt, result);
               }}
             />
-          ) : null}
-          {activeProject ? (
-            <View className="worker-punch__context">
-              <View className="worker-punch__project-row">
-                <View className="worker-punch__project">
-                  {activeProject.projectName}
-                </View>
-                {projects !== null && projects.length > 1 ? (
-                  <NativeButton
-                    className="worker-punch__text-button"
-                    disabled={isBusy}
-                    onClick={() => {
-                      void Taro.redirectTo({ url: "/pages/my-projects/index" });
-                    }}
-                  >
-                    切换项目
-                  </NativeButton>
-                ) : null}
-              </View>
-              <View className="worker-punch__muted">
-                {activeProject.teamName ?? "项目直属"} ·{" "}
-                {displayProjectRole(activeProject.projectRoleLabel)}
-              </View>
-              <View className="worker-punch__date">{taskDate}</View>
-              {taskLabel ? (
-                <View className="worker-punch__task-label">
-                  {taskLabel}
-                  {taskTime ? ` · 应打卡 ${taskTime}` : ""}
-                </View>
-              ) : null}
-            </View>
           ) : null}
           {projects === null && error === null ? (
             <StateView
@@ -1093,6 +1125,30 @@ export default function Punch(): JSX.Element {
                 }}
               >
                 返回首页
+              </NativeButton>
+            </View>
+          ) : today?.configured && today.isWorkday && taskPunchBlock(today) ? (
+            <View
+              className="worker-punch__task"
+              data-punch-state="task-time-blocked"
+            >
+              <View className="worker-punch__status">
+                <AppIcon name="clock" />
+                <View className="worker-punch__title">当前不能开工打卡</View>
+                <View className="worker-punch__muted">
+                  {taskPunchBlock(today)}
+                </View>
+              </View>
+              <Button appearance="worker" disabled={isBusy} onClick={refresh}>
+                刷新任务安排
+              </Button>
+              <NativeButton
+                className="worker-punch__text-button"
+                onClick={() => {
+                  void Taro.redirectTo({ url: "/pages/my-tasks/index" });
+                }}
+              >
+                返回我的任务
               </NativeButton>
             </View>
           ) : today !== null &&
@@ -1260,6 +1316,7 @@ export default function Punch(): JSX.Element {
                 ) : null}
               </View>
               <AttendanceSafetyCard
+                appearance="worker"
                 key={context.current}
                 projectId={projectId!}
                 pointCode={pointCode}
@@ -1270,14 +1327,16 @@ export default function Punch(): JSX.Element {
                 onConfirmed={setSafetyReceipt}
               />
               <View className="worker-punch__actions">
-                <Button
-                  appearance="worker"
-                  loading={isBusy}
-                  disabled={isBusy || safetyBlocked}
-                  onClick={act}
-                >
-                  {workerPrimaryLabel}
-                </Button>
+                {(!safetyBlocked || isBusy) && (
+                  <Button
+                    appearance="worker"
+                    loading={isBusy}
+                    disabled={isBusy || safetyBlocked}
+                    onClick={act}
+                  >
+                    {workerPrimaryLabel}
+                  </Button>
+                )}
                 {sitePhotoPath !== null && !validProof && !isBusy ? (
                   <NativeButton
                     className="worker-punch__text-button"
@@ -1336,7 +1395,12 @@ export default function Punch(): JSX.Element {
                       key={point.pointCode}
                       data-point-code={point.pointCode}
                       className={`worker-punch__point${point.pointCode === pointCode ? " worker-punch__point--selected" : ""}`}
-                      disabled={isBusy || staleDate || point.record !== null}
+                      disabled={
+                        isBusy ||
+                        staleDate ||
+                        !canSelectPunchPoint(today, point.pointCode) ||
+                        taskPunchBlock(today) !== null
+                      }
                       onClick={() => {
                         if (point.pointCode !== pointCode) resetEvidence();
                         setPointCode(point.pointCode);
@@ -1507,7 +1571,11 @@ export default function Punch(): JSX.Element {
             {today.points.map((point) => (
               <NativeButton
                 key={point.pointCode}
-                disabled={isBusy || point.record !== null}
+                disabled={
+                  isBusy ||
+                  !canSelectPunchPoint(today, point.pointCode) ||
+                  taskPunchBlock(today) !== null
+                }
                 className={`punch-point ${point.pointCode === pointCode ? "punch-point--selected" : ""} ${point.record !== null ? "punch-point--done" : ""}`}
                 onClick={() => {
                   if (point.pointCode !== pointCode) resetEvidence();
@@ -1648,9 +1716,7 @@ export default function Punch(): JSX.Element {
               </View>
             </View>
           ) : (
-            <Notice>
-              今天的 {today.points.length} 次打卡已完成。
-            </Notice>
+            <Notice>今天的 {today.points.length} 次打卡已完成。</Notice>
           )}
           {FRONTEND_DEMO ? (
             <View className="punch-demo">
