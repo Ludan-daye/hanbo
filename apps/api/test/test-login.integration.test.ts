@@ -30,7 +30,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("test lo
     vi.stubEnv("TEST_LOGIN_ENABLED", "true");
     const module = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = module.createNestApplication();
-    await app.init();
+    await app.listen(0, "127.0.0.1");
     database = app.get(PrismaService);
     for (const code of TEST_ACCOUNT_CODES) {
       const account = TEST_ACCOUNTS[code];
@@ -107,7 +107,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("test lo
       .overrideProvider(API_ENV).useValue({ ...app.get<ApiEnv>(API_ENV), DEPLOYMENT_ENV: deployment, TEST_LOGIN_ENABLED: enabled }).compile();
     const disabled: INestApplication = module.createNestApplication();
     try {
-      await disabled.init();
+      await disabled.listen(0, "127.0.0.1");
       await request(disabled.getHttpServer()).post("/auth/test/login").send({ account: "dev-worker" }).expect(404);
     } finally { await disabled.close(); }
   });

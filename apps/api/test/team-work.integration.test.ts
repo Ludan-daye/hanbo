@@ -81,7 +81,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       app = (
         await Test.createTestingModule({ imports: [AppModule] }).compile()
       ).createNestApplication();
-      await app.init();
+      await app.listen(0, "127.0.0.1");
       db = app.get(PrismaService);
       await db.company.create({
         data: { id: "team-work-company", name: "测试公司", status: "ACTIVE" },

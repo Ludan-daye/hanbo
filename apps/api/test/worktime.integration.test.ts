@@ -47,7 +47,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("hour ac
     uploads = await mkdtemp(join(tmpdir(), "hanbo-hours-"));
     const env = loadEnv({ ...process.env, DATABASE_URL: url, NODE_ENV: "test", UPLOADS_DIR: uploads, FACE_DEV_STUB: "true", TENCENT_FACE_MODE: "WECHAT_NATIVE", TENCENT_FACE_RULE_ID: "", TENCENT_SECRET_ID: "", TENCENT_SECRET_KEY: "", PERSONNEL_ENCRYPTION_KEY: "ab".repeat(32) });
     app = (await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(API_ENV).useValue(env).compile()).createNestApplication();
-    await app.init(); db = app.get(PrismaService);
+    await app.listen(0, "127.0.0.1"); db = app.get(PrismaService);
     await db.company.create({ data: { id: "hours-company", name: "工时测试公司", status: "ACTIVE" } });
     await db.project.create({ data: { id: projectId, companyId: "hours-company", name: "工时测试工地", address: "测试工地", centerLatitude: 31, centerLongitude: 121, geofenceRadiusM: 300, status: "ACTIVE", plannedStartDate: new Date("2030-01-01") } });
     for (const actor of ["admin", "worker", "other"]) {

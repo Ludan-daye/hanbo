@@ -306,7 +306,7 @@ const createApp = async (prisma: BindingsPrismaTestDouble): Promise<INestApplica
     .compile();
 
   const app = moduleRef.createNestApplication();
-  await app.init();
+  await app.listen(0, "127.0.0.1");
   return app;
 };
 

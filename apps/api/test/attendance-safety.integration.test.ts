@@ -272,7 +272,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         .useValue(env)
         .compile();
       app = module.createNestApplication();
-      await app.init();
+      await app.listen(0, "127.0.0.1");
       db = app.get(PrismaService);
       await db.company.create({
         data: { id: "safety-company", name: "安全测试公司", status: "ACTIVE" },

@@ -58,7 +58,7 @@ describe("HealthController", () => {
       .compile();
 
     app = moduleRef.createNestApplication();
-    await app.init();
+    await app.listen(0, "127.0.0.1");
 
     await request(app.getHttpServer())
       .get("/health")

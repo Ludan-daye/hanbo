@@ -39,7 +39,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         imports: [AppModule],
       }).compile();
       app = moduleRef.createNestApplication();
-      await app.init();
+      await app.listen(0, "127.0.0.1");
       database = app.get(PrismaService);
       attendance = app.get(AttendanceService);
       await database.user.createMany({

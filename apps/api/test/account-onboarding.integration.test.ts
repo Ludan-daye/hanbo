@@ -45,7 +45,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         imports: [AppModule],
       }).compile();
       app = module.createNestApplication();
-      await app.init();
+      await app.listen(0, "127.0.0.1");
       database = app.get(PrismaService);
     });
 

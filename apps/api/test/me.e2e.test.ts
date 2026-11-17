@@ -80,7 +80,7 @@ const createApp = async (prisma: MePrismaTestDouble): Promise<INestApplication> 
     .useValue(prisma)
     .compile();
   const app = moduleRef.createNestApplication();
-  await app.init();
+  await app.listen(0, "127.0.0.1");
   return app;
 };
 

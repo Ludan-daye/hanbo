@@ -186,7 +186,7 @@ describe.skipIf(process.env.FACE_TEST_DATABASE_URL === undefined)(
         imports: [AppModule],
       }).compile();
       app = module.createNestApplication();
-      await app.init();
+      await app.listen(0, "127.0.0.1");
       prisma = app.get(PrismaService);
       const attendancePermission = await prisma.permission.create({
         data: { code: "attendance.submit", name: "Submit attendance" },

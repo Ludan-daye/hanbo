@@ -197,7 +197,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         .useValue(env)
         .compile();
       app = moduleRef.createNestApplication();
-      await app.init();
+      await app.listen(0, "127.0.0.1");
       database = app.get(PrismaService);
       await database.company.create({
         data: {
