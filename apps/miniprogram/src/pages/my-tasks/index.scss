@@ -1,0 +1,99 @@
+.worker-flow .worker-tasks {
+  padding: 12Px 0 24Px;
+
+  .ui-section {
+    margin-top: 0;
+  }
+
+  .ui-listitem__body {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .ui-listitem__chip {
+    flex-shrink: 0;
+    max-width: 90Px;
+    white-space: normal;
+  }
+
+  .ui-state {
+    padding: 40Px 0;
+  }
+
+  .work-content {
+    padding: 16Px 0 0;
+    font-size: 16Px;
+    line-height: 1.7;
+  }
+}
+
+.worker-flow .worker-tasks__date .ui-listitem {
+  min-height: 52Px;
+  border-bottom: 0;
+}
+
+.worker-flow .worker-tasks__date .ui-listitem__chip {
+  background: transparent;
+  padding-right: 0;
+  color: #626d78;
+}
+
+.worker-flow .worker-tasks__join {
+  padding-bottom: 24Px;
+  border-bottom: 1Px solid #e5e8eb;
+
+  > .ui-btn {
+    margin-top: 8Px;
+  }
+
+  .ui-section {
+    padding-top: 24Px;
+  }
+}
+
+.worker-flow .worker-tasks__task {
+  padding: 24Px 0;
+  border-bottom: 1Px solid #e5e8eb;
+
+  > .ui-listitem {
+    align-items: flex-start;
+    border-bottom: 0;
+    padding: 0 0 12Px;
+  }
+
+  > .ui-listitem .ui-listitem__primary {
+    font-size: 18Px;
+    line-height: 1.5;
+    font-weight: 600;
+  }
+
+  > .ui-subtitle + .ui-subtitle {
+    margin-top: 4Px;
+  }
+}
+
+.worker-flow .worker-tasks__attendance {
+  padding-top: 20Px;
+
+  .ui-section__heading {
+    margin-bottom: 4Px;
+    font-size: 16Px;
+    font-weight: 500;
+  }
+}
+
+.worker-flow .worker-tasks__briefings > .ui-section {
+  padding: 24Px 0;
+  border-bottom: 1Px solid #e5e8eb;
+
+  .ui-section__heading {
+    font-weight: 600;
+  }
+}
+
+.worker-flow .worker-tasks__briefing-text {
+  margin-top: 12Px;
+  font-size: 16Px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}

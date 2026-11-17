@@ -122,6 +122,7 @@
   .registration-step-title { color: #101820; font-size: 24Px; line-height: 1.4; font-weight: 650; }
   .registration-group .ui-section { margin: 0 0 24Px; padding: 0; background: transparent; border: 0; box-shadow: none; }
   .registration-group .ui-section__heading { display: none; }
+  .registration-group--health .ui-section__heading { display: flex; margin-bottom: 12Px; font-size: 16Px; line-height: 1.5; }
   .registration-group .ui-section > .ui-subtitle { font-size: 16Px; color: #101820; }
   .registration-field { margin: 20Px 0; }
   .registration-input,

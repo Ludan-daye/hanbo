@@ -243,13 +243,13 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 20Px;
+  gap: 4Px 20Px;
   padding: 12Px 0;
 }
 .worker-quick-links button,
 .worker-quick-links taro-button-core {
   width: auto;
-  flex: 1;
+  flex: 1 1 120Px;
   min-height: 44Px;
   margin: 0;
   padding: 8Px 0;
@@ -257,6 +257,7 @@
   font-size: 16Px;
   line-height: 1.5;
   color: #53657a;
+  white-space: normal;
 }
 .worker-inline-note {
   font-size: 14Px;

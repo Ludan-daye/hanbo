@@ -10,6 +10,8 @@ import {
   fetchAttendanceSafety,
 } from "../services/attendance-safety";
 
+import "./attendance-safety-card.scss";
+
 export type PunchSafetyReceipt = AttendanceSafetyReceipt & {
   readonly context: string;
 };
@@ -21,6 +23,7 @@ export const AttendanceSafetyCard = ({
   disabled,
   receipt,
   onConfirmed,
+  appearance,
 }: {
   readonly projectId: string;
   readonly pointCode: string;
@@ -29,6 +32,7 @@ export const AttendanceSafetyCard = ({
   readonly disabled: boolean;
   readonly receipt: PunchSafetyReceipt | null;
   readonly onConfirmed: (receipt: PunchSafetyReceipt | null) => void;
+  readonly appearance?: "worker";
 }): JSX.Element => {
   const [notice, setNotice] = useState<AttendanceSafetyNotice | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,50 +99,88 @@ export const AttendanceSafetyCard = ({
   };
   return (
     <View
-      className={`punch-step ${receipt !== null ? "punch-step--done" : ""} ${disabled ? "punch-step--locked" : ""}`}
+      className={
+        appearance === "worker"
+          ? `worker-safety${disabled && receipt === null ? " worker-safety--waiting" : ""}`
+          : `punch-step ${receipt !== null ? "punch-step--done" : ""} ${disabled ? "punch-step--locked" : ""}`
+      }
     >
-      <View className="punch-step__number">{receipt !== null ? "✓" : "3"}</View>
+      {appearance !== "worker" && (
+        <View className="punch-step__number">
+          {receipt !== null ? "✓" : "3"}
+        </View>
+      )}
       <View className="punch-step__body">
         <View className="punch-step__title">本次打卡安全交底</View>
-        {notice === null && error === null && (
-          <Subtitle>正在读取交底…</Subtitle>
+        {appearance === "worker" && disabled && receipt === null && (
+          <View className="worker-safety__hint">
+            完成定位和现场照片后阅读并确认。
+          </View>
         )}
-        {notice !== null && (
-          <>
-            <Subtitle>{notice.baselineText}</Subtitle>
-            {notice.briefings.map((briefing) => (
-              <View key={briefing.id} className="punch-safety-content">
-                <View>{briefing.title}</View>
-                <Subtitle>{briefing.content}</Subtitle>
+        <View className="worker-safety__content">
+          {notice === null && error === null && (
+            <Subtitle>正在读取交底…</Subtitle>
+          )}
+          {notice !== null && (
+            <>
+              <View
+                className={
+                  appearance === "worker"
+                    ? "worker-safety__text"
+                    : "ui-subtitle"
+                }
+              >
+                {notice.baselineText}
               </View>
-            ))}
-            <Button
-              variant="outline"
-              loading={loading}
-              disabled={disabled || loading || receipt !== null}
-              onClick={() => {
-                void confirm();
-              }}
-            >
-              {receipt !== null
-                ? "已确认本次安全交底"
-                : "已阅读并理解"}
-            </Button>
-            <Subtitle>
-              {disabled
-                ? "完成定位和现场照片后确认"
-                : "每次刷脸前须确认交底。"}
-            </Subtitle>
-          </>
-        )}
-        {error !== null && (
-          <>
-            <Notice>{error}</Notice>
-            <Button variant="outline" onClick={() => setReload(reload + 1)}>
-              重新读取交底
-            </Button>
-          </>
-        )}
+              {notice.briefings.map((briefing) => (
+                <View key={briefing.id} className="punch-safety-content">
+                  <View>{briefing.title}</View>
+                  <View
+                    className={
+                      appearance === "worker"
+                        ? "worker-safety__text"
+                        : "ui-subtitle"
+                    }
+                  >
+                    {briefing.content}
+                  </View>
+                </View>
+              ))}
+              <Button
+                variant={
+                  appearance === "worker" && receipt === null
+                    ? "primary"
+                    : "outline"
+                }
+                appearance={appearance}
+                loading={loading}
+                disabled={disabled || loading || receipt !== null}
+                onClick={() => {
+                  void confirm();
+                }}
+              >
+                {receipt !== null ? "已确认本次安全交底" : "已阅读并理解"}
+              </Button>
+              <Subtitle>
+                {disabled
+                  ? "完成定位和现场照片后确认"
+                  : "每次刷脸前须确认交底。"}
+              </Subtitle>
+            </>
+          )}
+          {error !== null && (
+            <>
+              <Notice>{error}</Notice>
+              <Button
+                appearance={appearance}
+                variant="outline"
+                onClick={() => setReload(reload + 1)}
+              >
+                重新读取交底
+              </Button>
+            </>
+          )}
+        </View>
       </View>
     </View>
   );

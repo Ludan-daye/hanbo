@@ -10,6 +10,7 @@ export type WorkerPunchStepInput = {
   readonly inside: boolean;
   readonly hasPhoto: boolean;
   readonly faceReady: boolean;
+  readonly safetyReady: boolean;
   readonly validProof: boolean;
   readonly locationDenied: boolean;
   readonly cameraDenied: boolean;
@@ -24,6 +25,7 @@ export type WorkerPunchStep = {
     | "camera-settings"
     | "capture"
     | "face-profile"
+    | "confirm-safety"
     | "verify";
 };
 
@@ -67,5 +69,12 @@ export const workerPunchStep = (
       stage: "photo",
       action: input.cameraDenied ? "camera-settings" : "capture",
     };
-  return { stage: "face", action: input.faceReady ? "verify" : "face-profile" };
+  return {
+    stage: "face",
+    action: !input.faceReady
+      ? "face-profile"
+      : input.safetyReady
+        ? "verify"
+        : "confirm-safety",
+  };
 };

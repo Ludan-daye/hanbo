@@ -221,7 +221,7 @@
   padding-bottom: 24Px;
 }
 .worker-punch__context {
-  padding: 20Px 0 24Px;
+  padding: 8Px 0 12Px;
 }
 .worker-punch__project-row {
   display: flex;
@@ -231,7 +231,7 @@
 .worker-punch__project {
   flex: 1;
   min-width: 0;
-  font-size: 20Px;
+  font-size: 16Px;
   font-weight: 650;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -248,14 +248,22 @@
   overflow-wrap: anywhere;
 }
 .worker-punch__date {
-  margin-top: 20Px;
+  display: inline-block;
+  margin: 4Px 10Px 0 0;
   color: #626d78;
   font-size: 14Px;
 }
 .worker-punch__task-label {
+  display: inline-block;
   margin-top: 4Px;
-  font-size: 18Px;
+  font-size: 14Px;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.worker-punch__task-name {
+  margin-top: 4Px;
+  font-size: 16Px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .worker-punch__task {

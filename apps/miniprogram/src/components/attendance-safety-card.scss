@@ -1,0 +1,60 @@
+.worker-safety {
+  padding: 24Px 0;
+  color: #101820;
+  font-size: 16Px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+
+  .punch-step__title {
+    font-size: 18Px;
+    font-weight: 600;
+    line-height: 1.5;
+    margin-bottom: 12Px;
+  }
+
+  .punch-safety-content {
+    margin-top: 20Px;
+    padding-top: 16Px;
+    border-top: 1Px solid #e5e8eb;
+  }
+
+  .worker-safety__text {
+    margin-top: 8Px;
+    white-space: pre-wrap;
+    font-size: 16Px;
+    line-height: 1.7;
+  }
+
+  .ui-btn {
+    margin-top: 20Px;
+  }
+
+  .ui-subtitle,
+  .worker-safety__hint {
+    color: #626d78;
+    font-size: 14Px;
+    line-height: 1.6;
+    margin-top: 8Px;
+  }
+
+  .ui-notice {
+    padding: 12Px 16Px;
+    font-size: 14Px;
+    line-height: 1.6;
+    color: #c33845;
+  }
+}
+
+.worker-safety--waiting {
+  padding-bottom: 0;
+
+  .punch-step__title {
+    font-size: 16Px;
+    font-weight: 500;
+    margin-bottom: 4Px;
+  }
+
+  .worker-safety__content {
+    display: none;
+  }
+}

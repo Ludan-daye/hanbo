@@ -17,3 +17,5 @@ apps/miniprogram/src/pages/profile/index.scss
 apps/miniprogram/src/pages/permission-levels/index.scss
 apps/miniprogram/src/pages/face-profile/index.scss
 apps/miniprogram/src/pages/punch-test/index.scss
+apps/miniprogram/src/pages/my-tasks/index.scss
+apps/miniprogram/src/components/attendance-safety-card.scss

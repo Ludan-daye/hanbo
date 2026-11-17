@@ -56,6 +56,28 @@ export type WorkerRecordDay = {
   readonly makeups: Makeup[];
 };
 
+export const workerRecordDayStatus = (
+  group: WorkerRecordDay,
+  today: string,
+): string => {
+  const day = group.summary;
+  const flags = day
+    ? [
+        day.isAbsent ? "缺勤" : "",
+        day.isLate ? "迟到" : "",
+        day.isEarlyLeave ? "早退" : "",
+        day.isMissingPunch ? "缺卡" : "",
+      ].filter(Boolean)
+    : [];
+  if (flags.length) return flags.join(" / ");
+  if (group.records.some((row) => row.status === "INVALID")) return "核验异常";
+  if (group.makeups.length) return `已补卡 ${group.makeups.length} 次`;
+  if (!day) return "汇总待确认";
+  // Daily totals do not include all scheduled points. Neither completion nor
+  // remaining work can be inferred from a date with no current abnormalities.
+  return group.date === today ? "今日记录" : "无异常";
+};
+
 export const attendanceWindow = (
   range: AttendanceRange,
   today: string,
