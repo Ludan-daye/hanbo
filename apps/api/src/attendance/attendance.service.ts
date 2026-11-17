@@ -1,4 +1,6 @@
-import { parseTaskPoint, taskPointCode } from "@construction/domain";
+import { WorktimeService } from "../worktime/worktime.service.js";
+import { assertNoOpenOvertime, loadOvertimeEvidence, resolveOvertimePunch, resolveOvertimeThreshold } from "./overtime-attendance.js";
+import { classifyWorktime, resolveWorktimeRule, scheduledWorkIntervals, overtimePointCode, overtimeWorkIntervals, parseOvertimePoint, parseTaskPoint, taskPointCode } from "@construction/domain";
 import { assertNoOpenTask, applyTaskPunch, ownTaskAssignment, recalculateTaskResult, resolveTaskPunch, workerClockLock } from "./task-attendance.js";
 import type {
   AttendanceSafetyNotice,
@@ -376,6 +378,7 @@ const getValidManagerMember = (
 @Injectable()
 export class AttendanceService {
   constructor(
+    @Inject(WorktimeService) private readonly worktime: WorktimeService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(FACE_VERIFICATION_CONNECTOR)
     private readonly faceConnector: FaceVerificationConnector,
@@ -553,6 +556,14 @@ export class AttendanceService {
     if (parseTaskPoint(pointCode) !== null) {
       const target = await resolveTaskPunch(this.prisma, projectId, userId, pointCode, new Date());
       return { projectId, userId, attendanceDate: getChinaDateOnly(new Date()), pointCode, owner: { ownerType: "WORKER", ownerId: target.assignment.member.workerId } };
+    }
+    if (parseOvertimePoint(pointCode) !== null) {
+      const participant = await this.resolveAttendanceParticipant(userId, projectId);
+      if (participant.status !== "ACTIVE" || !participant.requiresAttendance) throw new BadRequestException({ message: "当前成员不在场或无需考勤。" });
+      if (participant.taskAttendanceOnly) throw new BadRequestException({ message: "临时任务按开工、完工时间自动统计加班。" });
+      await this.getParticipantPlan(projectId, participant, getChinaDateOnly(new Date()));
+      await resolveOvertimePunch(this.prisma, projectId, participant, pointCode, new Date());
+      return { projectId, userId, attendanceDate: getChinaDateOnly(new Date()), pointCode, owner: { ownerType: participant.participantType, ownerId: participant.participantId } };
     }
     const today = await this.getAttendanceToday(projectId, userId);
     if (
@@ -752,9 +763,15 @@ export class AttendanceService {
       occurredAt,
       request.attendanceDate,
     );
+    const overtimePoint = parseOvertimePoint(request.pointCode);
+    if (overtimePoint !== null) {
+      if (participant.taskAttendanceOnly) throw new BadRequestException({ message: "临时任务按开工、完工时间自动统计加班。" });
+      await this.getParticipantPlan(projectId, participant, request.attendanceDate);
+    }
+    const overtimeTarget = overtimePoint === null ? null : await resolveOvertimePunch(this.prisma, projectId, participant, request.pointCode, occurredAt);
     const taskPoint = parseTaskPoint(request.pointCode);
     const taskTarget = taskPoint === null ? null : await resolveTaskPunch(this.prisma, projectId, userId, request.pointCode, occurredAt);
-    const plan: EffectivePlan = taskTarget === null ? await this.getParticipantPlan(projectId, participant, request.attendanceDate) : {
+    const plan: EffectivePlan = overtimeTarget !== null ? { name: "加班", isWorkday: true, points: [{ code: request.pointCode, label: overtimeTarget.kind === "START" ? "加班进场" : "加班退场", kind: overtimeTarget.kind, time: "00:00", graceMins: 0 }] } : taskTarget === null ? await this.getParticipantPlan(projectId, participant, request.attendanceDate) : {
       name: taskTarget.assignment.task.title, isWorkday: true,
       points: [{ code: request.pointCode, label: taskTarget.kind === "START" ? "任务开工" : "任务完工", kind: taskTarget.kind, time: "00:00", graceMins: 0 }],
     };
@@ -861,7 +878,9 @@ export class AttendanceService {
       status,
     };
     const { record, result } = await this.prisma.$transaction(async (tx) => {
-      if (participant.participantType === "WORKER") await workerClockLock(tx, userId);
+      await workerClockLock(tx, userId);
+      if (overtimeTarget !== null) await resolveOvertimePunch(tx, projectId, participant, request.pointCode, occurredAt);
+      if (overtimeTarget === null && plan.points.find((point) => point.code === request.pointCode)?.kind === "START") await assertNoOpenOvertime(tx, participant);
       if (taskTarget === null && participant.participantType === "WORKER" && plan.points.find((point) => point.code === request.pointCode)?.kind === "START") await assertNoOpenTask(tx, participant.participantId);
       if (taskTarget !== null) {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team-task:${taskTarget.assignment.taskId}`}))`;
@@ -886,6 +905,11 @@ export class AttendanceService {
           if (startDay !== request.attendanceDate) await recalculateTaskResult(tx, participant.memberId, projectId, participant.participantId, startDay, new Date());
         }
         const result = await recalculateTaskResult(tx, participant.memberId, projectId, participant.participantId, request.attendanceDate, new Date());
+        return { record, result };
+      }
+      if (overtimeTarget !== null) {
+        if (overtimeTarget.startedAt !== null && overtimeTarget.date !== request.attendanceDate) await this.recalculateDailyResult(tx, projectId, overtimeTarget.date, participant.participantType, participant.participantId);
+        const result = await this.recalculateDailyResult(tx, projectId, request.attendanceDate, participant.participantType, participant.participantId);
         return { record, result };
       }
       const result = await this.recalculateAttendanceResult(
@@ -915,6 +939,27 @@ export class AttendanceService {
       return { pointCode: taskPointCode(taskId, kind), kind, label: kind === "START" ? "开工" : "完工", graceMins: 0, scheduledTime: new Date(planned.getTime() + 8 * 3600000).toISOString().slice(11, 16), record: stamp === null ? null : { occurredAt: stamp.toISOString(), status: "VALID" as const, abnormalReason: null } };
     });
     return { attendanceDate: date, configured: true, isWorkday: row.task.status === "OPEN" && row.member.status === "ACTIVE" && project.status === "ACTIVE", shiftName: `临时任务 · ${row.task.title}`, geofence: { centerLatitude: String(project.centerLatitude), centerLongitude: String(project.centerLongitude), radiusM: project.geofenceRadiusM, locationAccuracyLimitM: project.locationAccuracyLimitM }, points, result: null };
+  }
+
+  async getOvertimeAttendanceToday(projectId: string, userId: string): Promise<AttendanceTodayResponse> {
+    const project = await this.getProjectOrThrow(projectId);
+    const participant = await this.resolveAttendanceParticipant(userId, projectId);
+    const date = getChinaDateOnly(new Date());
+    const evidence = await loadOvertimeEvidence(this.prisma, projectId, participant);
+    const open = overtimeWorkIntervals(evidence).find((row) => row.end === null);
+    const overtimeDate = open === undefined ? date : getChinaDateOnly(open.start);
+    const threshold = await resolveOvertimeThreshold(this.prisma, projectId, overtimeDate);
+    const start = evidence.find((row) => row.pointCode === overtimePointCode(overtimeDate, "START"));
+    const end = evidence.find((row) => row.pointCode === overtimePointCode(overtimeDate, "END"));
+    const kinds = start === undefined ? ["START" as const] : ["START" as const, "END" as const];
+    return {
+      attendanceDate: date, configured: true,
+      isWorkday: project.status === "ACTIVE" && participant.status === "ACTIVE" && participant.requiresAttendance && !participant.taskAttendanceOnly && isAttendanceMemberOn(participant, date) && (threshold !== null || start !== undefined),
+      shiftName: threshold === null ? "项目尚未设置加班时段" : `加班打卡 · ${overtimeDate}`,
+      geofence: { centerLatitude: String(project.centerLatitude), centerLongitude: String(project.centerLongitude), radiusM: project.geofenceRadiusM, locationAccuracyLimitM: project.locationAccuracyLimitM },
+      points: kinds.map((kind) => { const row = kind === "START" ? start : end; return { pointCode: overtimePointCode(overtimeDate, kind), kind, label: kind === "START" ? "加班进场" : "加班退场", graceMins: 0, scheduledTime: kind === "START" ? threshold ?? "00:00" : "00:00", record: row === undefined ? null : { occurredAt: row.occurredAt.toISOString(), status: "VALID" as const, abnormalReason: null } }; }),
+      result: null,
+    };
   }
 
   async getAttendanceToday(
@@ -1007,6 +1052,12 @@ export class AttendanceService {
       ],
       new Date(),
     );
+    const overtime = await loadOvertimeEvidence(this.prisma, projectId, participant);
+    const rules = await this.worktime.rulesForProjects([projectId]);
+    const classified = classifyWorktime([
+      ...scheduledWorkIntervals(plan.points, attendanceDateText, [...records.map(toAttendanceRecordInput), ...makeups.map(toMakeupRecordInput)], new Date(), "REGULAR"),
+      ...overtimeWorkIntervals(overtime),
+    ], attendanceDateText, resolveWorktimeRule(rules.get(projectId) ?? [], attendanceDateText), new Date());
     return {
       attendanceDate: attendanceDateText,
       configured: true,
@@ -1031,7 +1082,7 @@ export class AttendanceService {
       result:
         result === null
           ? null
-          : createAttendanceResultResponse({ ...result, ...summary }),
+          : createAttendanceResultResponse({ ...result, ...summary, workedMinutes: classified.workedMinutes, isMissingPunch: summary.isMissingPunch || classified.isPendingVerification }),
       shiftName: plan.name,
     };
   }
@@ -1403,6 +1454,12 @@ export class AttendanceService {
       (record: AttendanceRecord): boolean => record.status === "INVALID",
     ).length;
     const calculatedAt = new Date();
+    const overtime = await loadOvertimeEvidence(database, projectId, participant);
+    const versions = await this.worktime.rulesForProjectsIn(database, [projectId]);
+    const classified = classifyWorktime([
+      ...scheduledWorkIntervals(points, attendanceDateText, [...records.map(toAttendanceRecordInput), ...approvedMakeupRequests.map(toMakeupRecordInput)], calculatedAt, "REGULAR"),
+      ...overtimeWorkIntervals(overtime),
+    ], attendanceDateText, resolveWorktimeRule(versions.get(projectId) ?? [], attendanceDateText), calculatedAt);
 
     return database.attendanceResult.upsert({
       create: {
@@ -1410,24 +1467,24 @@ export class AttendanceService {
         approvedMakeupCount: approvedMakeupRequests.length,
         attendanceDate,
         calculatedAt,
-        isAbsent: summary.isAbsent,
+        isAbsent: summary.isAbsent && classified.workedMinutes === 0,
         isEarlyLeave: summary.isEarlyLeave,
         isLate: summary.isLate,
-        isMissingPunch: summary.isMissingPunch,
+        isMissingPunch: summary.isMissingPunch || classified.isPendingVerification,
         participantId: participant.participantId,
         participantType: participant.participantType,
         projectId,
-        workedMinutes: summary.workedMinutes,
+        workedMinutes: classified.workedMinutes,
       },
       update: {
         abnormalRecordCount,
         approvedMakeupCount: approvedMakeupRequests.length,
         calculatedAt,
-        isAbsent: summary.isAbsent,
+        isAbsent: summary.isAbsent && classified.workedMinutes === 0,
         isEarlyLeave: summary.isEarlyLeave,
         isLate: summary.isLate,
-        isMissingPunch: summary.isMissingPunch,
-        workedMinutes: summary.workedMinutes,
+        isMissingPunch: summary.isMissingPunch || classified.isPendingVerification,
+        workedMinutes: classified.workedMinutes,
       },
       where: {
         projectId_attendanceDate_participantType_participantId: {

@@ -43,3 +43,6 @@ export const fetchMyAttendanceDays = async (from: string, to: string): Promise<r
 
 export const fetchTaskAttendanceToday = (projectId: string, taskId: string): Promise<AttendanceToday> =>
   apiClient.request(`/attendance/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/today`, { method: "GET" });
+
+export const fetchOvertimeAttendanceToday = (projectId: string): Promise<AttendanceToday> =>
+  apiClient.request(`/attendance/projects/${encodeURIComponent(projectId)}/overtime/today`, { method: "GET" });

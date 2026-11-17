@@ -122,7 +122,19 @@ export default function TeamLog(): JSX.Element {
                   label: "任务完成",
                   value: `${data.completedTaskCount}/${data.taskCount - data.cancelledTaskCount}`,
                 },
-                { label: "实际出勤", value: `${data.actualAttendedDays} 人日` },
+                { label: "实际出勤", value: `${data.actualAttendedDays} 人` },
+                {
+                  label: "正常工时",
+                  value: `${(data.normalMinutes / 60).toFixed(1)}h`,
+                },
+                {
+                  label: "加班工时",
+                  value: `${(data.overtimeMinutes / 60).toFixed(1)}h`,
+                },
+                {
+                  label: "未分类",
+                  value: `${(data.unclassifiedMinutes / 60).toFixed(1)}h`,
+                },
                 {
                   label: "实际工时",
                   value: `${(data.workedMinutes / 60).toFixed(1)} 小时`,
@@ -141,9 +153,17 @@ export default function TeamLog(): JSX.Element {
               primary="安全情况"
               secondary={`交底 ${data.briefingCount} 条 · 确认 ${data.acknowledgementCount} 人次 · 待整改 ${data.openIssueCount} 条 · 已整改 ${data.resolvedIssueCount} 条`}
             />
-            <Subtitle>
-              实际工时按考勤统计，不含计划时长，不作工资依据。
-            </Subtitle>
+            <ListItem
+              primary="已确认违规"
+              secondary={
+                data.confirmedViolationCount === null
+                  ? "旧版日报未记录"
+                  : `${data.confirmedViolationCount} 次`
+              }
+            />
+            {data.snapshotVersion === 1 && (
+              <Notice>旧版日报工时未分类，可重新汇总。</Notice>
+            )}
           </Section>
           <Section title="人员出勤">
             {data.people.length === 0 ? (
@@ -153,7 +173,7 @@ export default function TeamLog(): JSX.Element {
                 <ListItem
                   key={`${person.name}-${index}`}
                   primary={person.name}
-                  secondary={person.flags.join(" / ") || "无异常标记"}
+                  secondary={`正常 ${(person.normalMinutes / 60).toFixed(1)}h · 加班 ${(person.overtimeMinutes / 60).toFixed(1)}h · 未分类 ${(person.unclassifiedMinutes / 60).toFixed(1)}h${person.safetyCreditScore === null ? "" : ` · 信用 ${person.safetyCreditScore}`} · ${person.flags.join(" / ") || "无异常"}`}
                   chip={`${(person.workedMinutes / 60).toFixed(1)} 小时`}
                 />
               ))
@@ -177,9 +197,7 @@ export default function TeamLog(): JSX.Element {
             {saved ? "重新汇总并保存日报" : "保存当前日报"}
           </Button>
           {saved !== null && data === saved && (
-            <Notice>
-              汇总已保存，补卡或整改后可重新生成。
-            </Notice>
+            <Notice>汇总已保存，补卡或整改后可重新生成。</Notice>
           )}
           <Button
             variant="outline"
@@ -187,7 +205,7 @@ export default function TeamLog(): JSX.Element {
             onClick={() => {
               void perform(async () => {
                 await Taro.setClipboardData({
-                  data: `${data.workDate} ${data.projectName} / ${data.teamName}\n任务完成 ${data.completedTaskCount}/${data.taskCount - data.cancelledTaskCount}，取消 ${data.cancelledTaskCount}\n出勤 ${data.actualAttendedDays} 人日，实际 ${(data.workedMinutes / 60).toFixed(1)} 小时，缺卡 ${data.missingPunchCount} 人次\n临时任务参与 ${data.temporaryWorkerCount} 人\n交底 ${data.briefingCount} 条，确认 ${data.acknowledgementCount} 人次，待整改 ${data.openIssueCount} 条\n${data.tasks.map((task) => `• ${task.title}：${task.assignments.map((person) => person.name).join("、") || "待安排"}`).join("\n")}`,
+                  data: `${data.workDate} ${data.projectName} / ${data.teamName}\n任务完成 ${data.completedTaskCount}/${data.taskCount - data.cancelledTaskCount}，取消 ${data.cancelledTaskCount}\n出勤 ${data.actualAttendedDays} 人，实际 ${(data.workedMinutes / 60).toFixed(1)} 小时，缺卡 ${data.missingPunchCount} 人次\n正常 ${(data.normalMinutes / 60).toFixed(1)} 小时，加班 ${(data.overtimeMinutes / 60).toFixed(1)} 小时，未分类 ${(data.unclassifiedMinutes / 60).toFixed(1)} 小时\n临时任务参与 ${data.temporaryWorkerCount} 人\n交底 ${data.briefingCount} 条，确认 ${data.acknowledgementCount} 人次，待整改 ${data.openIssueCount} 条\n${data.tasks.map((task) => `• ${task.title}：${task.assignments.map((person) => person.name).join("、") || "待安排"}`).join("\n")}`,
                 });
               });
             }}

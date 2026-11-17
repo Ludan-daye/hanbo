@@ -130,6 +130,8 @@ model User {
 }
 
 model WorkerProfile {
+  safetyViolations      SafetyViolation[]
+  safetyCreditAppeals   SafetyCreditAppeal[]
   id                    String                @id @default(uuid())
   userId                String?               @unique
   encryptedName         String
@@ -294,6 +296,8 @@ model Company {
 }
 
 model Project {
+  worktimeRules            ProjectWorktimeRule[]
+  safetyViolations         SafetyViolation[]
   attendanceSafetyConfirmations AttendanceSafetyConfirmation[]
   attendancePlans          AttendancePlan[]
   id                       String                    @id @default(uuid())
@@ -335,6 +339,7 @@ model Project {
 }
 
 model Team {
+  safetyViolations SafetyViolation[]
   attendanceSafetyConfirmations AttendanceSafetyConfirmation[]
   workTasks TeamWorkTask[]
   safetyBriefings TeamSafetyBriefing[]
@@ -366,6 +371,7 @@ model Team {
 }
 
 model ProjectWorkerMember {
+  safetyViolations SafetyViolation[]
   taskAttendanceOnly Boolean @default(false)
   workAssignments TeamTaskAssignment[]
   safetyAcknowledgements TeamSafetyAcknowledgement[]
@@ -606,6 +612,7 @@ model AttendanceRecord {
 
   @@index([projectId, attendanceDate, participantType, participantId])
   @@index([projectId, attendanceDate, pointCode])
+  @@index([participantType, participantId, projectId, pointCode, status], map: "attendance_records_participant_point_status_idx")
   @@map("attendance_records")
 }
 
@@ -653,6 +660,7 @@ model MakeupRequest {
 
   @@index([projectId, attendanceDate, status])
   @@index([requesterUserId, status])
+  @@index([participantType, participantId, projectId, pointCode, status], map: "makeup_requests_participant_point_status_idx")
   @@map("makeup_requests")
 }
 
@@ -943,4 +951,98 @@ model AttendanceSafetyConfirmation {
   @@index([projectId, attendanceDate, teamId])
   @@index([userId, confirmedAt])
   @@map("attendance_safety_confirmations")
+}
+model SafetyCreditPolicy {
+  id String @id @default(uuid())
+  version Int @unique
+  startsOn DateTime @db.Date
+  generalPoints Int
+  seriousPoints Int
+  majorPoints Int
+  recoveryWorkdays Int
+  recoveryPoints Int
+  createdByUserId String
+  createdAt DateTime @default(now())
+  @@index([startsOn, version])
+  @@map("safety_credit_policies")
+}
+
+model SafetyViolation {
+  id String @id @default(uuid())
+  workerId String
+  projectId String
+  teamId String
+  memberId String
+  eventKey String @unique
+  category String
+  severity String
+  occurredAt DateTime
+  description String
+  evidenceObjectKeys String[] @default([])
+  points Int
+  policyVersion Int
+  status String @default("PENDING")
+  createdByUserId String
+  reviewedByUserId String?
+  reviewedAt DateTime?
+  reviewReason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  decisions SafetyCreditDecision[]
+  appeals SafetyCreditAppeal[]
+  worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  team Team @relation(fields: [teamId, projectId], references: [id, projectId], onDelete: Restrict)
+  member ProjectWorkerMember @relation(fields: [memberId, projectId], references: [id, projectId], onDelete: Restrict)
+  @@index([workerId, occurredAt])
+  @@index([projectId, status, occurredAt])
+  @@index([teamId, status, occurredAt])
+  @@map("safety_violations")
+}
+
+model SafetyCreditDecision {
+  id String @id @default(uuid())
+  violationId String
+  action String
+  actorUserId String
+  reason String
+  createdAt DateTime @default(now())
+  violation SafetyViolation @relation(fields: [violationId], references: [id], onDelete: Restrict)
+  @@index([violationId, createdAt])
+  @@map("safety_credit_decisions")
+}
+
+model SafetyCreditAppeal {
+  id String @id @default(uuid())
+  violationId String
+  workerId String
+  reason String
+  status String @default("PENDING")
+  reviewedByUserId String?
+  reviewedAt DateTime?
+  reviewReason String?
+  createdAt DateTime @default(now())
+  violation SafetyViolation @relation(fields: [violationId], references: [id], onDelete: Restrict)
+  worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  @@index([violationId, status])
+  @@index([workerId, createdAt])
+  @@map("safety_credit_appeals")
+}
+
+model ProjectWorktimeRule {
+  id String @id @default(uuid())
+  projectId String
+  version Int
+  startsOn DateTime @db.Date
+  projectKind String
+  lunchStart String?
+  lunchEnd String?
+  overtimeStart String?
+  createdByUserId String
+  createdAt DateTime @default(now())
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, version])
+  @@index([projectId, startsOn, version])
+  @@map("project_worktime_rules")
 }

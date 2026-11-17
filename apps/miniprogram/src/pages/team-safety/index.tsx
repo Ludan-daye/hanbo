@@ -114,7 +114,16 @@ export default function TeamSafety(): JSX.Element {
   return (
     <Screen>
       <PageHeader title="安全管理" />
-      <Subtitle>交底留痕，隐患整改</Subtitle>
+      <Button
+        variant="outline"
+        onClick={() => {
+          void Taro.navigateTo({
+            url: `/pages/safety-credit/index?teamId=${encodeURIComponent(teamId)}`,
+          });
+        }}
+      >
+        人员违规与安全信用
+      </Button>
       <WorkDate value={date} onChange={setDate} />
       <Segmented
         options={[
@@ -138,10 +147,7 @@ export default function TeamSafety(): JSX.Element {
       </Button>
       {creating &&
         (tab === "BRIEFING" ? (
-          <Section
-            title="发布交底"
-            sub="发布后不可修改，补充内容需另发。"
-          >
+          <Section title="发布交底" sub="发布后不可修改，补充内容需另发。">
             <Field
               label="交底标题"
               value={title}
@@ -271,9 +277,7 @@ export default function TeamSafety(): JSX.Element {
       ) : (
         <>
           {tab === "OPEN" && (
-            <Notice>
-              待整改不受日期限制；新记录使用所选日期。
-            </Notice>
+            <Notice>待整改不受日期限制；新记录使用所选日期。</Notice>
           )}
           {(tab === "OPEN" ? openIssues : issues).length === 0 && (
             <StateView
@@ -318,8 +322,7 @@ export default function TeamSafety(): JSX.Element {
                           throw new Error("请填写整改结果。");
                         const confirm = await Taro.showModal({
                           title: "确认整改完成",
-                          content:
-                            "核实整改后确认，关闭记录保留。",
+                          content: "核实整改后确认，关闭记录保留。",
                         });
                         if (confirm.confirm) {
                           await resolveSafetyIssue(

@@ -141,6 +141,7 @@ export default function Profile(): JSX.Element {
           </View>
           <View className="worker-profile__group">
             <NativeButton className="worker-profile__row" onClick={() => go("/pages/my-records/index?range=MONTH")}><View>我的考勤</View><View className="worker-profile__row-hint">查看</View></NativeButton>
+            <NativeButton className="worker-profile__row" onClick={() => go("/pages/my-safety-credit/index")}><View>安全信用</View><View className="worker-profile__row-hint">查看</View></NativeButton>
             <NativeButton className="worker-profile__row" onClick={() => go("/pages/my-makeups/index")}><View>补卡记录</View><View className="worker-profile__row-hint">查看</View></NativeButton>
             <NativeButton className="worker-profile__row" onClick={() => go("/pages/my-projects/index")}>
               <View>我的项目</View><View className="worker-profile__row-hint">{projects === null ? "查看全部" : `${projects.length} 个项目`}</View>
@@ -214,6 +215,9 @@ export default function Profile(): JSX.Element {
         }}
       />
       <Section title="个人资料">
+        {state.me?.profile.type === "WORKER" ? (
+          <ListItem primary="安全信用" chip="查看" onClick={() => { void Taro.navigateTo({ url: "/pages/my-safety-credit/index" }); }} />
+        ) : null}
         {account && account.workerRegistration !== "NOT_APPLICABLE" ? (
           <ListItem
             primary="用工登记资料"

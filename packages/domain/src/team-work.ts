@@ -109,6 +109,7 @@ export type SafetyIssue = SafetyIssueInput & {
   readonly resolvedAt: string | null;
 };
 export type TeamDailySummary = {
+  readonly snapshotVersion: 1 | 2;
   readonly teamId: string;
   readonly teamName: string;
   readonly projectName: string;
@@ -124,11 +125,20 @@ export type TeamDailySummary = {
   readonly resolvedIssueCount: number;
   readonly actualAttendedDays: number;
   readonly workedMinutes: number;
+  readonly normalMinutes: number;
+  readonly overtimeMinutes: number;
+  readonly unclassifiedMinutes: number;
+  readonly confirmedViolationCount: number | null;
   readonly missingPunchCount: number;
   readonly tasks: readonly TeamTask[];
   readonly people: readonly {
     readonly name: string;
+    readonly safetyCreditScore: number | null;
     readonly workedMinutes: number;
+    readonly normalMinutes: number;
+    readonly overtimeMinutes: number;
+    readonly unclassifiedMinutes: number;
+    readonly confirmedViolationCount: number | null;
     readonly flags: readonly string[];
   }[];
 };

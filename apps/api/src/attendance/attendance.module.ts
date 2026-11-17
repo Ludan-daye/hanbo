@@ -1,3 +1,4 @@
+import { WorktimeModule } from "../worktime/worktime.module.js";
 import { AttendanceSafetyService } from "./attendance-safety.service.js";
 import { Module } from "@nestjs/common";
 
@@ -17,7 +18,7 @@ import { AttendanceController } from "./attendance.controller.js";
 import { AttendanceService } from "./attendance.service.js";
 
 @Module({
-  imports: [AuthModule, AuthorizationModule, PrismaModule, FaceModule, UploadsModule],
+  imports: [WorktimeModule, AuthModule, AuthorizationModule, PrismaModule, FaceModule, UploadsModule],
   controllers: [AttendanceController, AttendancePlansController],
   providers: [
     AttendanceService,

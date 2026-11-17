@@ -1,5 +1,6 @@
 import type { DemoSafetyConfirmation } from "./attendance-safety";
 import type { DemoTeamWork } from "./team-work";
+import type { DemoSafetyCredit } from "./safety-credit";
 import { memberRoleAssignments } from "../member-roles";
 import { ROLE_LEVEL } from "@construction/domain/roles.js";
 import type { ProjectEvaluation } from "../management.types";
@@ -8,7 +9,7 @@ import { defaultAttendancePoints } from "@construction/domain/attendance.js";
 import type { DemoPlan } from "./plans";
 import type { MeResponse } from "../auth.types";
 import type { AccountProfile } from "../account";
-import type { WorkerRegistration } from "@construction/domain";
+import type { WorkerRegistration, WorktimeRuleVersion } from "@construction/domain";
 import type { FaceProfile } from "../face";
 import type {
   CompanyProject,
@@ -42,6 +43,8 @@ export type DemoTeam = ProjectTeam & {
   readonly leader?: TeamLeaderReference | null;
 };
 export type DemoState = {
+  readonly safetyCredit?: DemoSafetyCredit;
+  readonly worktimeRules?: readonly (WorktimeRuleVersion & { readonly projectId: string })[];
   readonly safetyConfirmations?: readonly DemoSafetyConfirmation[];
   readonly teamWork?: DemoTeamWork;
   readonly evaluations?: readonly {

@@ -16,6 +16,7 @@ import {
 import {
   fetchMyProjects,
   fetchTaskAttendanceToday,
+  fetchOvertimeAttendanceToday,
   submitMakeup,
 } from "../../services/me";
 import {
@@ -36,7 +37,7 @@ export default function SubmitMakeup(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
   const workerAppearance = state.me?.roles.highestRoleCode === "WORKER";
-  const { taskId, projectId: requestedProjectId } = useRouter().params;
+  const { taskId, projectId: requestedProjectId, mode } = useRouter().params;
   const [projects, setProjects] = useState<
     readonly MyProjectMembership[] | null
   >(null);
@@ -92,8 +93,8 @@ export default function SubmitMakeup(): JSX.Element {
     setPlanError(null);
     setLoadedContext(null);
     const readPlan = async (): Promise<EffectivePlan> => {
-      if (!taskId) return fetchMyAttendancePlan(projectId, date);
-      const task = await fetchTaskAttendanceToday(projectId, taskId);
+      if (!taskId && mode !== "overtime") return fetchMyAttendancePlan(projectId, date);
+      const task = mode === "overtime" ? await fetchOvertimeAttendanceToday(projectId) : await fetchTaskAttendanceToday(projectId, taskId!);
       const end = task.points.find((row) => row.kind === "END");
       return {
         name: task.shiftName ?? "临时任务",
@@ -107,7 +108,7 @@ export default function SubmitMakeup(): JSX.Element {
           ? [
               {
                 code: end.pointCode,
-                label: "任务完工",
+                label: mode === "overtime" ? "加班退场" : "任务完工",
                 kind: "END",
                 time: end.scheduledTime,
                 graceMins: 0,
@@ -136,7 +137,7 @@ export default function SubmitMakeup(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [projectId, date, taskId, planRevision]);
+  }, [projectId, date, taskId, mode, planRevision]);
   const selectPoint = (value: AttendancePointCode): void => {
     if (busyRef.current) return;
     setPoint(value);

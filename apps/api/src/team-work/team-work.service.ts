@@ -918,6 +918,7 @@ export class TeamWorkService {
       teamName: team.name,
       projectName: team.project.name,
       workDate: day,
+      snapshotVersion: 2,
       generatedAt: new Date().toISOString(),
       taskCount: tasks.length,
       completedTaskCount: tasks.filter((task) => task.status === "COMPLETED")
@@ -944,11 +945,22 @@ export class TeamWorkService {
         .length,
       actualAttendedDays: attendance.totals.actualAttendedDays,
       workedMinutes: attendance.totals.workedMinutes,
+      normalMinutes: attendance.totals.normalMinutes,
+      overtimeMinutes: attendance.totals.overtimeMinutes,
+      unclassifiedMinutes: attendance.totals.unclassifiedMinutes,
+      confirmedViolationCount: attendance.totals.confirmedViolationCount,
+
       missingPunchCount: attendance.totals.missingPunchCount,
       tasks,
       people: attendance.participants.map((person) => ({
         name: person.displayName ?? "姓名待核实",
         workedMinutes: person.workedMinutes,
+        safetyCreditScore: person.safetyCreditScore,
+        normalMinutes: person.normalMinutes,
+        overtimeMinutes: person.overtimeMinutes,
+        unclassifiedMinutes: person.unclassifiedMinutes,
+        confirmedViolationCount: person.confirmedViolationCount,
+
         flags: [
           person.isLate ? "迟到" : "",
           person.isEarlyLeave ? "早退" : "",

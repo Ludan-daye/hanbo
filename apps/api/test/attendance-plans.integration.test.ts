@@ -1,5 +1,7 @@
 import ExcelJS from "exceljs";
 import { ATTENDANCE_SAFETY_VERSION } from "@construction/domain";
+import { ReportsService } from "../src/reports/reports.service.js";
+import { createMonthlyWorkbook, REPORT_CALCULATION_VERSION } from "../src/reports/report-workbook.js";
 import { ReportExportsService } from "../src/reports/report-exports.service.js";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1057,7 +1059,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       }
     });
 
-    test("exports an immutable four-sheet workbook matching monthly statistics and rejects unauthorized downloads", async () => {
+    test("exports an immutable six-sheet workbook matching monthly statistics and rejects unauthorized downloads", async () => {
       vi.setSystemTime(new Date("2030-01-21T04:00:00Z"));
       const body = { scope: "PROJECT", scopeId: projectId, month: "2030-01" };
       for (const actor of ["worker", "leader"])
@@ -1118,6 +1120,8 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         "月度汇总",
         "每日明细",
         "补卡与异常",
+        "安全记录",
+        "打卡位置",
         "统计说明",
       ]);
       const report = await request(app.getHttpServer())
@@ -1147,6 +1151,12 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       expect(sum(7)).toBe(report.body.totals.scheduledDays);
       expect(sum(8)).toBe(report.body.totals.actualAttendedDays);
       expect(sum(10)).toBe(report.body.totals.workedMinutes);
+      expect(sum(24) * 60 + sum(25) * 60 + sum(26) * 60).toBeCloseTo(sum(10), 6);
+      expect(sum(24) * 60).toBeCloseTo(report.body.totals.normalMinutes, 6);
+      expect(sum(25) * 60).toBeCloseTo(report.body.totals.overtimeMinutes, 6);
+      expect(sum(26) * 60).toBeCloseTo(report.body.totals.unclassifiedMinutes, 6);
+      expect(workbook.getWorksheet("打卡位置")!.rowCount).toBeGreaterThan(1);
+      expect(workbook.getWorksheet("打卡位置")!.getCell("I1").value).toBe("纬度（GCJ-02）");
       expect(sum(16)).toBe(report.body.totals.approvedMakeupCount);
       expect(summary.getCell("I2").formula).toBe('IF(G2=0,"不适用",H2/G2)');
       expect(summary.getCell("K2").formula).toBe("J2/60");
@@ -1272,6 +1282,75 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
           data: { status: "ACTIVE" },
         });
       }
+    });
+
+    test("report snapshots split actual hours, isolate incident detail and apply later corrections without mutating old files", async () => {
+      vi.setSystemTime(new Date("2030-02-02T04:00:00Z"));
+      const localProject = "report-hours-project";
+      const otherProject = "report-hours-other-company-project";
+      await database.company.create({ data: { id: "report-hours-other-company", name: "Other company", status: "ACTIVE" } });
+      for (const id of [localProject, otherProject]) {
+        await database.project.create({ data: {
+          id, companyId: id === localProject ? "planning-company" : "report-hours-other-company", name: id,
+          address: "Report test site", centerLatitude: "31", centerLongitude: "121", geofenceRadiusM: 300,
+          status: "ACTIVE", plannedStartDate: new Date("2030-01-01"),
+        } });
+        await database.team.create({ data: { id: `${id}-team`, projectId: id, name: `${id}-team`, status: "ACTIVE" } });
+        await database.projectWorkerMember.create({ data: { id: `${id}-member`, projectId: id, teamId: `${id}-team`, workerId: "planning-worker", status: "ACTIVE", enteredAt: new Date("2030-01-01"), projectRoleLabel: "木工" } });
+      }
+      await database.attendancePlan.create({ data: {
+        projectId: localProject, scopeType: "PROJECT", scopeId: localProject, authorRoleLevel: 3,
+        startsOn: new Date("2030-01-01"), name: "Report shift", points: [...defaultAttendancePoints], workdayMask: 127,
+      } });
+      await database.projectWorktimeRule.create({ data: {
+        projectId: localProject, version: 1, startsOn: new Date("2030-01-01"), projectKind: "REGULAR",
+        lunchStart: "12:00", lunchEnd: "13:00", overtimeStart: "18:00", createdByUserId: "planning-admin",
+      } });
+      for (const [date, pointCode, time] of [
+        ["2030-01-30", defaultAttendancePoints[0]!.code, "08:00"], ["2030-01-30", defaultAttendancePoints[1]!.code, "20:00"],
+        ["2030-01-31", "OVERTIME_2030-01-31_START", "22:00"], ["2030-02-01", "OVERTIME_2030-01-31_END", "02:00"],
+      ] as const) {
+        await database.attendanceRecord.create({ data: {
+          projectId: localProject, participantType: "WORKER", participantId: "planning-worker", attendanceDate: new Date(date),
+          pointCode, source: "DEVICE", status: "VALID", occurredAt: new Date(`${date}T${time}:00+08:00`),
+          latitude: "31.0001", longitude: "121.0001", locationAccuracyM: "5", geofenceDistanceM: "12",
+          selfieObjectKey: "private/face.jpg", sitePhotoObjectKey: "private/site.jpg", selfieHash: "a".repeat(64), sitePhotoHash: "b".repeat(64), facePassed: true,
+        } });
+      }
+      for (const id of [localProject, otherProject]) {
+        await database.safetyViolation.create({ data: {
+          id: `${id}-violation`, projectId: id, teamId: `${id}-team`, memberId: `${id}-member`, workerId: "planning-worker",
+          eventKey: `${id}-event`, category: "未戴安全帽", severity: "GENERAL", occurredAt: new Date("2030-01-30T09:00:00+08:00"),
+          description: id === localProject ? "本项目事件" : "其他公司保密事件", points: 5, policyVersion: 1, status: "CONFIRMED",
+          createdByUserId: "planning-admin", createdAt: new Date("2030-01-30T09:00:00+08:00"),
+          decisions: { create: { action: "CONFIRM", actorUserId: "planning-admin", reason: "核实", createdAt: new Date("2030-01-30T10:00:00+08:00") } },
+        } });
+      }
+      const reports = app.get(ReportsService);
+      const snapshot = await reports.monthlySnapshot([localProject], `${localProject}-team`, localProject, "2030-01");
+      expect(snapshot.report.totals).toMatchObject({ normalMinutes: 540, overtimeMinutes: 240, unclassifiedMinutes: 0, workedMinutes: 780, confirmedViolationCount: 1 });
+      expect(snapshot.report.participants[0]).toMatchObject({ safetyCreditScore: 90, safetyCreditAsOf: "2030-01-31T15:59:59.999Z" });
+      expect(snapshot.rows.flatMap((row) => row.safetyEvents).map((row) => row.description)).toEqual(["本项目事件"]);
+      const february = await reports.getDailyReport(localProject, "2030-02-01");
+      expect(february.totals).toMatchObject({ normalMinutes: 0, overtimeMinutes: 120, workedMinutes: 120 });
+      const detail = await reports.personDetail(localProject, `${localProject}-member`, `${localProject}-team`, "2030-01-30", "2030-01-30");
+      expect(detail.days[0]!.records[0]).toMatchObject({ latitude: "31.0001", longitude: "121.0001", locationAccuracyM: "5" });
+      const job = await database.reportExport.create({ data: {
+        projectId: localProject, companyId: "planning-company", scope: "PROJECT", dataCutoffAt: new Date(), month: new Date("2030-01-01"), version: 1,
+        requestedByUserId: "planning-admin", calculationVersion: REPORT_CALCULATION_VERSION,
+      } });
+      const originalBytes = await createMonthlyWorkbook(job, "本项目", snapshot);
+      const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(originalBytes);
+      expect(workbook.getWorksheet("安全记录")!.rowCount).toBe(2);
+      expect(workbook.getWorksheet("打卡位置")!.rowCount).toBe(4);
+      expect(JSON.stringify(workbook.model)).not.toContain("其他公司保密事件");
+      expect(JSON.stringify(workbook.model)).not.toContain("private/face.jpg");
+      await database.safetyCreditDecision.create({ data: { violationId: `${localProject}-violation`, action: "REVOKE", actorUserId: "planning-admin", reason: "申诉核实撤销", createdAt: new Date("2030-02-02T01:00:00Z") } });
+      const corrected = await reports.monthlySnapshot([localProject], `${localProject}-team`, localProject, "2030-01");
+      expect(corrected.report.participants[0]!.safetyCreditScore).toBe(95);
+      expect(corrected.report.totals.confirmedViolationCount).toBe(0);
+      expect(snapshot.report.participants[0]!.safetyCreditScore).toBe(90);
+      expect(workbook.getWorksheet("月度汇总")!.getCell("AA2").value).toBe(90);
     });
   },
 );

@@ -2,7 +2,7 @@ import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AuthModule } from "../src/auth/auth.module.js";
 import { MeModule } from "../src/me/me.module.js";
@@ -121,6 +121,7 @@ type AttendanceResultRow = {
 };
 
 class AttendanceTodayPrismaTestDouble {
+  readonly projectWorktimeRule = { findMany: async (): Promise<[]> => [] };
   readonly attendancePlan = { findMany: async (): Promise<[]> => [] };
   readonly projectMemberHistory = { findMany: async (): Promise<[]> => [] };
 
@@ -198,6 +199,8 @@ class AttendanceTodayPrismaTestDouble {
       orderBy?: unknown;
       where: {
         attendanceDate?: Date;
+        pointCode?: { readonly startsWith: string };
+        status?: AttendanceRecordStatusValue;
         participantId?: string;
         participantType?: ProfileOwnerTypeValue;
         projectId?: string;
@@ -207,6 +210,8 @@ class AttendanceTodayPrismaTestDouble {
         .filter(
           (row: AttendanceRecordRow): boolean =>
             (args.where.attendanceDate === undefined || row.attendanceDate.getTime() === args.where.attendanceDate.getTime()) &&
+            (args.where.status === undefined || row.status === args.where.status) &&
+            (args.where.pointCode === undefined || row.pointCode.startsWith(args.where.pointCode.startsWith)) &&
             (args.where.participantId === undefined || row.participantId === args.where.participantId) &&
             (args.where.participantType === undefined || row.participantType === args.where.participantType) &&
             (args.where.projectId === undefined || row.projectId === args.where.projectId)
@@ -343,11 +348,14 @@ describe("GET /me/projects/:projectId/attendance-today", (): void => {
   let prisma: AttendanceTodayPrismaTestDouble;
 
   beforeEach((): void => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2030-01-07T18:00:00+08:00"));
     applyTestEnv();
     prisma = new AttendanceTodayPrismaTestDouble();
   });
 
   afterEach(async (): Promise<void> => {
+    vi.useRealTimers();
     if (app !== undefined) {
       await app.close();
       app = undefined;

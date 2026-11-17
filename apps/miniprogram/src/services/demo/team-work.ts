@@ -34,6 +34,17 @@ const initial = (): DemoTeamWork => ({
   issues: [],
   logs: [],
 });
+const migrateDailySnapshot = (snapshot: TeamDailySummary | null): TeamDailySummary | null => {
+  if (snapshot === null || snapshot.snapshotVersion !== undefined) return snapshot;
+  return {
+    ...snapshot, snapshotVersion: 1,
+    normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: snapshot.workedMinutes, confirmedViolationCount: null,
+    people: snapshot.people.map((person) => ({
+      ...person, normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: person.workedMinutes,
+      confirmedViolationCount: null, safetyCreditScore: null,
+    })),
+  };
+};
 const datedTasks = (
   tasks: readonly TeamTask[],
   day: string,
@@ -679,10 +690,10 @@ export const demoTeamWorkRequest = (
   if (parts[3] === "daily") {
     if (method === "GET" && parts[4])
       return respond(work, {
-        snapshot:
+        snapshot: migrateDailySnapshot(
           work.logs.find(
             (row) => row.teamId === teamId && row.workDate === parts[4],
-          ) ?? null,
+          ) ?? null),
       });
     const day: string = method === "POST" ? parts[4] : date!;
     const tasks = datedTasks(
@@ -709,6 +720,7 @@ export const demoTeamWorkRequest = (
       teamName: team.name,
       projectName: project.name,
       workDate: day,
+      snapshotVersion: 2,
       generatedAt: new Date().toISOString(),
       taskCount: tasks.length,
       completedTaskCount: tasks.filter((row) => row.status === "COMPLETED")
@@ -733,11 +745,22 @@ export const demoTeamWorkRequest = (
       resolvedIssueCount: issues.filter((row) => row.resolvedAt).length,
       actualAttendedDays: report.totals.actualAttendedDays,
       workedMinutes: report.totals.workedMinutes,
+      normalMinutes: report.totals.normalMinutes,
+      overtimeMinutes: report.totals.overtimeMinutes,
+      unclassifiedMinutes: report.totals.unclassifiedMinutes,
+      confirmedViolationCount: report.totals.confirmedViolationCount,
+
       missingPunchCount: report.totals.missingPunchCount,
       tasks,
       people: report.participants.map((person) => ({
         name: person.displayName ?? "演示工人",
         workedMinutes: person.workedMinutes,
+        safetyCreditScore: person.safetyCreditScore,
+        normalMinutes: person.normalMinutes,
+        overtimeMinutes: person.overtimeMinutes,
+        unclassifiedMinutes: person.unclassifiedMinutes,
+        confirmedViolationCount: person.confirmedViolationCount,
+
         flags: [
           person.isMissingPunch ? "缺卡" : "",
           person.isLate ? "迟到" : "",

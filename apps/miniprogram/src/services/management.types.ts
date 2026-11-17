@@ -6,9 +6,16 @@ export type MemberRoleAssignment = {
   readonly teamId: string | null;
   readonly teamName?: string | null;
 };
-export type AdditionalMemberRole = MemberRoleAssignment & { readonly roleCode: "WORKER" | "TEAM_LEADER" };
+export type AdditionalMemberRole = MemberRoleAssignment & {
+  readonly roleCode: "WORKER" | "TEAM_LEADER";
+};
 export type WorkRoleScope = {
-  readonly roleCode: "WORKER" | "TEAM_LEADER" | "PROJECT_ADMIN" | "COMPANY_ADMIN" | "SYSTEM_ADMIN";
+  readonly roleCode:
+    | "WORKER"
+    | "TEAM_LEADER"
+    | "PROJECT_ADMIN"
+    | "COMPANY_ADMIN"
+    | "SYSTEM_ADMIN";
   readonly scopeType: "GLOBAL" | "COMPANY" | "PROJECT" | "TEAM";
   readonly scopeId: string;
   readonly scopeName: string;
@@ -68,9 +75,17 @@ export type ReportTotals = {
   readonly participantCount: number;
   readonly scheduledDays: number;
   readonly workedMinutes: number;
+  readonly normalMinutes: number;
+  readonly overtimeMinutes: number;
+  readonly unclassifiedMinutes: number;
+  readonly confirmedViolationCount: number;
 };
 
 export type ReportParticipantBase = {
+  readonly projectKind: "REGULAR" | "REPAIR";
+  readonly isTemporary: boolean;
+  readonly safetyCreditScore: number | null;
+  readonly safetyCreditAsOf: string | null;
   readonly projectId: string;
   readonly projectName: string;
   readonly evaluation: ProjectEvaluation | null;
@@ -95,6 +110,10 @@ export type DailyReportParticipant = ReportParticipantBase & {
   readonly isLate: boolean;
   readonly isMissingPunch: boolean;
   readonly workedMinutes: number;
+  readonly normalMinutes: number;
+  readonly overtimeMinutes: number;
+  readonly unclassifiedMinutes: number;
+  readonly confirmedViolationCount: number;
 };
 
 export type RangeReportParticipant = ReportParticipantBase &
@@ -267,8 +286,14 @@ export type ReportPersonDay = {
   readonly date: string;
   readonly teamName: string | null;
   readonly planName: string;
+  readonly worktimeRuleVersion: number;
+  readonly isPendingVerification: boolean;
   readonly isScheduled: boolean;
   readonly workedMinutes: number;
+  readonly normalMinutes: number;
+  readonly overtimeMinutes: number;
+  readonly unclassifiedMinutes: number;
+  readonly confirmedViolationCount: number;
   readonly flags: readonly string[];
   readonly points: readonly {
     readonly code: string;
@@ -282,6 +307,10 @@ export type ReportPersonDay = {
     readonly occurredAt: string;
     readonly isValid: boolean;
     readonly source: string;
+    readonly latitude: string | null;
+    readonly longitude: string | null;
+    readonly locationAccuracyM: string | null;
+    readonly geofenceDistanceM: string | null;
   }[];
   readonly makeups: readonly {
     readonly id: string;

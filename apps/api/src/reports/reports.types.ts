@@ -14,9 +14,17 @@ export type AttendanceReportTotals = {
   readonly participantCount: number;
   readonly scheduledDays: number;
   readonly workedMinutes: number;
+  readonly normalMinutes: number;
+  readonly overtimeMinutes: number;
+  readonly unclassifiedMinutes: number;
+  readonly confirmedViolationCount: number;
 };
 
 export type AttendanceReportParticipantBase = {
+  readonly projectKind: "REGULAR" | "REPAIR";
+  readonly isTemporary: boolean;
+  readonly safetyCreditScore: number | null;
+  readonly safetyCreditAsOf: string | null;
   readonly projectName: string;
   readonly evaluation: ProjectEvaluation | null;
   readonly projectId: string;
@@ -42,6 +50,10 @@ export type DailyAttendanceReportParticipant =
     readonly isLate: boolean;
     readonly isMissingPunch: boolean;
     readonly workedMinutes: number;
+    readonly normalMinutes: number;
+    readonly overtimeMinutes: number;
+    readonly unclassifiedMinutes: number;
+    readonly confirmedViolationCount: number;
   };
 
 export type RangeAttendanceReportParticipant = AttendanceReportParticipantBase &
@@ -77,8 +89,14 @@ export type ReportPersonDay = {
   readonly date: string;
   readonly teamName: string | null;
   readonly planName: string;
+  readonly worktimeRuleVersion: number;
+  readonly isPendingVerification: boolean;
   readonly isScheduled: boolean;
   readonly workedMinutes: number;
+  readonly normalMinutes: number;
+  readonly overtimeMinutes: number;
+  readonly unclassifiedMinutes: number;
+  readonly confirmedViolationCount: number;
   readonly flags: readonly string[];
   readonly points: readonly {
     readonly code: string;
@@ -92,6 +110,10 @@ export type ReportPersonDay = {
     readonly occurredAt: string;
     readonly isValid: boolean;
     readonly source: string;
+    readonly latitude: string | null;
+    readonly longitude: string | null;
+    readonly locationAccuracyM: string | null;
+    readonly geofenceDistanceM: string | null;
   }[];
   readonly makeups: readonly {
     readonly id: string;

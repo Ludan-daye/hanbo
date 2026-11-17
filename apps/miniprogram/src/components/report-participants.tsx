@@ -83,7 +83,7 @@ export const ReportParticipants = ({
     setError(null);
     const text = [
       `考勤明细 ${report.startDate} 至 ${report.endDate}`,
-      "项目\t姓名\t工种\t岗位\t班组\t工时(h)\t出勤情况\t当前项目评分\t评语\t评分人\t评分时间",
+      "项目\t姓名\t工种\t岗位\t班组\t工时(h)\t出勤情况\t当前项目评分\t评语\t评分人\t评分时间\t正常工时(h)\t加班工时(h)\t未分类工时(h)\t安全信用分\t已确认违规",
       ...rows.map((row) =>
         [
           row.projectName,
@@ -97,6 +97,11 @@ export const ReportParticipants = ({
           row.evaluation?.comment ?? "",
           row.evaluation?.reviewerName ?? "",
           row.evaluation?.reviewedAt ?? "",
+          (row.normalMinutes / 60).toFixed(1),
+          (row.overtimeMinutes / 60).toFixed(1),
+          (row.unclassifiedMinutes / 60).toFixed(1),
+          row.safetyCreditScore ?? "不适用",
+          row.confirmedViolationCount,
         ].join("\t"),
       ),
     ].join("\n");
@@ -188,6 +193,13 @@ export const ReportParticipants = ({
                             person.workType ?? "工种未填写",
                             displayProjectRole(person.projectRoleLabel),
                           ]),
+                          person.projectKind === "REPAIR"
+                            ? "零星维修"
+                            : "常规施工",
+                          person.isTemporary ? "临时用工" : "常规用工",
+                          person.safetyCreditScore === null
+                            ? ""
+                            : `安全信用 ${person.safetyCreditScore}`,
                           person.evaluation === null
                             ? "未评分"
                             : `${person.evaluation.score} 分`,
@@ -199,7 +211,10 @@ export const ReportParticipants = ({
                         <View>
                           {slices.map((row) => (
                             <Notice key={row.teamId ?? "direct"}>
-                              {row.teamName ?? "项目直属"} ·{" "}
+                              {row.teamName ?? "项目直属"} · 正常{" "}
+                              {(row.normalMinutes / 60).toFixed(1)}h · 加班{" "}
+                              {(row.overtimeMinutes / 60).toFixed(1)}h · 未分类{" "}
+                              {(row.unclassifiedMinutes / 60).toFixed(1)}h ·{" "}
                               {row.requiresAttendance
                                 ? rowSummary(row)
                                 : "免考勤成员，不计入应出勤。"}

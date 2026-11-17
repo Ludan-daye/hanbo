@@ -1,3 +1,4 @@
+import Taro from "@tarojs/taro";
 import { View } from "@tarojs/components";
 import { useEffect, useState } from "react";
 import {
@@ -124,6 +125,12 @@ export const ReportPerson = ({
             {detail.person.workType ?? "工种未填写"} ·{" "}
             {detail.person.phone.replace(/^(\d{3})\d+(\d{4})$/, "$1****$2")}
           </Subtitle>
+          {detail.person.safetyCreditScore !== null && (
+            <ListItem
+              primary={`安全信用 · ${detail.person.safetyCreditScore} / 100`}
+              secondary={`跨公司累计 · 截止 ${detail.person.safetyCreditAsOf === null ? to : time(detail.person.safetyCreditAsOf)}`}
+            />
+          )}
           <ListItem
             primary={`项目评分 · ${detail.person.evaluation === null ? "未评分" : `${detail.person.evaluation.score} / 100`}`}
             secondary={
@@ -135,9 +142,7 @@ export const ReportPerson = ({
           {detail.person.evaluation?.comment ? (
             <Notice>{detail.person.evaluation.comment}</Notice>
           ) : null}
-          <Subtitle>
-            项目评价独立于考勤，修改留痕。
-          </Subtitle>
+          <Subtitle>项目评价独立于考勤，修改留痕。</Subtitle>
           {detail.canEvaluate && !editing ? (
             <Button variant="outline" onClick={() => setEditing(true)}>
               {detail.person.evaluation === null
@@ -192,6 +197,12 @@ export const ReportPerson = ({
               />
               {openDate === day.date ? (
                 <View className="report-day-detail">
+                  <Subtitle>
+                    正常 {(day.normalMinutes / 60).toFixed(1)}h · 加班{" "}
+                    {(day.overtimeMinutes / 60).toFixed(1)}h · 未分类{" "}
+                    {(day.unclassifiedMinutes / 60).toFixed(1)}h
+                  </Subtitle>
+                  {day.isPendingVerification && <Notice>退场记录待补齐</Notice>}
                   <Subtitle>排班：{day.planName}（北京时间）</Subtitle>
                   {day.points.map((point) => (
                     <View key={point.code}>
@@ -231,6 +242,41 @@ export const ReportPerson = ({
                         · {record.isValid ? "有效" : "未通过"}
                       </Subtitle>
                     ))}
+                  <View className="report-section-title">打卡位置</View>
+                  {day.records.map((record) => (
+                    <ListItem
+                      key={`location-${record.id}`}
+                      primary={time(record.occurredAt)}
+                      secondary={
+                        record.latitude === null || record.longitude === null
+                          ? "无定位证据"
+                          : `${record.latitude}, ${record.longitude}${record.locationAccuracyM === null ? "" : ` · 精度 ${record.locationAccuracyM}m`} · ${record.isValid ? "有效" : "未通过"}`
+                      }
+                      chip={
+                        record.latitude !== null && record.longitude !== null
+                          ? "地图"
+                          : undefined
+                      }
+                      onClick={
+                        record.latitude !== null && record.longitude !== null
+                          ? () => {
+                              void Taro.openLocation({
+                                latitude: Number(record.latitude),
+                                longitude: Number(record.longitude),
+                                name: detail.person.projectName,
+                                scale: 16,
+                              }).catch((failure: unknown) =>
+                                setError(
+                                  failure instanceof Error
+                                    ? failure.message
+                                    : "地图打开失败",
+                                ),
+                              );
+                            }
+                          : undefined
+                      }
+                    />
+                  ))}
                   {day.makeups.map((makeup) => (
                     <Notice key={makeup.id}>
                       {makeup.pointLabel}补卡 · {makeupStatus[makeup.status]} ·{" "}

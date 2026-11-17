@@ -26,6 +26,7 @@ const MAKEUPS: Feature = {
   url: "/pages/my-makeups/index",
 };
 const APPROVALS: Feature = { title: "补卡审批", sub: "处理授权范围内下级的申请", icon: "check", url: "/pages/team-makeups/index" };
+const SAFETY_REVIEW: Feature = { title: "违规复核", sub: "违规记录与信用申诉", icon: "shield", url: "/pages/safety-review/index" };
 export const PANEL_LABELS: Readonly<Record<PanelKey, string>> = {
   worker: "普通工人",
   teamLeader: "班组长",
@@ -59,6 +60,8 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
   ],
   projectAdmin: [
     APPROVALS,
+    SAFETY_REVIEW,
+    { title: "工时规则", sub: "项目类型、午休与加班时段", icon: "calendar", url: "/pages/project-worktime/index" },
     {
       title: "项目人员",
       sub: "人员资料、工种与班组",
@@ -129,6 +132,7 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
   ],
   systemAdmin: [
     APPROVALS,
+    { title: "信用规则", sub: "扣分与恢复标准", icon: "shield", url: "/pages/safety-policy/index" },
     { title: "打卡安排", sub: "设置授权范围内下级的打卡要求", icon: "calendar", url: "/pages/schedules/index" },
     {
       title: "平台管理",

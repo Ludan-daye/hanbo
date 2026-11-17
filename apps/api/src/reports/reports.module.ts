@@ -1,3 +1,5 @@
+import { WorktimeModule } from "../worktime/worktime.module.js";
+import { SafetyCreditModule } from "../safety-credit/safety-credit.module.js";
 import { ReportDetailsController } from "./report-details.controller.js";
 import { ProjectEvaluationsService } from "./project-evaluations.service.js";
 import { UploadsModule } from "../uploads/uploads.module.js";
@@ -13,7 +15,14 @@ import { ReportsController } from "./reports.controller.js";
 import { ReportsService } from "./reports.service.js";
 
 @Module({
-  imports: [AuthModule, AuthorizationModule, PrismaModule, UploadsModule],
+  imports: [
+    AuthModule,
+    AuthorizationModule,
+    PrismaModule,
+    UploadsModule,
+    WorktimeModule,
+    SafetyCreditModule,
+  ],
   controllers: [
     ReportsController,
     ReportExportsController,

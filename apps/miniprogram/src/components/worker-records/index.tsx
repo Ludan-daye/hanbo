@@ -207,6 +207,15 @@ export const WorkerRecords = (): JSX.Element => {
         to,
       )
     : null;
+  const classified =
+    layers?.days.reduce(
+      (sum, day) => ({
+        normalMinutes: sum.normalMinutes + day.normalMinutes,
+        overtimeMinutes: sum.overtimeMinutes + day.overtimeMinutes,
+        unclassifiedMinutes: sum.unclassifiedMinutes + day.unclassifiedMinutes,
+      }),
+      { normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: 0 },
+    ) ?? null;
   const options = attendanceProjectOptions(
     projects,
     loaded?.data ?? null,
@@ -324,7 +333,13 @@ export const WorkerRecords = (): JSX.Element => {
                 {(total.workedMinutes / 60).toFixed(1)} 小时
               </View>
               <View className="worker-records__muted">
-                出勤按自然日去重，工时按日汇总累计。
+                {classified && (
+                  <>
+                    正常 {(classified.normalMinutes / 60).toFixed(1)}h · 加班{" "}
+                    {(classified.overtimeMinutes / 60).toFixed(1)}h · 未分类{" "}
+                    {(classified.unclassifiedMinutes / 60).toFixed(1)}h
+                  </>
+                )}
               </View>
             </>
           ) : (
@@ -337,9 +352,7 @@ export const WorkerRecords = (): JSX.Element => {
           <View className="worker-records__state">
             <View className="worker-records__heading">考勤加载失败</View>
             <View className="worker-records__muted">{loaded.error}</View>
-            <View className="worker-records__muted">
-              筛选已保留，请重试。
-            </View>
+            <View className="worker-records__muted">筛选已保留，请重试。</View>
             <Button appearance="worker" onClick={refresh}>
               重新加载
             </Button>
@@ -411,6 +424,13 @@ export const WorkerRecords = (): JSX.Element => {
                           {minutesLabel(group.summary.workedMinutes)} · {status}
                         </View>
                         <View className="worker-records__muted">
+                          正常 {(group.summary.normalMinutes / 60).toFixed(1)}h
+                          · 加班{" "}
+                          {(group.summary.overtimeMinutes / 60).toFixed(1)}h ·
+                          未分类{" "}
+                          {(group.summary.unclassifiedMinutes / 60).toFixed(1)}h
+                        </View>
+                        <View className="worker-records__muted">
                           {group.summary.teamName ?? "项目直属"} · 已补卡{" "}
                           {group.summary.approvedMakeupCount} 次
                         </View>
@@ -456,9 +476,7 @@ export const WorkerRecords = (): JSX.Element => {
                     ) : (
                       <View className="worker-records__muted">
                         暂无原始打卡记录。
-                        {group.makeups.length
-                          ? "已批准补卡有效。"
-                          : ""}
+                        {group.makeups.length ? "已批准补卡有效。" : ""}
                       </View>
                     )}
                   </View>

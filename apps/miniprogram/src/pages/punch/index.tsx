@@ -51,6 +51,7 @@ import {
 import {
   fetchAttendanceToday,
   fetchTaskAttendanceToday,
+  fetchOvertimeAttendanceToday,
   fetchMyProjects,
   submitAttendanceRecord,
 } from "../../services/me";
@@ -139,12 +140,13 @@ export default function Punch(): JSX.Element {
   const workerAppearance = sessionState.me?.roles.highestRoleCode === "WORKER";
   const requestedProjectId = useRouter().params.projectId ?? null;
   const requestedTaskId = useRouter().params.taskId ?? null;
+  const overtimeMode = useRouter().params.mode === "overtime";
   const readToday = useCallback(
     (id: string): Promise<AttendanceToday> =>
-      requestedTaskId === null
+      overtimeMode ? fetchOvertimeAttendanceToday(id) : requestedTaskId === null
         ? fetchAttendanceToday(id)
         : fetchTaskAttendanceToday(id, requestedTaskId),
-    [requestedTaskId],
+    [requestedTaskId, overtimeMode],
   );
   const { revision, refresh } = usePageRefresh();
   const [projects, setProjects] = useState<
@@ -964,6 +966,8 @@ export default function Punch(): JSX.Element {
                 {activeProject.teamName ?? "项目直属"} ·{" "}
                 {displayProjectRole(activeProject.projectRoleLabel)}
               </View>
+              {requestedTaskId === null && <NativeButton className="worker-punch__text-button" disabled={isBusy} onClick={() => { void Taro.redirectTo({ url: `/pages/punch/index?projectId=${projectId}${overtimeMode ? "" : "&mode=overtime"}` }); }}>{overtimeMode ? "常规打卡" : "加班打卡"}</NativeButton>}
+              {overtimeMode && <NativeButton className="worker-punch__text-button" disabled={isBusy} onClick={() => { void Taro.navigateTo({ url: `/pages/submit-makeup/index?projectId=${projectId}&mode=overtime` }); }}>加班补卡</NativeButton>}
               <View className="worker-punch__date">{taskDate}</View>
               {taskLabel ? (
                 <View className="worker-punch__task-label">

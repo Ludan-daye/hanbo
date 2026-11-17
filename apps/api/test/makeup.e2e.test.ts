@@ -269,11 +269,12 @@ type MakeupRequestUpdateManyArgs = {
 
 type MakeupRequestFindManyByDateArgs = {
   readonly where: {
-    readonly attendanceDate: Date;
+    readonly attendanceDate?: Date;
     readonly participantId: string;
     readonly participantType: ProfileOwnerTypeValue;
     readonly projectId: string;
     readonly status: "APPROVED";
+    readonly pointCode?: { readonly startsWith: string };
   };
 };
 
@@ -328,10 +329,12 @@ type ProjectManagerMemberFindManyArgs = {
 
 type AttendanceRecordFindManyArgs = {
   readonly where: {
-    readonly attendanceDate: Date;
+    readonly attendanceDate?: Date;
     readonly participantId: string;
     readonly participantType: ProfileOwnerTypeValue;
-    readonly projectId: string;
+    readonly projectId?: string;
+    readonly pointCode?: { readonly startsWith: string };
+    readonly status?: "VALID" | "INVALID";
   };
 };
 
@@ -368,6 +371,7 @@ const applyTestEnv = (): void => {
 class MakeupPrismaTestDouble {
   async $executeRaw(): Promise<number> { return 1; }
   async $transaction<T>(callback: (transaction: MakeupPrismaTestDouble) => Promise<T>): Promise<T> { return callback(this); }
+  readonly projectWorktimeRule = { findMany: async (): Promise<[]> => [] };
   readonly attendancePlan = { findMany: async (): Promise<[]> => [] };
   readonly projectMemberHistory = { findMany: async (): Promise<[]> => [] };
 
@@ -595,7 +599,8 @@ class MakeupPrismaTestDouble {
           r.participantType === byDate.where.participantType &&
           r.participantId === byDate.where.participantId &&
           r.status === byDate.where.status &&
-          r.attendanceDate.getTime() === byDate.where.attendanceDate.getTime()
+          (byDate.where.attendanceDate === undefined || r.attendanceDate.getTime() === byDate.where.attendanceDate.getTime()) &&
+          (byDate.where.pointCode === undefined || r.pointCode.startsWith(byDate.where.pointCode.startsWith))
       );
     },
     findUnique: async (args: MakeupRequestFindUniqueArgs): Promise<MakeupRequestRecord | null> =>
@@ -624,10 +629,12 @@ class MakeupPrismaTestDouble {
     findMany: async (args: AttendanceRecordFindManyArgs): Promise<AttendanceRecordRecord[]> =>
       Array.from(this.attendanceRecords.values()).filter(
         (record: AttendanceRecordRecord): boolean =>
-          record.projectId === args.where.projectId &&
+          (args.where.projectId === undefined || record.projectId === args.where.projectId) &&
+          (args.where.status === undefined || record.status === args.where.status) &&
+          (args.where.pointCode === undefined || record.pointCode.startsWith(args.where.pointCode.startsWith)) &&
           record.participantType === args.where.participantType &&
           record.participantId === args.where.participantId &&
-          record.attendanceDate.getTime() === args.where.attendanceDate.getTime()
+          (args.where.attendanceDate === undefined || record.attendanceDate.getTime() === args.where.attendanceDate.getTime())
       )
   };
 

@@ -8,7 +8,7 @@ import type { ReportsService, ReportDay } from "./reports.service.js";
 
 export const REPORT_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-export const REPORT_CALCULATION_VERSION = "attendance-v3-project-evaluation";
+export const REPORT_CALCULATION_VERSION = "attendance-v4-hours-safety-location";
 export type MonthlySnapshot = Awaited<
   ReturnType<ReportsService["monthlySnapshot"]>
 >;
@@ -112,6 +112,20 @@ const projectPeople = (
           0,
         ),
         workedMinutes: rows.reduce((sum, row) => sum + row.workedMinutes, 0),
+        normalMinutes: rows.reduce((sum, row) => sum + row.normalMinutes, 0),
+        overtimeMinutes: rows.reduce(
+          (sum, row) => sum + row.overtimeMinutes,
+          0,
+        ),
+        unclassifiedMinutes: rows.reduce(
+          (sum, row) => sum + row.unclassifiedMinutes,
+          0,
+        ),
+        confirmedViolationCount: rows.reduce(
+          (sum, row) => sum + row.confirmedViolationCount,
+          0,
+        ),
+
         absenceCount: rows.reduce((sum, row) => sum + row.absenceCount, 0),
         missingPunchCount: rows.reduce(
           (sum, row) => sum + row.missingPunchCount,
@@ -180,6 +194,14 @@ export const createMonthlyWorkbook = async (
         "评价说明",
         "评分人",
         "评分时间（北京时间）",
+        "项目类型",
+        "用工类型",
+        "正常工时（小时）",
+        "加班工时（小时）",
+        "未分类工时（小时）",
+        "期末安全信用分",
+        "信用分截止时间",
+        "本范围已确认违规次数",
       ],
       [
         26, 20, 18, 20, 16, 18, 14, 14, 14, 16, 16, 14, 14, 14, 14, 18, 20, 22,
@@ -220,9 +242,20 @@ export const createMonthlyWorkbook = async (
         person.evaluation === null
           ? ""
           : chinaTime(new Date(person.evaluation.reviewedAt)),
+        person.projectKind === "REPAIR" ? "零星维修" : "常规施工",
+        person.isTemporary ? "临时用工" : "常规用工",
+        person.normalMinutes / 60,
+        person.overtimeMinutes / 60,
+        person.unclassifiedMinutes / 60,
+        person.safetyCreditScore ?? "不适用",
+        person.safetyCreditAsOf === null
+          ? ""
+          : chinaTime(new Date(person.safetyCreditAsOf)),
+        person.confirmedViolationCount,
       ]);
       row.getCell(9).numFmt = "0.0%";
       row.getCell(11).numFmt = "0.00";
+      for (const column of [24, 25, 26]) row.getCell(column).numFmt = "0.00";
       row.commit();
     }
     summary.commit();
@@ -244,6 +277,12 @@ export const createMonthlyWorkbook = async (
         "工时（小时）",
         "异常",
         "批准补卡次数",
+        "正常工时（小时）",
+        "加班工时（小时）",
+        "未分类工时（小时）",
+        "工时规则版本",
+        "工时待核查",
+        "已确认违规次数",
       ],
       [26, 20, 18, 14, 12, 12, 22, 18, 44, 55, 16, 16, 26, 18],
     );
@@ -266,6 +305,55 @@ export const createMonthlyWorkbook = async (
       ],
       [26, 20, 18, 14, 16, 20, 23, 16, 45, 20, 45, 23],
     );
+    const safety = sheet(
+      workbook,
+      "安全记录",
+      [
+        "项目",
+        "班组",
+        "姓名",
+        "日期",
+        "类别",
+        "严重程度",
+        "状态",
+        "扣分",
+        "发生时间",
+        "说明",
+        "处理原因",
+        "处理时间",
+      ],
+      [26, 20, 18, 14, 22, 14, 14, 12, 24, 45, 45, 24],
+    );
+    const locations = sheet(
+      workbook,
+      "打卡位置",
+      [
+        "项目",
+        "班组",
+        "姓名",
+        "日期",
+        "打卡时点",
+        "时间",
+        "来源",
+        "核验状态",
+        "纬度（GCJ-02）",
+        "经度（GCJ-02）",
+        "定位精度（米）",
+        "距围栏中心（米）",
+      ],
+      [26, 20, 18, 14, 22, 24, 16, 16, 22, 22, 18, 20],
+    );
+    const safetyStatuses = {
+      PENDING: "待确认",
+      CONFIRMED: "已确认",
+      REJECTED: "已驳回",
+      REVOKED: "已撤销",
+    } as const;
+    const safetySeverities = {
+      GENERAL: "一般",
+      SERIOUS: "严重",
+      MAJOR: "重大",
+    } as const;
     const statusLabels = {
       PENDING: "待审批",
       APPROVED: "已通过",
@@ -314,13 +402,51 @@ export const createMonthlyWorkbook = async (
             ? "当日进行中"
             : "无异常"),
         day.dayValues.approvedMakeupCount,
+        day.dayValues.normalMinutes / 60,
+        day.dayValues.overtimeMinutes / 60,
+        day.dayValues.unclassifiedMinutes / 60,
+        day.worktimeRuleVersion,
+        day.isPendingVerification ? "是" : "否",
+        day.dayValues.confirmedViolationCount,
       ]);
       row.getCell(12).numFmt = "0.00";
+      for (const column of [15, 16, 17]) row.getCell(column).numFmt = "0.00";
       row.height = Math.max(
         32,
         Math.max(day.points.length, day.evidence.length) * 16,
       );
       row.commit();
+      for (const record of [...day.evidence].sort(
+        (left, right) => left.occurredAt.getTime() - right.occurredAt.getTime(),
+      )) {
+        append(locations, [
+          ...prefix,
+          day.points.find((point) => point.code === record.pointCode)?.label ??
+            record.pointCode,
+          chinaTime(record.occurredAt),
+          record.source === "MAKEUP" ? "批准补卡" : "设备打卡",
+          record.isValid ? "通过" : "未通过",
+          record.latitude ?? "无定位证据",
+          record.longitude ?? "无定位证据",
+          record.locationAccuracyM ?? "",
+          record.geofenceDistanceM ?? "",
+        ]).commit();
+      }
+      for (const event of day.safetyEvents) {
+        append(safety, [
+          ...prefix,
+          event.category,
+          safetySeverities[event.severity],
+          safetyStatuses[event.status],
+          event.status === "CONFIRMED" ? event.points : 0,
+          chinaTime(new Date(event.occurredAt)),
+          event.description,
+          event.reviewReason ?? "",
+          event.reviewedAt === null
+            ? ""
+            : chinaTime(new Date(event.reviewedAt)),
+        ]).commit();
+      }
       if (flags.length > 0)
         append(exceptions, [
           ...prefix,
@@ -353,6 +479,8 @@ export const createMonthlyWorkbook = async (
     }
     daily.commit();
     exceptions.commit();
+    safety.commit();
+    locations.commit();
     const notes = sheet(workbook, "统计说明", ["项目", "说明"], [26, 110]);
     const totals = snapshot.report.totals;
     const entries: readonly (readonly Cell[])[] = [
@@ -371,6 +499,10 @@ export const createMonthlyWorkbook = async (
       ["应勤人天", totals.scheduledDays],
       ["实勤人天", totals.actualAttendedDays],
       ["合计工时（分钟）", totals.workedMinutes],
+      ["正常工时（分钟）", totals.normalMinutes],
+      ["加班工时（分钟）", totals.overtimeMinutes],
+      ["未分类工时（分钟）", totals.unclassifiedMinutes],
+      ["本范围已确认违规次数", totals.confirmedViolationCount],
       [
         "排班",
         "个人 > 班组 > 项目；每日明细记录当天要求与排班内容指纹，历史调整不改写已导出文件。",
@@ -385,11 +517,19 @@ export const createMonthlyWorkbook = async (
       ],
       [
         "工时",
-        "北京时间，同日上下班成对累计；不自动扣午休，中途签到不增加工时。历史导入工时可能没有原始打卡明细。",
+        "按有效打卡及已完成任务区间累计，重复区间去重；按当天生效规则扣午休并划分正常／加班，不转换工日。未配置规则及无原始记录的历史工时单列为未分类。缺少退场记录不推算工时。",
       ],
       [
         "项目评分",
         "显示导出快照时该人员在此项目的当前评价，并附评分人、评语及时间；不是该月单独评分。未评分不按零分计算。修改不影响旧版文件。",
+      ],
+      [
+        "安全信用",
+        "每名工人跨公司累计一份信用分，展示统计期末分数；安全记录仅展示当前报表授权项目、班组及期间。评分更正后须生成新版本，旧文件不变。",
+      ],
+      [
+        "打卡位置",
+        "按项目、人员及时间排列打卡点，供车费报销核查参考；不是连续行程，不自动判定交通方式、里程或报销金额。",
       ],
       ["补卡", "仅已批准补卡计入工时；待审批与已驳回申请只在明细中展示。"],
       [
@@ -398,7 +538,7 @@ export const createMonthlyWorkbook = async (
       ],
       [
         "文件与隐私",
-        "手机号脱敏；不包含人脸照片、证件号码、视频、位置坐标。后续补卡或资料调整需重新生成版本。",
+        "手机号脱敏；不包含人脸照片、证件号码、视频。打卡位置仅含本报表授权项目与人员的打卡点，补卡不生成定位。后续调整需重新生成版本。",
       ],
     ];
     for (const values of entries) append(notes, values).commit();

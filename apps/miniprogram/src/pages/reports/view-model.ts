@@ -12,5 +12,12 @@ export const totalsStatItems = (
   { label: "缺勤", value: String(totals.absenceCount) },
   { label: "补卡通过", value: String(totals.approvedMakeupCount) },
   { label: "异常记录", value: String(totals.abnormalRecordCount) },
+  { label: "正常工时", value: `${(totals.normalMinutes / 60).toFixed(1)}h` },
+  { label: "加班工时", value: `${(totals.overtimeMinutes / 60).toFixed(1)}h` },
+  {
+    label: "未分类工时",
+    value: `${(totals.unclassifiedMinutes / 60).toFixed(1)}h`,
+  },
+  { label: "已确认违规", value: String(totals.confirmedViolationCount) },
   { label: "工时", value: `${(totals.workedMinutes / 60).toFixed(1)}h` },
 ];

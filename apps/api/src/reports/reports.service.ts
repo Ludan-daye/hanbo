@@ -1,4 +1,15 @@
-import { summarizeTaskAttendance } from "@construction/domain";
+import {
+  classifyWorktime,
+  resolveWorktimeRule,
+  scheduledWorkIntervals,
+  taskWorkIntervals,
+  overtimeWorkIntervals,
+  worktimeDecimal,
+  type SafetyViolationView,
+  summarizeTaskAttendance,
+} from "@construction/domain";
+import { WorktimeService } from "../worktime/worktime.service.js";
+import { SafetyCreditService } from "../safety-credit/safety-credit.service.js";
 import { taskInterval } from "../attendance/task-attendance.js";
 import { createHash } from "node:crypto";
 import type { Prisma, MakeupRequest } from "@prisma/client";
@@ -35,7 +46,10 @@ import type {
   RangeAttendanceReportResponse,
 } from "./reports.types.js";
 
-type ReportMember = AttendanceReportParticipantBase &
+type ReportMember = Omit<
+  AttendanceReportParticipantBase,
+  "projectKind" | "isTemporary" | "safetyCreditScore" | "safetyCreditAsOf"
+> &
   MemberState & {
     readonly userId: string | null;
   };
@@ -50,14 +64,28 @@ export type AttendanceDayValues = {
   readonly isMissingPunch: boolean;
   readonly isScheduled: boolean;
   readonly workedMinutes: number;
+  readonly normalMinutes: number;
+  readonly overtimeMinutes: number;
+  readonly unclassifiedMinutes: number;
+  readonly confirmedViolationCount: number;
+};
+
+export type ReportEvidence = AttendanceRecordInput & {
+  readonly latitude: string | null;
+  readonly longitude: string | null;
+  readonly locationAccuracyM: string | null;
+  readonly geofenceDistanceM: string | null;
 };
 
 export type ReportDay = {
+  readonly worktimeRuleVersion: number;
+  readonly isPendingVerification: boolean;
+  readonly safetyEvents: readonly SafetyViolationView[];
   readonly date: string;
   readonly planName: string;
   readonly planVersion: string;
   readonly points: readonly ScheduledAttendancePoint[];
-  readonly evidence: readonly AttendanceRecordInput[];
+  readonly evidence: readonly ReportEvidence[];
   readonly makeups: readonly MakeupRequest[];
   readonly dayValues: AttendanceDayValues;
   readonly participant: AttendanceReportParticipantBase;
@@ -126,6 +154,10 @@ const createEmptyTotals = (
   participantCount,
   scheduledDays: 0,
   workedMinutes: 0,
+  normalMinutes: 0,
+  overtimeMinutes: 0,
+  unclassifiedMinutes: 0,
+  confirmedViolationCount: 0,
 });
 
 const addDayToTotals = (
@@ -140,11 +172,15 @@ const addDayToTotals = (
   approvedMakeupCount: totals.approvedMakeupCount + day.approvedMakeupCount,
   earlyLeaveCount: totals.earlyLeaveCount + (day.isEarlyLeave ? 1 : 0),
   lateCount: totals.lateCount + (day.isLate ? 1 : 0),
-  missingPunchCount:
-    totals.missingPunchCount + (day.isScheduled && day.isMissingPunch ? 1 : 0),
+  missingPunchCount: totals.missingPunchCount + (day.isMissingPunch ? 1 : 0),
   participantCount: totals.participantCount,
   scheduledDays: totals.scheduledDays + (day.isScheduled ? 1 : 0),
   workedMinutes: totals.workedMinutes + day.workedMinutes,
+  normalMinutes: totals.normalMinutes + day.normalMinutes,
+  overtimeMinutes: totals.overtimeMinutes + day.overtimeMinutes,
+  unclassifiedMinutes: totals.unclassifiedMinutes + day.unclassifiedMinutes,
+  confirmedViolationCount:
+    totals.confirmedViolationCount + day.confirmedViolationCount,
 });
 
 const mergeTotals = (
@@ -161,6 +197,11 @@ const mergeTotals = (
   participantCount: left.participantCount,
   scheduledDays: left.scheduledDays + right.scheduledDays,
   workedMinutes: left.workedMinutes + right.workedMinutes,
+  normalMinutes: left.normalMinutes + right.normalMinutes,
+  overtimeMinutes: left.overtimeMinutes + right.overtimeMinutes,
+  unclassifiedMinutes: left.unclassifiedMinutes + right.unclassifiedMinutes,
+  confirmedViolationCount:
+    left.confirmedViolationCount + right.confirmedViolationCount,
 });
 
 const createDailyParticipant = (
@@ -175,6 +216,10 @@ const createDailyParticipant = (
   isLate: dayValues.isLate,
   isMissingPunch: dayValues.isMissingPunch,
   workedMinutes: dayValues.workedMinutes,
+  normalMinutes: dayValues.normalMinutes,
+  overtimeMinutes: dayValues.overtimeMinutes,
+  unclassifiedMinutes: dayValues.unclassifiedMinutes,
+  confirmedViolationCount: dayValues.confirmedViolationCount,
 });
 
 const createRangeParticipant = (
@@ -191,6 +236,10 @@ const createRangeParticipant = (
   missingPunchCount: totals.missingPunchCount,
   scheduledDays: totals.scheduledDays,
   workedMinutes: totals.workedMinutes,
+  normalMinutes: totals.normalMinutes,
+  overtimeMinutes: totals.overtimeMinutes,
+  unclassifiedMinutes: totals.unclassifiedMinutes,
+  confirmedViolationCount: totals.confirmedViolationCount,
 });
 
 export const summarizeReportDays = (
@@ -249,6 +298,8 @@ export class ReportsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(API_ENV) private readonly env: ApiEnv,
+    @Inject(WorktimeService) private readonly worktime: WorktimeService,
+    @Inject(SafetyCreditService) private readonly safety: SafetyCreditService,
   ) {}
 
   async getDailyReport(
@@ -448,6 +499,12 @@ export class ReportsService {
             planName: row.planName,
             isScheduled: row.dayValues.isScheduled,
             workedMinutes: row.dayValues.workedMinutes,
+            normalMinutes: row.dayValues.normalMinutes,
+            overtimeMinutes: row.dayValues.overtimeMinutes,
+            unclassifiedMinutes: row.dayValues.unclassifiedMinutes,
+            confirmedViolationCount: row.dayValues.confirmedViolationCount,
+            worktimeRuleVersion: row.worktimeRuleVersion,
+            isPendingVerification: row.isPendingVerification,
             flags: [
               row.dayValues.isAbsent ? "缺勤" : "",
               row.dayValues.isMissingPunch ? "缺卡" : "",
@@ -769,19 +826,52 @@ export class ReportsService {
       participantId: m.participantId,
     }));
     const where = { attendanceDate: { gte: start, lte: end }, OR: owners };
-    const [planning, records, makeups, storedResults, teams] =
-      await Promise.all([
-        loadPlanningData(database, ids),
-        database.attendanceRecord.findMany({ where }),
-        database.makeupRequest.findMany({
-          where,
-        }),
-        database.attendanceResult.findMany({ where }),
-        database.team.findMany({
-          where: { projectId: { in: ids } },
-          select: { id: true, name: true },
-        }),
-      ]);
+    const evidenceWhere = {
+      attendanceDate: { gte: addDays(start, -1), lte: addDays(end, 1) },
+      OR: owners,
+    };
+    const workerIds = [
+      ...new Set(
+        members
+          .filter((member) => member.participantType === "WORKER")
+          .map((member) => member.participantId),
+      ),
+    ];
+    const asOf = new Date(
+      Math.min(now.getTime(), end.getTime() + 16 * 3600000 - 1),
+    );
+    const [
+      planning,
+      records,
+      makeups,
+      storedResults,
+      teams,
+      rules,
+      credits,
+      safetyEvents,
+    ] = await Promise.all([
+      loadPlanningData(database, ids),
+      database.attendanceRecord.findMany({ where: evidenceWhere }),
+      database.makeupRequest.findMany({
+        where: evidenceWhere,
+      }),
+      database.attendanceResult.findMany({ where }),
+      database.team.findMany({
+        where: { projectId: { in: ids } },
+        select: { id: true, name: true },
+      }),
+      this.worktime.rulesForProjectsIn(database, ids),
+      this.safety.summariesIn(database, workerIds, asOf, now),
+      this.safety.reportEventsIn(
+        database,
+        ids,
+        workerIds,
+        toDateOnly(start),
+        toDateOnly(end),
+        asOf,
+        now,
+      ),
+    ]);
     const taskMembers = members.filter(
       (member) =>
         member.taskAttendanceOnly ||
@@ -820,7 +910,7 @@ export class ReportsService {
             include: { task: true },
           });
     const names = new Map(teams.map((t) => [t.id, t.name]));
-    const inputs = new Map<string, readonly AttendanceRecordInput[]>();
+    const inputs = new Map<string, readonly ReportEvidence[]>();
     for (const record of records) {
       const key = createResultKey(
         record.projectId,
@@ -836,6 +926,18 @@ export class ReportsService {
           occurredAt: record.occurredAt,
           isValid: record.status === "VALID",
           source: record.source,
+          latitude:
+            record.source === "MAKEUP" ? null : record.latitude.toString(),
+          longitude:
+            record.source === "MAKEUP" ? null : record.longitude.toString(),
+          locationAccuracyM:
+            record.source === "MAKEUP"
+              ? null
+              : (record.locationAccuracyM?.toString() ?? null),
+          geofenceDistanceM:
+            record.source === "MAKEUP"
+              ? null
+              : (record.geofenceDistanceM?.toString() ?? null),
         },
       ]);
     }
@@ -857,6 +959,10 @@ export class ReportsService {
           occurredAt: row.requestedOccurredAt,
           isValid: true,
           source: "MAKEUP",
+          latitude: null,
+          longitude: null,
+          locationAccuracyM: null,
+          geofenceDistanceM: null,
         },
       ]);
     }
@@ -892,6 +998,25 @@ export class ReportsService {
       ]),
     );
     for (const member of members) {
+      const memberOvertime = overtimeWorkIntervals(
+        listDatesInclusive(addDays(start, -1), addDays(end, 1)).flatMap(
+          (date) =>
+            inputs.get(
+              createResultKey(
+                member.projectId,
+                member.participantType,
+                member.participantId,
+                date,
+              ),
+            ) ?? [],
+        ),
+      );
+      const memberTasks = taskAssignments
+        .filter((row) => row.memberId === member.memberId)
+        .map(taskInterval);
+      const memberSafetyEvents = safetyEvents.filter(
+        (event) => event.memberId === member.memberId,
+      );
       const data = {
         ...plansByProject.get(member.projectId)!,
         histories: historiesByMember.get(member.memberId) ?? [],
@@ -909,21 +1034,22 @@ export class ReportsService {
         const evidence = inputs.get(key) ?? [];
         const legacy = stored.get(key);
         const eligible = isAttendanceMemberOn(state, text);
+        const memberSafety = memberSafetyEvents.filter(
+          (event) =>
+            event.memberId === member.memberId &&
+            event.teamId === state.teamId &&
+            chinaDate(new Date(event.occurredAt)) === text,
+        );
         const taskSummary = state.taskAttendanceOnly
-          ? summarizeTaskAttendance(
-              taskAssignments
-                .filter((row) => row.memberId === member.memberId)
-                .map(taskInterval),
-              text,
-              now,
-            )
+          ? summarizeTaskAttendance(memberTasks, text, now)
           : null;
         if (
           !eligible &&
           !taskSummary?.hasResult &&
           evidence.length === 0 &&
           legacy === undefined &&
-          !makeupsByDay.has(key)
+          !makeupsByDay.has(key) &&
+          memberSafety.length === 0
         )
           continue;
         const plan = state.taskAttendanceOnly
@@ -956,6 +1082,45 @@ export class ReportsService {
             ? legacy
             : null;
         const day = taskSummary ?? imported ?? summary;
+        const rule = resolveWorktimeRule(
+          rules.get(member.projectId) ?? [],
+          text,
+        );
+        const actualWorktime = classifyWorktime(
+          [
+            ...(state.taskAttendanceOnly
+              ? taskWorkIntervals(memberTasks)
+              : scheduledWorkIntervals(
+                  plan.points,
+                  text,
+                  evidence,
+                  now,
+                  rule.config.projectKind === "REPAIR" ? "HOURLY" : "REGULAR",
+                )),
+            ...memberOvertime,
+          ],
+          text,
+          rule,
+          now,
+        );
+        const worktime =
+          imported === null
+            ? actualWorktime
+            : {
+                ...actualWorktime,
+                normalMinutes: 0,
+                overtimeMinutes: 0,
+                unclassifiedMinutes: imported.workedMinutes,
+                workedMinutes: imported.workedMinutes,
+                normalHours: "0",
+                overtimeHours: "0",
+                totalHours: worktimeDecimal(imported.workedMinutes / 60),
+                ruleVersion: 0,
+              };
+        const credit =
+          member.participantType === "WORKER"
+            ? credits.get(member.participantId)
+            : undefined;
         const hasResult =
           taskSummary?.hasResult ??
           (evidence.some((r) => r.isValid) ||
@@ -963,6 +1128,10 @@ export class ReportsService {
         const participant: AttendanceReportParticipantBase = {
           projectId: member.projectId,
           projectName: member.projectName,
+          projectKind: rule.config.projectKind,
+          isTemporary: state.taskAttendanceOnly === true,
+          safetyCreditScore: credit?.score ?? null,
+          safetyCreditAsOf: credit?.asOf ?? null,
           evaluation: member.evaluation,
           participantId: member.participantId,
           participantType: member.participantType,
@@ -979,6 +1148,9 @@ export class ReportsService {
         };
         output.push({
           date: text,
+          worktimeRuleVersion: worktime.ruleVersion,
+          isPendingVerification: worktime.isPendingVerification,
+          safetyEvents: memberSafety,
           participant,
           planName: plan.name,
           planVersion: createHash("sha256")
@@ -991,9 +1163,18 @@ export class ReportsService {
           dayValues: {
             isScheduled,
             hasResult,
-            workedMinutes: day.workedMinutes,
-            isAbsent: isScheduled && day.isAbsent,
-            isMissingPunch: isScheduled && day.isMissingPunch,
+            workedMinutes: worktime.workedMinutes,
+            normalMinutes: worktime.normalMinutes,
+            overtimeMinutes: worktime.overtimeMinutes,
+            unclassifiedMinutes: worktime.unclassifiedMinutes,
+            confirmedViolationCount: memberSafety.filter(
+              (event) => event.status === "CONFIRMED",
+            ).length,
+            isAbsent:
+              isScheduled && day.isAbsent && worktime.workedMinutes === 0,
+            isMissingPunch:
+              (isScheduled && day.isMissingPunch) ||
+              (text < today && worktime.isPendingVerification),
             isLate: isScheduled && day.isLate,
             isEarlyLeave: isScheduled && day.isEarlyLeave,
             abnormalRecordCount:

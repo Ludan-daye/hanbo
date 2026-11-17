@@ -14,6 +14,8 @@ import { MakeupModule } from "./makeup/makeup.module.js";
 import { MeModule } from "./me/me.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
 import { UploadsModule } from "./uploads/uploads.module.js";
+import { WorktimeModule } from "./worktime/worktime.module.js";
+import { SafetyCreditModule } from "./safety-credit/safety-credit.module.js";
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { UploadsModule } from "./uploads/uploads.module.js";
     MeModule,
     ReportsModule,
     TeamWorkModule,
+    WorktimeModule,
+    SafetyCreditModule,
     UploadsModule,
   ],
   controllers: [HealthController],

@@ -1,3 +1,13 @@
+import {
+  classifyWorktime,
+  worktimeChinaDate,
+  resolveWorktimeRule,
+  scheduledWorkIntervals,
+  taskWorkIntervals,
+  overtimeWorkIntervals,
+  type ClassifiedWorktime,
+} from "@construction/domain";
+import { demoSafetySummaries, demoSafetyReportEvents } from "./safety-credit";
 import { demoMemberOn, demoMemberEligible } from "./member-history";
 import {
   summarizeScheduledAttendance,
@@ -16,6 +26,81 @@ import type { AttendanceResultSummary } from "../me.types";
 import type { DemoState } from "./state";
 import { chinaToday } from "../time";
 import { demoTaskSummary } from "./task-attendance";
+
+export const demoWorktime = (
+  state: DemoState,
+  person: ProjectParticipant,
+  date: string,
+): ClassifiedWorktime => {
+  const now = new Date();
+  const rule = resolveWorktimeRule(
+    (state.worktimeRules ?? []).filter(
+      (row) => row.projectId === person.projectId,
+    ),
+    date,
+  );
+  const records: readonly AttendanceRecordInput[] = [
+    ...state.records
+      .filter(
+        (row) =>
+          row.projectId === person.projectId &&
+          row.participantId === person.profileId,
+      )
+      .map((row) => ({
+        id: row.id,
+        pointCode: row.pointCode,
+        occurredAt: new Date(row.occurredAt),
+        isValid: row.status === "VALID",
+        source: "DEVICE" as const,
+      })),
+    ...state.makeups
+      .filter(
+        (row) =>
+          row.projectId === person.projectId &&
+          row.participantId === person.profileId &&
+          row.status === "APPROVED",
+      )
+      .map((row) => ({
+        id: row.id,
+        pointCode: row.pointCode,
+        occurredAt: new Date(row.requestedOccurredAt),
+        isValid: true,
+        source: "MAKEUP" as const,
+      })),
+  ];
+  const historical = demoMemberOn(state, person, date);
+  return classifyWorktime(
+    [
+      ...(historical.taskAttendanceOnly
+        ? taskWorkIntervals(
+            (state.teamWork?.tasks ?? []).flatMap((task) =>
+              task.assignments
+                .filter((row) => row.memberId === person.memberId)
+                .map((row) => ({
+                  startsAt: new Date(task.startsAt),
+                  endsAt: new Date(task.endsAt),
+                  cancelled: task.status === "CANCELLED",
+                  startedAt: row.startedAt ? new Date(row.startedAt) : null,
+                  finishedAt: row.finishedAt ? new Date(row.finishedAt) : null,
+                })),
+            ),
+          )
+        : scheduledWorkIntervals(
+            effectiveDemoPlan(state, person, date).points,
+            date,
+            records.filter((row) => worktimeChinaDate(row.occurredAt) === date),
+            now,
+            rule.config.projectKind === "REPAIR" ? "HOURLY" : "REGULAR",
+          )),
+      ...overtimeWorkIntervals(records),
+    ],
+    date,
+    rule,
+    now,
+  );
+};
+export const reportAsOf = (date: string): Date =>
+  new Date(Math.min(Date.now(), Date.parse(`${date}T23:59:59.999+08:00`)));
 
 export const demoDaySummary = (
   state: DemoState,
@@ -45,23 +130,25 @@ export const demoDaySummary = (
       isValid: true,
     }));
   const plan = effectiveDemoPlan(state, person, date);
-  const summary = person.taskAttendanceOnly ? { ...demoTaskSummary(state, person, date), selectedRecords: {} } : summarizeScheduledAttendance(
-    plan.points,
-    date,
-    [
-      ...records.map(
-        (row): AttendanceRecordInput => ({
-          id: row.id,
-          pointCode: row.pointCode,
-          occurredAt: new Date(row.occurredAt),
-          source: "DEVICE",
-          isValid: true,
-        }),
-      ),
-      ...makeups,
-    ],
-    new Date(),
-  );
+  const summary = person.taskAttendanceOnly
+    ? { ...demoTaskSummary(state, person, date), selectedRecords: {} }
+    : summarizeScheduledAttendance(
+        plan.points,
+        date,
+        [
+          ...records.map(
+            (row): AttendanceRecordInput => ({
+              id: row.id,
+              pointCode: row.pointCode,
+              occurredAt: new Date(row.occurredAt),
+              source: "DEVICE",
+              isValid: true,
+            }),
+          ),
+          ...makeups,
+        ],
+        new Date(),
+      );
   return {
     ...summary,
     projectId: person.projectId,
@@ -75,7 +162,9 @@ const attended = (
   person: ProjectParticipant,
   date: string,
 ): boolean => {
-  if (person.taskAttendanceOnly) return demoTaskSummary(state, person, date).hasResult;
+  if (person.taskAttendanceOnly)
+    return demoTaskSummary(state, person, date).hasResult;
+  if (demoWorktime(state, person, date).workedMinutes > 0) return true;
   const points = effectiveDemoPlan(state, person, date).points;
   return (
     state.records.some(
@@ -100,21 +189,54 @@ export const scheduled = (
   state: DemoState,
   person: ProjectParticipant,
   date: string,
-): boolean => person.taskAttendanceOnly ? date <= chinaToday() && demoTaskSummary(state, person, date).isScheduled :
-  date <= chinaToday() &&
-  demoMemberEligible(demoMemberOn(state, person, date), date) &&
-  effectiveDemoPlan(state, person, date).isWorkday;
+): boolean =>
+  person.taskAttendanceOnly
+    ? date <= chinaToday() && demoTaskSummary(state, person, date).isScheduled
+    : date <= chinaToday() &&
+      demoMemberEligible(demoMemberOn(state, person, date), date) &&
+      effectiveDemoPlan(state, person, date).isWorkday;
 
-export const dailyPerson = (
+export const dailyPersonAt = (
   state: DemoState,
   person: ProjectParticipant,
   date: string,
+  asOf: Date,
 ): DailyReportParticipant => {
   const historical = demoMemberOn(state, person, date);
   const result = demoDaySummary(state, historical, date);
   const isScheduled = scheduled(state, person, date);
+  const worktime = demoWorktime(state, person, date);
+  const now = new Date();
+  const credit =
+    person.participantType === "WORKER"
+      ? demoSafetySummaries(state, [person.profileId], asOf, now).get(
+          person.profileId,
+        )
+      : undefined;
+  const violations = demoSafetyReportEvents(
+    state,
+    [person.projectId],
+    [person.profileId],
+    date,
+    date,
+    asOf,
+    now,
+  ).filter(
+    (event) =>
+      event.memberId === person.memberId && event.teamId === historical.teamId,
+  );
+  const rule = resolveWorktimeRule(
+    (state.worktimeRules ?? []).filter(
+      (row) => row.projectId === person.projectId,
+    ),
+    date,
+  );
   return {
     projectId: person.projectId,
+    projectKind: rule.config.projectKind,
+    isTemporary: historical.taskAttendanceOnly === true,
+    safetyCreditScore: credit?.score ?? null,
+    safetyCreditAsOf: credit?.asOf ?? null,
     projectName: state.projects.find(
       (project) => project.id === person.projectId,
     )!.name,
@@ -148,13 +270,28 @@ export const dailyPerson = (
         r.attendanceDate === date &&
         r.status === "APPROVED",
     ).length,
-    isAbsent: isScheduled && result.isAbsent,
-    isMissingPunch: isScheduled && result.isMissingPunch,
+    isAbsent: isScheduled && result.isAbsent && worktime.workedMinutes === 0,
+    isMissingPunch:
+      (isScheduled && result.isMissingPunch) ||
+      (date < chinaToday() && worktime.isPendingVerification),
     isLate: isScheduled && result.isLate,
     isEarlyLeave: isScheduled && result.isEarlyLeave,
-    workedMinutes: isScheduled ? result.workedMinutes : 0,
+    workedMinutes: worktime.workedMinutes,
+    normalMinutes: worktime.normalMinutes,
+    overtimeMinutes: worktime.overtimeMinutes,
+    unclassifiedMinutes: worktime.unclassifiedMinutes,
+    confirmedViolationCount: violations.filter(
+      (event) => event.status === "CONFIRMED",
+    ).length,
   };
 };
+export const dailyPerson = (
+  state: DemoState,
+  person: ProjectParticipant,
+  date: string,
+): DailyReportParticipant =>
+  dailyPersonAt(state, person, date, reportAsOf(date));
+
 export const demoReport = (
   state: DemoState,
   people: readonly ProjectParticipant[],
@@ -195,7 +332,9 @@ export const demoReport = (
           date <= chinaToday() &&
           demoMemberEligible(demoMemberOn(state, person, date), date),
       );
-      const days = datesInTeam.map((date) => dailyPerson(state, person, date));
+      const days = datesInTeam.map((date) =>
+        dailyPersonAt(state, person, date, reportAsOf(end)),
+      );
       return {
         ...days[0],
         scheduledDays: datesInTeam.filter((date) =>
@@ -218,6 +357,19 @@ export const demoReport = (
           0,
         ),
         workedMinutes: days.reduce((sum, day) => sum + day.workedMinutes, 0),
+        normalMinutes: days.reduce((sum, day) => sum + day.normalMinutes, 0),
+        overtimeMinutes: days.reduce(
+          (sum, day) => sum + day.overtimeMinutes,
+          0,
+        ),
+        unclassifiedMinutes: days.reduce(
+          (sum, day) => sum + day.unclassifiedMinutes,
+          0,
+        ),
+        confirmedViolationCount: days.reduce(
+          (sum, day) => sum + day.confirmedViolationCount,
+          0,
+        ),
       };
     })
     .filter((row) => row.memberId !== undefined);
@@ -233,6 +385,11 @@ export const demoReport = (
       approvedMakeupCount: sum.approvedMakeupCount + row.approvedMakeupCount,
       abnormalRecordCount: sum.abnormalRecordCount + row.abnormalRecordCount,
       workedMinutes: sum.workedMinutes + row.workedMinutes,
+      normalMinutes: sum.normalMinutes + row.normalMinutes,
+      overtimeMinutes: sum.overtimeMinutes + row.overtimeMinutes,
+      unclassifiedMinutes: sum.unclassifiedMinutes + row.unclassifiedMinutes,
+      confirmedViolationCount:
+        sum.confirmedViolationCount + row.confirmedViolationCount,
     }),
     {
       participantCount: new Set(participants.map((row) => row.memberId)).size,
@@ -245,9 +402,13 @@ export const demoReport = (
       approvedMakeupCount: 0,
       abnormalRecordCount: 0,
       workedMinutes: 0,
+      normalMinutes: 0,
+      overtimeMinutes: 0,
+      unclassifiedMinutes: 0,
+      confirmedViolationCount: 0,
     },
   );
-  return period === "daily"
+  return period.toLowerCase() === "daily"
     ? {
         projectId: scopeId,
         periodType: "DAILY",
@@ -261,12 +422,14 @@ export const demoReport = (
               start <= chinaToday() &&
               demoMemberEligible(demoMemberOn(state, person, start), start),
           )
-          .map((person) => dailyPerson(state, person, start)),
+          .map((person) =>
+            dailyPersonAt(state, person, start, reportAsOf(end)),
+          ),
         totals,
       }
     : {
         projectId: scopeId,
-        periodType: period === "weekly" ? "WEEKLY" : "MONTHLY",
+        periodType: period.toLowerCase() === "weekly" ? "WEEKLY" : "MONTHLY",
         startDate: start,
         endDate: end,
         participants,

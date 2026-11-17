@@ -53,6 +53,13 @@ export class AttendanceController {
     private readonly attendanceService: AttendanceService,
   ) {}
 
+  @Get("projects/:projectId/overtime/today")
+  @Header("Cache-Control", "no-store")
+  @UseGuards(AccessTokenGuard)
+  overtimeToday(@CurrentUser() user: AuthenticatedUser, @Param("projectId") projectId: string): Promise<AttendanceTodayResponse> {
+    return this.attendanceService.getOvertimeAttendanceToday(projectId, user.userId);
+  }
+
   @Get("projects/:projectId/tasks/:taskId/today")
   @Header("Cache-Control", "no-store")
   @UseGuards(AccessTokenGuard)

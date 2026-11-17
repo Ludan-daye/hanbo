@@ -2,7 +2,7 @@ import type { TeamDailySummary } from "@construction/domain";
 import { z } from "zod";
 
 const count = z.number().int().nonnegative();
-const snapshot: z.ZodType<TeamDailySummary> = z.object({
+const legacySnapshot = z.object({
   teamId: z.string(),
   teamName: z.string(),
   projectName: z.string(),
@@ -38,9 +38,11 @@ const snapshot: z.ZodType<TeamDailySummary> = z.object({
           memberId: z.string(),
           name: z.string(),
           source: z.string(),
-            taskAttendanceOnly: z.boolean().optional(),
-            startedAt: z.string().nullable().optional(), finishedAt: z.string().nullable().optional(),
-            workedMinutes: count.optional(), exitConfirmedAt: z.string().nullable().optional(),
+          taskAttendanceOnly: z.boolean().optional(),
+          startedAt: z.string().nullable().optional(),
+          finishedAt: z.string().nullable().optional(),
+          workedMinutes: count.optional(),
+          exitConfirmedAt: z.string().nullable().optional(),
         }),
       ),
     }),
@@ -54,12 +56,49 @@ const snapshot: z.ZodType<TeamDailySummary> = z.object({
   ),
 });
 
+const worktimeFields = {
+  normalMinutes: count,
+  overtimeMinutes: count,
+  unclassifiedMinutes: count,
+  confirmedViolationCount: count.nullable(),
+};
+const snapshot: z.ZodType<TeamDailySummary> = legacySnapshot.extend({
+  snapshotVersion: z.literal(2),
+  ...worktimeFields,
+  people: z.array(
+    legacySnapshot.shape.people.element.extend({
+      ...worktimeFields,
+      safetyCreditScore: z.number().int().min(0).max(100).nullable(),
+    }),
+  ),
+});
+const versionOne = legacySnapshot
+  .extend({
+    snapshotVersion: z.literal(1).optional(),
+  })
+  .transform((value) => ({
+    ...value,
+    snapshotVersion: 1 as const,
+    normalMinutes: 0,
+    overtimeMinutes: 0,
+    unclassifiedMinutes: value.workedMinutes,
+    confirmedViolationCount: null,
+    people: value.people.map((person) => ({
+      ...person,
+      normalMinutes: 0,
+      overtimeMinutes: 0,
+      unclassifiedMinutes: person.workedMinutes,
+      confirmedViolationCount: null,
+      safetyCreditScore: null,
+    })),
+  }));
+
 export const readDailySnapshot = (
   value: unknown,
   teamId: string,
   day: string,
 ): TeamDailySummary => {
-  const result = snapshot.safeParse(value);
+  const result = z.union([snapshot, versionOne]).safeParse(value);
   if (
     !result.success ||
     result.data.teamId !== teamId ||

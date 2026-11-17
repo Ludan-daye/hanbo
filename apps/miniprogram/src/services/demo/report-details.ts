@@ -8,7 +8,7 @@ import type {
 import { chinaToday } from "../time";
 import { demoMemberOn, demoMemberEligible } from "./member-history";
 import { effectiveDemoPlan, demoPlanLevel } from "./plans";
-import { dailyPerson, scheduled } from "./reports";
+import { dailyPersonAt, reportAsOf, demoWorktime, scheduled } from "./reports";
 import { demoId, demoMe, type DemoState } from "./state";
 
 export const demoReportPerson = (
@@ -43,7 +43,7 @@ export const demoReportPerson = (
     throw new ApiError(404, "所选范围没有该人员的记录。", { from, to });
   const me = demoMe(state, userId);
   return {
-    person: dailyPerson(state, person, dates[0]),
+    person: dailyPersonAt(state, person, dates[0], reportAsOf(to)),
     canEvaluate:
       demoPlanLevel(state, userId, projectId, null) >= 3 &&
       demoPlanLevel(state, userId, projectId, null) >
@@ -52,8 +52,9 @@ export const demoReportPerson = (
     startDate: from,
     endDate: to,
     days: dates.map((date) => {
-      const row = dailyPerson(state, person, date);
+      const row = dailyPersonAt(state, person, date, reportAsOf(to));
       const plan = effectiveDemoPlan(state, person, date);
+      const worktime = demoWorktime(state, person, date);
       const makeups = state.makeups.filter(
         (m) =>
           m.projectId === projectId &&
@@ -66,6 +67,12 @@ export const demoReportPerson = (
         planName: plan.name,
         isScheduled: scheduled(state, person, date),
         workedMinutes: row.workedMinutes,
+        normalMinutes: row.normalMinutes,
+        overtimeMinutes: row.overtimeMinutes,
+        unclassifiedMinutes: row.unclassifiedMinutes,
+        confirmedViolationCount: row.confirmedViolationCount,
+        worktimeRuleVersion: worktime.ruleVersion,
+        isPendingVerification: worktime.isPendingVerification,
         flags: [
           row.isAbsent ? "缺勤" : "",
           row.isMissingPunch ? "缺卡" : "",
@@ -90,6 +97,10 @@ export const demoReportPerson = (
               occurredAt: r.occurredAt,
               isValid: r.status === "VALID",
               source: "DEVICE",
+              latitude: r.latitude,
+              longitude: r.longitude,
+              locationAccuracyM: r.locationAccuracyM,
+              geofenceDistanceM: r.geofenceDistanceM,
             })),
           ...makeups
             .filter((m) => m.status === "APPROVED")
@@ -99,6 +110,10 @@ export const demoReportPerson = (
               occurredAt: m.requestedOccurredAt,
               isValid: true,
               source: "MAKEUP",
+              latitude: null,
+              longitude: null,
+              locationAccuracyM: null,
+              geofenceDistanceM: null,
             })),
         ],
         makeups: makeups.map((m) => ({

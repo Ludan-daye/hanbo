@@ -1,3 +1,5 @@
+import { classifyWorktime, resolveWorktimeRule, taskWorkIntervals } from "@construction/domain";
+import { readWorktimeRules } from "../worktime/worktime.service.js";
 import { summarizeScheduledAttendance } from "@construction/domain/attendance.js";
 import {
   loadPlanningData,
@@ -167,7 +169,10 @@ export const recalculateTaskResult = async (
     where: taskDayWhere([memberId], date),
     include: { task: true },
   });
-  const summary = summarizeTaskAttendance(rows.map(taskInterval), date, now);
+  const rawSummary = summarizeTaskAttendance(rows.map(taskInterval), date, now);
+  const rules = await readWorktimeRules(db, [projectId]);
+  const classified = classifyWorktime(taskWorkIntervals(rows.map(taskInterval)), date, resolveWorktimeRule(rules.get(projectId) ?? [], date), now);
+  const summary = { ...rawSummary, workedMinutes: classified.workedMinutes };
   const abnormalRecordCount = await db.attendanceRecord.count({
     where: {
       projectId,

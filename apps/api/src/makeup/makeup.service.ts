@@ -1,3 +1,5 @@
+import { resolveOvertimePunch } from "../attendance/overtime-attendance.js";
+import { workerClockLock } from "../attendance/task-attendance.js";
 import {
   BadRequestException,
   ConflictException,
@@ -6,7 +8,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { parseTaskPoint } from "@construction/domain";
+import { parseOvertimePoint, parseTaskPoint } from "@construction/domain";
 import {
   recalculateTaskResult,
   resolveTaskMakeup,
@@ -252,9 +254,11 @@ export class MakeupService {
     );
     if (requestedOccurredAt.getTime() > Date.now())
       throw new BadRequestException({ message: "不能申请未来时间的补卡。" });
+    const overtimePoint = parseOvertimePoint(request.pointCode);
+    if (overtimePoint !== null && overtimePoint.kind !== "END") throw new BadRequestException({ message: "加班仅支持已有进场记录后的退场补卡。" });
     const taskPoint = parseTaskPoint(request.pointCode);
     const plan =
-      taskPoint !== null
+      taskPoint !== null || overtimePoint !== null
         ? null
         : await this.attendanceService.getMyPlan(
             projectId,
@@ -271,6 +275,10 @@ export class MakeupService {
       });
 
     const created = await this.prisma.$transaction(async (tx) => {
+      if (overtimePoint !== null) {
+        await workerClockLock(tx, userId);
+        await resolveOvertimePunch(tx, projectId, participant, request.pointCode, requestedOccurredAt);
+      }
       const assignment =
         taskPoint === null
           ? null
@@ -294,7 +302,7 @@ export class MakeupService {
         where: {
           projectId,
           ...participant,
-          ...(assignment === null ? { attendanceDate } : {}),
+          ...(assignment === null && overtimePoint === null ? { attendanceDate } : {}),
           pointCode: request.pointCode,
           status: "PENDING",
         },
@@ -310,7 +318,7 @@ export class MakeupService {
           participantType: participant.participantType,
           pointCode: request.pointCode,
           pointLabel:
-            assignment !== null
+            overtimePoint !== null ? "加班退场" : assignment !== null
               ? `任务完工 · ${assignment.task.title}`
               : plan!.points.find((point) => point.code === request.pointCode)!
                   .label,
@@ -334,6 +342,11 @@ export class MakeupService {
     await this.assertReviewerAuthorized(request, approverUserId);
     return this.prisma.$transaction(
       async (tx): Promise<ReviewMakeupResponse> => {
+        const overtimePoint = parseOvertimePoint(request.pointCode);
+        if (overtimePoint !== null) {
+          await workerClockLock(tx, request.requesterUserId);
+          await resolveOvertimePunch(tx, request.projectId, { participantId: request.participantId, participantType: request.participantType }, request.pointCode, request.requestedOccurredAt);
+        }
         const task =
           parseTaskPoint(request.pointCode) === null
             ? null
@@ -395,6 +408,7 @@ export class MakeupService {
             result: createAttendanceResultResponse(result),
           };
         }
+        if (overtimePoint !== null && overtimePoint.date !== toDateOnly(updated.attendanceDate)) await this.attendanceService.recalculateDailyResult(tx, updated.projectId, overtimePoint.date, updated.participantType, updated.participantId);
         const result = await this.attendanceService.recalculateDailyResult(
           tx,
           updated.projectId,

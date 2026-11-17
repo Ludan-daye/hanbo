@@ -300,10 +300,12 @@ type AttendanceRecordCreateArgs = {
 
 type AttendanceRecordFindManyArgs = {
   readonly where: {
-    readonly attendanceDate: Date;
+    readonly attendanceDate?: Date;
     readonly participantId: string;
     readonly participantType: ProfileOwnerTypeValue;
-    readonly projectId: string;
+    readonly projectId?: string;
+    readonly pointCode?: { readonly startsWith: string };
+    readonly status?: "VALID" | "INVALID";
   };
 };
 
@@ -357,6 +359,7 @@ class AttendancePrismaTestDouble {
       return row;
     },
   };
+  readonly projectWorktimeRule = { findMany: async (): Promise<[]> => [] };
   readonly attendancePlan = { findMany: async (): Promise<[]> => [] };
   readonly projectMemberHistory = { findMany: async (): Promise<[]> => [] };
 
@@ -595,10 +598,12 @@ class AttendancePrismaTestDouble {
     findMany: async (args: AttendanceRecordFindManyArgs): Promise<AttendanceRecordRecord[]> =>
       Array.from(this.attendanceRecords.values()).filter(
         (record: AttendanceRecordRecord): boolean =>
-          record.projectId === args.where.projectId &&
+          (args.where.projectId === undefined || record.projectId === args.where.projectId) &&
+          (args.where.status === undefined || record.status === args.where.status) &&
+          (args.where.pointCode === undefined || record.pointCode.startsWith(args.where.pointCode.startsWith)) &&
           record.participantType === args.where.participantType &&
           record.participantId === args.where.participantId &&
-          record.attendanceDate.getTime() === args.where.attendanceDate.getTime()
+          (args.where.attendanceDate === undefined || record.attendanceDate.getTime() === args.where.attendanceDate.getTime())
       )
   };
 

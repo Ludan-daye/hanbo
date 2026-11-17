@@ -247,6 +247,9 @@ const matchesOwnerIdFilter = (ownerId: string, filter: string | { readonly in: r
 };
 
 class ReportsPrismaTestDouble {
+  readonly projectWorktimeRule = { findMany: async (): Promise<[]> => [] };
+  readonly safetyViolation = { findMany: async (): Promise<[]> => [] };
+  readonly safetyCreditPolicy = { findMany: async () => [{ id: "test-policy", version: 1, startsOn: new Date("2020-01-01"), generalPoints: 5, seriousPoints: 10, majorPoints: 20, recoveryWorkdays: 10, recoveryPoints: 5, createdAt: new Date("2020-01-01"), createdByUserId: "test-system" }] };
   readonly shift = { findMany: async (): Promise<readonly { projectId: string; segments: readonly { sequence: number; startTime: string; endTime: string; lateGraceMins: number; earlyGraceMins: number }[] }[]> => Array.from(this.projects.values()).map((project) => ({ projectId: project.id, segments: [{ sequence: 1, startTime: "08:00", endTime: "12:00", lateGraceMins: 0, earlyGraceMins: 0 }, { sequence: 2, startTime: "13:30", endTime: "17:30", lateGraceMins: 0, earlyGraceMins: 0 }] })) };
   readonly attendancePlan = { findMany: async (): Promise<[]> => [] };
   readonly attendanceRecord = { findMany: async (): Promise<[]> => [] };
@@ -595,16 +598,19 @@ describe("ReportsModule", (): void => {
           memberStatus: "ACTIVE",
           participantId: "worker-1",
           participantType: "WORKER",
+          safetyCreditScore: 100, safetyCreditAsOf: "2026-06-03T15:59:59.999Z",
           phone: "13800000001",
           projectId: "project-1",
           projectName: "project-1",
+          projectKind: "REGULAR", isTemporary: false,
           evaluation: null,
           projectRoleLabel: "Welder",
           requiresAttendance: true,
           teamId: "team-1",
           teamName: "Steel Team",
           workType: "Steel",
-          workedMinutes: 480
+          workedMinutes: 480,
+          normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: 480, confirmedViolationCount: 0
         },
         {
           abnormalRecordCount: 0,
@@ -618,16 +624,19 @@ describe("ReportsModule", (): void => {
           memberStatus: "ACTIVE",
           participantId: "worker-2",
           participantType: "WORKER",
+          safetyCreditScore: 100, safetyCreditAsOf: "2026-06-03T15:59:59.999Z",
           phone: "13800000003",
           projectId: "project-1",
           projectName: "project-1",
+          projectKind: "REGULAR", isTemporary: false,
           evaluation: null,
           projectRoleLabel: "Carpenter",
           requiresAttendance: true,
           teamId: "team-1",
           teamName: "Steel Team",
           workType: "Woodwork",
-          workedMinutes: 0
+          workedMinutes: 0,
+          normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: 0, confirmedViolationCount: 0
         },
         {
           abnormalRecordCount: 0,
@@ -641,16 +650,19 @@ describe("ReportsModule", (): void => {
           memberStatus: "ACTIVE",
           participantId: "manager-1",
           participantType: "MANAGER",
+          safetyCreditScore: null, safetyCreditAsOf: null,
           phone: "13800000002",
           projectId: "project-1",
           projectName: "project-1",
+          projectKind: "REGULAR", isTemporary: false,
           evaluation: null,
           projectRoleLabel: "TEAM_LEADER",
           requiresAttendance: true,
           teamId: "team-1",
           teamName: "Steel Team",
           workType: null,
-          workedMinutes: 515
+          workedMinutes: 515,
+          normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: 515, confirmedViolationCount: 0
         }
       ],
       periodType: "DAILY",
@@ -666,7 +678,8 @@ describe("ReportsModule", (): void => {
         missingPunchCount: 1,
         participantCount: 3,
         scheduledDays: 3,
-        workedMinutes: 995
+        workedMinutes: 995,
+          normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: 995, confirmedViolationCount: 0
       }
     });
   });

@@ -1,7 +1,10 @@
 import { confirmDemoSafety, demoSafetyNotice, requireDemoSafety } from "./attendance-safety";
-import { parseTaskPoint, type ConfirmAttendanceSafety } from "@construction/domain";
+import { parseOvertimePoint, parseTaskPoint, type ConfirmAttendanceSafety } from "@construction/domain";
 import { approveDemoTaskMakeup, demoTaskMakeupTarget, demoTaskToday, punchDemoTask } from "./task-attendance";
 import { demoTeamWorkRequest } from "./team-work";
+import { demoWorktimeRequest } from "./worktime";
+import { demoOvertimeToday, punchDemoOvertime, requireDemoOvertimeEnd } from "./overtime-attendance";
+import { demoSafetyCreditRequest } from "./safety-credit";
 import { memberRoleAssignments, memberRoleFields } from "../member-roles";
 import { demoMyProject } from "./my-project";
 import { demoReportPerson, saveDemoEvaluation } from "./report-details";
@@ -215,6 +218,7 @@ const assertDemoScope = (
   const role = me.roles.highestRoleCode;
   const parts = path.split("?")[0].split("/").filter(Boolean);
   if (
+    parts[0] === "safety-credit" ||
     (parts[0] === "attendance" && parts[1] === "planning") ||
     role === "SYSTEM_ADMIN" ||
     parts[0] === "auth" ||
@@ -251,7 +255,7 @@ const assertDemoScope = (
       return;
   }
   if (
-    (parts[0] === "attendance" && ["records", "safety", "safety-confirmations", "tasks"].includes(parts[3])) ||
+    (parts[0] === "attendance" && ["records", "safety", "safety-confirmations", "tasks", "overtime"].includes(parts[3])) ||
     (parts[0] === "makeups" && parts[1] === "projects")
   ) {
     requirePerson(state, userId, parts[2]);
@@ -296,6 +300,8 @@ const routeDemo = (
   );
   const me = demoMe(state, userId);
   assertDemoScope(state, userId, path, method);
+  if (parts[0] === "safety-credit") return demoSafetyCreditRequest(state, userId, parts, options);
+  if (parts[0] === "worktime" && parts[1] === "projects" && parts[2]) return demoWorktimeRequest(state, userId, parts[2], options);
   if (parts[0] === "team-work") return demoTeamWorkRequest(state, userId, parts, query.date, query.cursor, query.search, options);
   if (parts[0] === "attendance" && parts[1] === "planning")
     return demoPlanRequest(state, userId, parts, method, options.data);
@@ -1211,6 +1217,7 @@ const routeDemo = (
       );
     }
     if (resource === "tasks" && parts[5] === "today" && method === "GET") return response(state, demoTaskToday(state, requirePerson(state, userId, projectId), parts[4]));
+    if (resource === "overtime" && parts[4] === "today" && method === "GET") return response(state, demoOvertimeToday(state, requirePerson(state, userId, projectId)));
     if (resource === "safety") return response(state, demoSafetyNotice(state, requirePerson(state, userId, projectId), query.pointCode));
     if (resource === "safety-confirmations") return confirmDemoSafety(state, userId, requirePerson(state, userId, projectId), options.data as ConfirmAttendanceSafety);
     if (resource === "records") {
@@ -1240,6 +1247,7 @@ const routeDemo = (
           { message: "OUTSIDE_GEOFENCE", projectId },
         );
       if (parseTaskPoint(body.pointCode) !== null) return punchDemoTask(state, userId, person, body);
+      if (parseOvertimePoint(body.pointCode) !== null) return punchDemoOvertime(state, userId, person, body);
       const plan = effectiveDemoPlan(state, person, body.attendanceDate);
       const point = plan.points.find((row) => row.code === body.pointCode);
       if (
@@ -1343,6 +1351,8 @@ const routeDemo = (
       const person = requirePerson(state, userId, parts[2]);
       const body = options.data as SubmitMakeupBody;
       const task = parseTaskPoint(body.pointCode) === null ? null : demoTaskMakeupTarget(state, person, body.pointCode, body.requestedOccurredAt);
+      const overtime = parseOvertimePoint(body.pointCode);
+      if (overtime !== null) requireDemoOvertimeEnd(state, person, body.pointCode, body.requestedOccurredAt);
       const plan = effectiveDemoPlan(state, person, body.attendanceDate);
       const point = plan.points.find((row) => row.code === body.pointCode);
       if (
@@ -1365,20 +1375,20 @@ const routeDemo = (
           (r) =>
             r.projectId === person.projectId &&
             r.participantId === person.profileId &&
-            (task !== null || r.attendanceDate === body.attendanceDate) &&
+            (task !== null || overtime !== null || r.attendanceDate === body.attendanceDate) &&
             r.pointCode === body.pointCode &&
             r.status !== "REJECTED",
         )
       )
         throw new ApiError(409, "该时点已有打卡或补卡，请刷新记录。", {});
       if (
-        (task === null && (!plan.isWorkday || !point)) ||
+        (task === null && overtime === null && (!plan.isWorkday || !point)) ||
         new Date(body.requestedOccurredAt).getTime() > Date.now()
       )
         throw new ApiError(400, "请按当天有效排班申请已发生的补卡。", {});
       const makeup = {
         ...body,
-        pointLabel: task !== null ? `任务完工 · ${task.task.title}` : point!.label,
+        pointLabel: task !== null ? `任务完工 · ${task.task.title}` : overtime !== null ? "加班退场" : point!.label,
         id: demoId("makeup"),
         projectId: person.projectId,
         participantId: person.profileId,
@@ -1425,6 +1435,7 @@ const routeDemo = (
       approvedAt: new Date().toISOString(),
     };
     const approvedState = updated.status === "APPROVED" && parseTaskPoint(request.pointCode) !== null ? approveDemoTaskMakeup(state, applicant, request.pointCode, request.requestedOccurredAt) : state;
+    if (updated.status === "APPROVED" && parseOvertimePoint(request.pointCode) !== null) requireDemoOvertimeEnd(state, applicant, request.pointCode, request.requestedOccurredAt);
     const next = {
       ...approvedState,
       makeups: state.makeups.map((row) =>
