@@ -33,6 +33,7 @@ import {
 } from "../../services/workflows";
 import { chinaToday, formatChinaDate } from "../../services/time";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 export default function PersonReuse(): JSX.Element {
   useSessionGuard();
@@ -77,7 +78,7 @@ export default function PersonReuse(): JSX.Element {
       (failure: unknown): void => {
         if (!cancelled)
           setError(
-            failure instanceof Error ? failure.message : "读取可复用项目失败",
+            errorMessage(failure, "读取可复用项目失败"),
           );
       },
     );
@@ -110,7 +111,7 @@ export default function PersonReuse(): JSX.Element {
       (failure: unknown): void => {
         if (!cancelled)
           setError(
-            failure instanceof Error ? failure.message : "读取来源人员失败",
+            errorMessage(failure, "读取来源人员失败"),
           );
       },
     );
@@ -129,7 +130,7 @@ export default function PersonReuse(): JSX.Element {
       );
       if (!fields.projectRoleLabel) throw new Error("请填写目标项目岗位。");
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "请检查项目职级。");
+      setError(errorMessage(failure, "请检查项目职级。"));
       return;
     }
     const confirmation = await Taro.showModal({
@@ -154,7 +155,7 @@ export default function PersonReuse(): JSX.Element {
       await Taro.showToast({ title: "人员已加入", icon: "success" });
       await Taro.navigateBack();
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "加入项目失败");
+      setError(errorMessage(failure, "加入项目失败"));
     } finally {
       setBusy(false);
     }
@@ -166,7 +167,7 @@ export default function PersonReuse(): JSX.Element {
       <Notice>
         公司内复用人员，保留原档案；需管理两个项目。
       </Notice>
-      {error ? <Notice>{error}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
       {!projectId ? (
         <StateView title="请从目标项目人员页面进入" />
       ) : sources === null && !error ? (

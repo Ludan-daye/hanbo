@@ -248,7 +248,7 @@ export const VideoFaceCapture = <Result extends CompletedFaceSession>({
           <View>完成两个动作，约 8 秒自动结束。</View>
           <View>录像发送至腾讯云，核验结果由服务器确认。</View>
         </Subtitle>
-        {error !== null ? <Notice>{error}</Notice> : null}
+        {error !== null ? <Notice tone="error">{error}</Notice> : null}
         {phase === "RETRY" ? (
           <Button
             onClick={() => {

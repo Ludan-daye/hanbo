@@ -24,6 +24,7 @@ import {
 import { fetchParticipants } from "../../services/management";
 import type { ProjectParticipant } from "../../services/management.types";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 const TARGET_OPTIONS = [
   { label: "工人", value: "WORKER" as const },
@@ -44,12 +45,14 @@ export default function Invitation(): JSX.Element {
   const [invitation, setInvitation] = useState<BindingInvitation | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (projectId === null) {
       return;
     }
     let cancelled = false;
+    setLoadError(null);
     void (async () => {
       try {
         const rows = await fetchParticipants(projectId);
@@ -58,7 +61,7 @@ export default function Invitation(): JSX.Element {
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "REQUEST_FAILED");
+          setLoadError(errorMessage(e, "成员列表读取失败，请重试。"));
         }
       }
     })();
@@ -91,9 +94,9 @@ export default function Invitation(): JSX.Element {
       });
       setInvitation(r);
     } catch (e) {
-      const message = e instanceof Error ? e.message : "REQUEST_FAILED";
+      const message = errorMessage(e, "邀请码生成未完成，请重试。");
       setError(message);
-      await Taro.showToast({ icon: "none", title: "生成失败" });
+      await Taro.showToast({ icon: "none", title: message });
     } finally {
       setBusy(false);
     }
@@ -115,8 +118,12 @@ export default function Invitation(): JSX.Element {
         }}
       />
 
-      {items === null && error === null ? <StateView title="加载中…" /> : null}
-      {error !== null ? <StateView title="出错" sub={error} /> : null}
+      {items === null && loadError === null ? (
+        <StateView title="正在读取项目成员…" />
+      ) : null}
+      {loadError !== null ? (
+        <StateView title="成员列表读取失败" sub={loadError} />
+      ) : null}
 
       {items !== null && visible.length === 0 ? (
         <StateView title="暂无这类成员" sub="请先添加项目成员后再生成邀请。" />
@@ -136,6 +143,7 @@ export default function Invitation(): JSX.Element {
         ))}
       </View>
 
+      {error !== null ? <Notice tone="error">{error}</Notice> : null}
       {selectedProfileId !== null && invitation === null ? (
         <Button
           loading={busy}

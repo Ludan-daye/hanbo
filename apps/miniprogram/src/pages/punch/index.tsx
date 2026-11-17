@@ -68,6 +68,7 @@ import {
   taskPunchBlock,
   type PunchSchedule as AttendanceToday,
 } from "./point-selection";
+import { errorMessage, isUserCancel } from "../../services/error-messages";
 import { useSession } from "../../store/session";
 import { uploadImage } from "../../services/uploads";
 import {
@@ -108,18 +109,11 @@ type FaceEvidence = Pick<
   SubmitAttendanceRecordBody,
   "faceVerificationSessionId" | "selfieHash" | "selfieObjectKey"
 >;
-const locationLifetimeMs = 60_000;
 const contextKey = (
   projectId: string | null,
   point: string | null,
   date: string | undefined,
 ): string => `${projectId}/${point}/${date}`;
-const errorText = (reason: unknown): string => {
-  if (reason instanceof Error) return reason.message;
-  if (typeof reason === "object" && reason !== null && "errMsg" in reason)
-    return String(reason.errMsg);
-  return "操作未完成，请重试。";
-};
 const requireOpenPoint = (
   today: AttendanceToday,
   point: AttendancePointCode,
@@ -175,6 +169,15 @@ export default function Punch(): JSX.Element {
     null,
   );
   const [safetyRevision, setSafetyRevision] = useState<number>(0);
+  const autoFace = useRef<boolean>(false);
+  // 引用必须稳定：安全交底卡片在回调变化时会清空回执并重新读取交底。
+  const confirmWorkerSafety = useCallback(
+    (receipt: PunchSafetyReceipt | null): void => {
+      autoFace.current = receipt !== null;
+      setSafetyReceipt(receipt);
+    },
+    [],
+  );
   const [faceInfo, setFaceInfo] = useState<MyFace | null>(null);
   const [location, setLocation] = useState<LocationCheck | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -225,10 +228,9 @@ export default function Punch(): JSX.Element {
       setSafetyRevision((value) => value + 1);
     }
   };
-  const inside =
-    location?.context === context.current &&
-    location.isInside &&
-    Date.now() - location.checkedAt < locationLifetimeMs;
+  // 定位只在本次尝试内作为“已进入范围”的界面依据；刷脸与保存前服务端会再次核验位置，
+  // 因此不随时间自动失效，避免工人阅读交底超过一分钟后被打回第一步。
+  const inside = location?.context === context.current && location.isInside;
   const isDemoFace = FRONTEND_DEMO && faceInfo?.mode === "DEVELOPMENT";
   const faceReady =
     isDemoFace ||
@@ -311,14 +313,6 @@ export default function Punch(): JSX.Element {
     };
   }, [workerAppearance, error, locationError]);
   useEffect(() => {
-    if (location === null) return;
-    const timer = setTimeout(
-      () => setLocation(null),
-      Math.max(0, location.checkedAt + locationLifetimeMs - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [location]);
-  useEffect(() => {
     if (proof === null) return;
     const timer = setTimeout(
       () => {
@@ -350,7 +344,7 @@ export default function Punch(): JSX.Element {
       } catch (reason: unknown) {
         if (sequence === loadSeq.current) {
           invalidateSafetyOnError(reason);
-          const message = errorText(reason);
+          const message = errorMessage(reason);
           setScheduleError(message);
           setError(message);
         }
@@ -394,7 +388,7 @@ export default function Punch(): JSX.Element {
         setPointCode(null);
         resetEvidence();
         invalidateSafetyOnError(reason);
-        setError(errorText(reason));
+        setError(errorMessage(reason));
       },
     );
     return () => {
@@ -460,13 +454,8 @@ export default function Punch(): JSX.Element {
         });
         return position;
       } catch (reason: unknown) {
-        const message = errorText(reason);
         if (context.current === expected)
-          setLocationError(
-            message.includes("auth") || message.includes("deny")
-              ? "定位未授权，请在微信设置中开启。"
-              : message,
-          );
+          setLocationError(errorMessage(reason, "定位未完成，请重试。"));
         throw reason;
       }
     },
@@ -486,7 +475,7 @@ export default function Punch(): JSX.Element {
         await confirmLocation(pid, point, data);
       } catch (reason: unknown) {
         invalidateSafetyOnError(reason);
-        setError(errorText(reason));
+        setError(errorMessage(reason));
       } finally {
         busy.current = false;
         setPhase("IDLE");
@@ -528,9 +517,9 @@ export default function Punch(): JSX.Element {
       setSuccess(null);
       setExpiredProofContext(null);
     } catch (reason: unknown) {
-      if (!errorText(reason).toLowerCase().includes("cancel")) {
+      if (!isUserCancel(reason)) {
         invalidateSafetyOnError(reason);
-        setError(errorText(reason));
+        setError(errorMessage(reason));
       }
     } finally {
       busy.current = false;
@@ -612,7 +601,7 @@ export default function Punch(): JSX.Element {
       await savePunch(current, { faceVerificationSessionId: result.id });
     } catch (reason: unknown) {
       invalidateSafetyOnError(reason);
-      setError(errorText(reason));
+      setError(errorMessage(reason));
     } finally {
       busy.current = false;
       setPhase("IDLE");
@@ -699,7 +688,7 @@ export default function Punch(): JSX.Element {
       }
     } catch (reason: unknown) {
       invalidateSafetyOnError(reason);
-      setError(errorText(reason));
+      setError(errorMessage(reason));
     }
     busy.current = false;
     setPhase("IDLE");
@@ -740,7 +729,7 @@ export default function Punch(): JSX.Element {
       await savePunch(proof, { faceVerificationSessionId: proof.id });
     } catch (reason: unknown) {
       invalidateSafetyOnError(reason);
-      setError(errorText(reason));
+      setError(errorMessage(reason));
     } finally {
       busy.current = false;
       setPhase("IDLE");
@@ -908,7 +897,7 @@ export default function Punch(): JSX.Element {
         camera: settings.authSetting["scope.camera"] === false,
       });
     } catch (cause: unknown) {
-      setError(errorText(cause));
+      setError(errorMessage(cause));
     }
   };
   const act = (): void => {
@@ -932,6 +921,14 @@ export default function Punch(): JSX.Element {
       void Taro.navigateTo({ url: "/pages/face-profile/index" });
     else if (step.action === "verify" && safetyReady) void startFacePunch();
   };
+  useEffect(() => {
+    // 工人确认安全交底后直接进入刷脸，省去再点一次“开始人脸核验”。
+    if (!autoFace.current || safetyReceipt === null) return;
+    autoFace.current = false;
+    if (workerAppearance && step.action === "verify" && safetyReady && !isBusy)
+      void startFacePunch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safetyReceipt]);
   const viewRecords = (): void => {
     if (projectId !== null)
       void Taro.navigateTo({
@@ -980,7 +977,7 @@ export default function Punch(): JSX.Element {
                     {activeProject.teamName ?? "项目直属"} ·{" "}
                     {displayProjectRole(activeProject.projectRoleLabel)}
                   </View>
-                  {requestedTaskId === null && (
+                  {requestedTaskId === null && activeProject.taskAttendanceOnly !== true && (
                     <NativeButton
                       className="worker-punch__text-button"
                       disabled={isBusy}
@@ -1354,7 +1351,7 @@ export default function Punch(): JSX.Element {
                 revision={safetyRevision}
                 disabled={isBusy || !inside || sitePhotoPath === null}
                 receipt={safetyReady ? safetyReceipt : null}
-                onConfirmed={setSafetyReceipt}
+                onConfirmed={confirmWorkerSafety}
               />
               <View className="worker-punch__actions">
                 {(!safetyBlocked || isBusy) && (
@@ -1769,7 +1766,7 @@ export default function Punch(): JSX.Element {
         </>
       ) : null}
       {error !== null && locationError === null ? (
-        <Notice>{error}</Notice>
+        <Notice tone="error">{error}</Notice>
       ) : null}
       {error !== null && (today === null || projects === null) ? (
         <Button variant="outline" onClick={refresh}>

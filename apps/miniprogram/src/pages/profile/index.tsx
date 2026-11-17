@@ -15,7 +15,7 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { AccountAvatar } from "../../components/account-avatar";
-import { FRONTEND_DEMO } from "../../config/env";
+import { FRONTEND_DEMO, TEST_LOGIN_ENABLED } from "../../config/env";
 import { useAccountProfile } from "../../hooks/use-account-profile";
 import { AccountProfileForm } from "../../components/account-profile-form";
 import { resetDemoState } from "../../services/demo/client";
@@ -31,6 +31,10 @@ import { useSession } from "../../store/session";
 import { FlowScreen } from "../../components/worker-flow";
 
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
+
+/** 活体测试会产生真实的云端核验费用，只在演示或测试登录构建中展示。 */
+const TEST_TOOLS_VISIBLE = FRONTEND_DEMO || TEST_LOGIN_ENABLED;
 
 export default function Profile(): JSX.Element {
   useSessionGuard();
@@ -60,7 +64,7 @@ export default function Profile(): JSX.Element {
       (reason) => {
         if (!cancelled)
           setError(
-            reason instanceof Error ? reason.message : "暂时无法读取项目信息",
+            errorMessage(reason, "暂时无法读取项目信息"),
           );
       },
     );
@@ -70,6 +74,15 @@ export default function Profile(): JSX.Element {
   }, [revision, state.me]);
   const signOut = async (): Promise<void> => {
     if (busy) return;
+    const confirm = await Taro.showModal({
+      title: FRONTEND_DEMO ? "切换演示身份" : "退出登录",
+      content: FRONTEND_DEMO
+        ? "退出当前演示身份并返回登录页。"
+        : "退出后需要重新微信登录才能打卡。",
+      confirmText: "退出",
+      confirmColor: "#c33845",
+    });
+    if (!confirm.confirm) return;
     setBusy(true);
     try {
       await clear();
@@ -91,7 +104,7 @@ export default function Profile(): JSX.Element {
       resetDemoState();
       await Taro.reLaunch({ url: "/pages/login/index" });
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "重置失败");
+      setError(errorMessage(failure, "重置失败"));
       setBusy(false);
     }
   };
@@ -150,10 +163,12 @@ export default function Profile(): JSX.Element {
           </View>
           <View className="worker-profile__group">
             <NativeButton className="worker-profile__row" onClick={() => go("/pages/permission-levels/index")}><View>权限与范围</View><View className="worker-profile__row-hint">查看</View></NativeButton>
-            <NativeButton className="worker-profile__row worker-profile__aux-toggle" onClick={() => setAuxiliaryOpen(!auxiliaryOpen)}>
-              <View>辅助测试</View><View className="worker-profile__row-hint">{auxiliaryOpen ? "收起" : "展开"}</View>
-            </NativeButton>
-            {auxiliaryOpen ? (
+            {TEST_TOOLS_VISIBLE ? (
+              <NativeButton className="worker-profile__row worker-profile__aux-toggle" onClick={() => setAuxiliaryOpen(!auxiliaryOpen)}>
+                <View>辅助测试</View><View className="worker-profile__row-hint">{auxiliaryOpen ? "收起" : "展开"}</View>
+              </NativeButton>
+            ) : null}
+            {TEST_TOOLS_VISIBLE && auxiliaryOpen ? (
               <View className="worker-profile__auxiliary">
                 <NativeButton className="worker-profile__row" onClick={() => go("/pages/punch-test/index")}><View>打卡流程测试</View><View className="worker-profile__row-hint">查看</View></NativeButton>
                 {state.me.profile.id ? <NativeButton className="worker-profile__row" onClick={() => go("/pages/face-profile/index?test=1")}><View>活体测试</View><View className="worker-profile__row-hint">查看</View></NativeButton> : null}
@@ -367,7 +382,7 @@ export default function Profile(): JSX.Element {
                 await Taro.reLaunch({ url: "/pages/login/index" });
               } catch (failure: unknown) {
                 setError(
-                  failure instanceof Error ? failure.message : "重置失败",
+                  errorMessage(failure, "重置失败"),
                 );
                 setBusy(false);
               }

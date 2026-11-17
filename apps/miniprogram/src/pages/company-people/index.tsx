@@ -23,6 +23,7 @@ import { fetchCompanyParticipants } from "../../services/management";
 import type { CompanyParticipant } from "../../services/management.types";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 type Filter = "ALL" | PermissionCategory;
 const FILTER_OPTIONS = [
@@ -57,7 +58,7 @@ export default function CompanyPeople(): JSX.Element {
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "REQUEST_FAILED");
+          setError(errorMessage(e, "操作未完成，请稍后重试。"));
         }
       }
     })();

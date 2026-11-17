@@ -45,6 +45,7 @@ import {
   type RegistrationStep,
 } from "../../services/worker-registration-form";
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 type Choice = "YES" | "NO" | "";
 const choiceValue = (value: boolean | null): Choice =>
@@ -170,9 +171,7 @@ export default function WorkerRegistrationPage(): JSX.Element {
       (cause: unknown) => {
         if (!cancelled)
           setError(
-            cause instanceof Error
-              ? cause.message
-              : "用工资料读取失败，请重试。",
+            errorMessage(cause, "用工资料读取失败，请重试。"),
           );
       },
     );
@@ -282,7 +281,7 @@ export default function WorkerRegistrationPage(): JSX.Element {
       setSaved(true);
     } catch (cause: unknown) {
       setError(
-        cause instanceof Error ? cause.message : "用工资料保存失败，请重试。",
+        errorMessage(cause, "用工资料保存失败，请重试。"),
       );
     } finally {
       setBusy(false);
@@ -295,7 +294,7 @@ export default function WorkerRegistrationPage(): JSX.Element {
       await clear();
       await Taro.reLaunch({ url: "/pages/login/index" });
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "退出失败，请重试。");
+      setError(errorMessage(cause, "退出失败，请重试。"));
     } finally {
       setBusy(false);
     }
@@ -813,7 +812,7 @@ export default function WorkerRegistrationPage(): JSX.Element {
               </View>
             </View>
           ) : null}
-          {error ? <Notice>{error}</Notice> : null}
+          {error ? <Notice tone="error">{error}</Notice> : null}
           {!workerFlow || step !== null ? (
             <View className={workerFlow ? "registration-actions" : ""}>
               {workerFlow && (step !== 1 || !required || returnToReview) ? (

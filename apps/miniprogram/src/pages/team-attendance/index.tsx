@@ -1,5 +1,6 @@
 import { MonthlyExport } from "../../components/monthly-export";
 import { Picker, View } from "@tarojs/components";
+import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import { ReportParticipants } from "../../components/report-participants";
 import { useSessionGuard } from "../../hooks/use-session-guard";
@@ -33,6 +34,7 @@ import {
 import { useSession } from "../../store/session";
 
 import { totalsStatItems } from "../reports/view-model";
+import { errorMessage } from "../../services/error-messages";
 
 type Period = "DAILY" | "WEEKLY" | "MONTHLY";
 const PERIOD_OPTIONS = [
@@ -48,8 +50,13 @@ export default function TeamAttendance(): JSX.Element {
   const { state } = useSession();
   const { revision, refresh } = usePageRefresh();
   const teamId = useManagedTeamId(state.me);
+  const requestedDate = Taro.useRouter().params.date;
   const [period, setPeriod] = useState<Period>("DAILY");
-  const [date, setDate] = useState<string>(chinaToday());
+  const [date, setDate] = useState<string>(
+    requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
+      ? requestedDate
+      : chinaToday(),
+  );
   const [weekStart, setWeekStart] = useState<string>(chinaMonday());
   const [month, setMonth] = useState<string>(chinaMonth());
   const [report, setReport] = useState<Report | null>(null);
@@ -75,7 +82,7 @@ export default function TeamAttendance(): JSX.Element {
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "REQUEST_FAILED");
+          setError(errorMessage(e, "操作未完成，请稍后重试。"));
         }
       }
     })();
@@ -87,7 +94,7 @@ export default function TeamAttendance(): JSX.Element {
   if (teamId === null) {
     return (
       <Screen>
-        <PageHeader title="团队考勤" />
+        <PageHeader title="班组考勤" />
         <StateView title="无班组" sub="当前账号没有班组长身份。" />
       </Screen>
     );
@@ -97,7 +104,7 @@ export default function TeamAttendance(): JSX.Element {
 
   return (
     <Screen>
-      <PageHeader title="团队考勤" />
+      <PageHeader title="班组考勤" />
       <Segmented
         options={PERIOD_OPTIONS}
         value={period}
@@ -147,9 +154,9 @@ export default function TeamAttendance(): JSX.Element {
         ) : null}
       </View>
       {error !== null ? (
-        <StateView title="加载失败" sub={error} onRetry={refresh} />
+        <StateView title="班组考勤读取失败" sub={error} onRetry={refresh} />
       ) : null}
-      {report === null && error === null ? <StateView title="加载中…" /> : null}
+      {report === null && error === null ? <StateView title="正在读取班组考勤…" /> : null}
       {report !== null ? (
         <View className="report-range">
           统计区间：{report.startDate} — {report.endDate}

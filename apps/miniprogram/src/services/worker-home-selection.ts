@@ -17,6 +17,7 @@ export type WorkerHomeSelection = {
     | "empty"
     | "single"
     | "remembered"
+    | "suggested"
     | "choice-required"
     | "invalid";
   readonly preference: WorkerHomePreference;
@@ -47,6 +48,7 @@ export const workerHomeStorageKey = (scope: {
 export const resolveWorkerHomeSelection = (
   entries: readonly ProjectAttendance[],
   preference: WorkerHomePreference,
+  now?: string,
 ): WorkerHomeSelection => {
   if (preference !== null && "projectId" in preference) {
     return entries.some(
@@ -66,6 +68,19 @@ export const resolveWorkerHomeSelection = (
   if (entries.length === 1) {
     const projectId = entries[0].project.projectId;
     return { projectId, reason: "single", preference: { projectId } };
+  }
+  // 多个项目且没有记住的选择时，若只有一个项目今天还有待打卡时点，直接展示它；
+  // 不写入偏好，工人仍可“切换项目”。
+  if (now !== undefined) {
+    const pending = entries.filter(
+      (entry) => workerHomeNextPoint(entry, now) !== null,
+    );
+    if (pending.length === 1)
+      return {
+        projectId: pending[0].project.projectId,
+        reason: "suggested",
+        preference: null,
+      };
   }
   return { projectId: null, reason: "choice-required", preference: null };
 };

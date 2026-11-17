@@ -20,6 +20,7 @@ import {
   appealSafetyViolation,
   fetchMySafetyCredit,
 } from "../../services/safety-credit";
+import { errorMessage } from "../../services/error-messages";
 
 export default function MySafety(): JSX.Element {
   useSessionGuard();
@@ -38,7 +39,7 @@ export default function MySafety(): JSX.Element {
       },
       (cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : "安全信用读取失败");
+          setError(errorMessage(cause, "安全信用读取失败"));
       },
     );
     return () => {
@@ -48,9 +49,13 @@ export default function MySafety(): JSX.Element {
   return (
     <Screen appearance="worker">
       <PageHeader title="我的安全信用" />
-      {error && <Notice>{error}</Notice>}
+      {error && data !== null && <Notice tone="error">{error}</Notice>}
       {data === null ? (
-        <StateView title="读取中" />
+        error ? (
+          <StateView title="安全信用读取失败" sub={error} onRetry={refresh} />
+        ) : (
+          <StateView title="正在读取安全信用…" />
+        )
       ) : (
         <>
           <Section title={`${data.summary.score} 分`}>
@@ -110,9 +115,7 @@ export default function MySafety(): JSX.Element {
                           },
                           (cause: unknown) =>
                             setError(
-                              cause instanceof Error
-                                ? cause.message
-                                : "申诉提交失败",
+                              errorMessage(cause, "申诉提交失败"),
                             ),
                         )
                         .finally(() => setBusy(false));

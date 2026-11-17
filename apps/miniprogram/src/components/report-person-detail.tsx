@@ -14,6 +14,7 @@ import {
   StateView,
   Subtitle,
 } from "./ui/index";
+import { errorMessage } from "../services/error-messages";
 
 type Props = {
   readonly projectId: string;
@@ -69,7 +70,7 @@ export const ReportPerson = ({
       .catch((failure: unknown) => {
         if (!cancelled)
           setError(
-            failure instanceof Error ? failure.message : "人员明细加载失败。",
+            errorMessage(failure, "人员明细加载失败。"),
           );
       });
     return () => {
@@ -97,9 +98,7 @@ export const ReportPerson = ({
       onChanged();
     } catch (failure: unknown) {
       setError(
-        failure instanceof Error
-          ? failure.message
-          : "评分保存失败，请刷新后重试。",
+        errorMessage(failure, "评分保存失败，请刷新后重试。"),
       );
     } finally {
       setSaving(false);
@@ -267,9 +266,7 @@ export const ReportPerson = ({
                                 scale: 16,
                               }).catch((failure: unknown) =>
                                 setError(
-                                  failure instanceof Error
-                                    ? failure.message
-                                    : "地图打开失败",
+                                  errorMessage(failure, "地图打开失败"),
                                 ),
                               );
                             }

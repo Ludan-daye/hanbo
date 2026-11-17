@@ -15,6 +15,7 @@ import {
 } from "../../components/ui";
 import { FlowScreen } from "../../components/worker-flow";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 import "./index.scss";
 import {
   VideoFaceCapture,
@@ -54,12 +55,8 @@ type LocationResult = GeofenceCheck & {
   readonly accuracyPassed: boolean;
 };
 type Phase = "IDLE" | "LOCATING" | "PHOTO" | "PREPARING" | "VERIFYING";
-const errorText = (reason: unknown): string => {
-  if (reason instanceof Error) return reason.message;
-  if (typeof reason === "object" && reason !== null && "errMsg" in reason)
-    return String(reason.errMsg);
-  return "测试未完成，请重试。";
-};
+const errorText = (reason: unknown): string =>
+  errorMessage(reason, "测试未完成，请重试。");
 
 export default function PunchTest(): JSX.Element {
   useSessionGuard();
@@ -318,9 +315,13 @@ export default function PunchTest(): JSX.Element {
           真实核验仅支持微信小程序手机预览。
         </Notice>
       ) : null}
-      {error ? <Notice>{error}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
       {projects === null ? (
-        <StateView title="读取测试条件" onRetry={refresh} />
+        <StateView
+          title={error ? "测试条件读取失败" : "正在读取测试条件…"}
+          kind={error ? "error" : "loading"}
+          onRetry={refresh}
+        />
       ) : projects.length === 0 ? (
         <StateView
           title="尚未加入项目"

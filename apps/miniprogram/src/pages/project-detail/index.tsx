@@ -21,6 +21,7 @@ import { validateProjectLocation } from "../../services/project-location";
 import { FEATURES } from "../../routing/features";
 import type { ManagedProject } from "../../services/management.types";
 import { fetchProject, updateProject } from "../../services/workflows";
+import { errorMessage } from "../../services/error-messages";
 
 export default function ProjectDetail(): JSX.Element {
   useSessionGuard();
@@ -30,6 +31,7 @@ export default function ProjectDetail(): JSX.Element {
   const refresh = (): void => setRevision((current) => current + 1);
   const [project, setProject] = useState<ManagedProject | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   useEffect(() => {
     if (!projectId) return;
@@ -43,7 +45,7 @@ export default function ProjectDetail(): JSX.Element {
       },
       (failure: unknown) => {
         if (!cancelled)
-          setError(failure instanceof Error ? failure.message : "读取项目失败");
+          setError(errorMessage(failure, "读取项目失败"));
       },
     );
     return () => {
@@ -53,24 +55,24 @@ export default function ProjectDetail(): JSX.Element {
   const save = async (): Promise<void> => {
     if (!project || busy) return;
     if (!project.name.trim()) {
-      setError("请填写项目名称。");
+      setFormError("请填写项目名称。");
       return;
     }
     try {
       validateProjectLocation(project);
     } catch (cause: unknown) {
-      setError(
-        cause instanceof Error ? cause.message : "请在地图上重新选择工地范围。",
+      setFormError(
+        errorMessage(cause, "请在地图上重新选择工地范围。"),
       );
       return;
     }
     setBusy(true);
-    setError(null);
+    setFormError(null);
     try {
       setProject(await updateProject(project));
       await Taro.showToast({ title: "项目设置已保存", icon: "success" });
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "保存项目失败");
+      setFormError(errorMessage(failure, "保存项目失败"));
     } finally {
       setBusy(false);
     }
@@ -79,7 +81,7 @@ export default function ProjectDetail(): JSX.Element {
     <Screen>
       <PageHeader title="项目工作台" />
       {error ? (
-        <StateView title="项目操作未完成" sub={error} onRetry={refresh} />
+        <StateView title="无法读取项目" sub={error} onRetry={refresh} />
       ) : null}
       {projectId && !project && !error ? <StateView title="加载中…" /> : null}
       {!projectId ? (
@@ -216,6 +218,7 @@ export default function ProjectDetail(): JSX.Element {
               }
             />
             <Notice>修改范围将影响后续打卡，请核对位置。</Notice>
+            {formError ? <Notice tone="error">{formError}</Notice> : null}
             <Button
               loading={busy}
               onClick={() => {

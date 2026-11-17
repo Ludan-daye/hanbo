@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Field, ListItem, Section, StateView, Subtitle } from "../ui";
 import { fetchProjectManagerCandidates } from "../../services/management";
 import type { ProjectManagerCandidate } from "../../services/management.types";
+import { errorMessage } from "../../services/error-messages";
 
 type ProjectManagerPickerProps = {
   readonly companyId: string;
@@ -36,9 +37,7 @@ export const ProjectManagerPicker = ({
         .catch((cause: unknown) => {
           if (!cancelled)
             setError(
-              cause instanceof Error
-                ? cause.message
-                : "加载管理人员失败，请重试。",
+              errorMessage(cause, "加载管理人员失败，请重试。"),
             );
         });
     }, 250);

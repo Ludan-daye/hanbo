@@ -13,7 +13,6 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { RolePanel } from "../../components/role-panels/index";
-import { WorkerProjectOverview } from "../../components/worker-project-overview";
 import { WorkerHome } from "../../components/worker-home";
 import { TeamLeaderOverview } from "../../components/team-leader-overview";
 import { AccountAvatar } from "../../components/account-avatar";
@@ -37,6 +36,7 @@ import {
 import { useSession } from "../../store/session";
 
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 export default function Home(): JSX.Element {
   useSessionGuard();
@@ -79,7 +79,7 @@ export default function Home(): JSX.Element {
       } catch (reason) {
         if (!cancelled)
           setError(
-            reason instanceof Error ? reason.message : "暂时无法读取工作概览",
+            errorMessage(reason, "暂时无法读取工作概览"),
           );
       } finally {
         if (!cancelled) setLoading(false);
@@ -127,13 +127,7 @@ export default function Home(): JSX.Element {
         </View>
       </View>
       {accountError ? <Notice>{accountError}</Notice> : null}
-      {panel === "worker" ? (
-        <WorkerProjectOverview
-          revision={revision}
-          onRefresh={refresh}
-          account={account}
-        />
-      ) : panel === "teamLeader" ? (
+      {panel === "teamLeader" ? (
         <TeamLeaderOverview revision={revision} onRefresh={refresh} />
       ) : (
         <View className="home-hero">
@@ -210,7 +204,7 @@ export default function Home(): JSX.Element {
       ) : null}
       {settings?.announcement ? <Notice>{settings.announcement}</Notice> : null}
       {panel !== "teamLeader" ? (
-        <Section title={panel === "worker" ? "快捷入口" : "常用功能"}>
+        <Section title="常用功能">
           <View className="home-shortcuts">
             <RolePanel panel={panel} limit={4} />
           </View>
@@ -222,9 +216,7 @@ export default function Home(): JSX.Element {
           onClick={() => {
             void refreshMe().catch((cause: unknown): void => {
               setError(
-                cause instanceof Error
-                  ? cause.message
-                  : "读取角色信息失败，请重试。",
+                errorMessage(cause, "读取角色信息失败，请重试。"),
               );
             });
           }}

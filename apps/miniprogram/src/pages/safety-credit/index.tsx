@@ -1,4 +1,4 @@
-import { Picker } from "@tarojs/components";
+import { Image, Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import type { SafetyCreditBoard, SafetySeverity } from "@construction/domain";
@@ -32,6 +32,9 @@ import {
 } from "../../services/safety-credit";
 import { uploadImage, type UploadResult } from "../../services/uploads";
 import { chinaToday } from "../../services/time";
+import { errorMessage, isUserCancel } from "../../services/error-messages";
+
+import "./index.scss";
 
 export default function TeamSafetyCredit(): JSX.Element {
   useSessionGuard();
@@ -50,7 +53,14 @@ export default function TeamSafetyCredit(): JSX.Element {
     new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 16),
   );
   const [description, setDescription] = useState<string>("");
-  const [evidence, setEvidence] = useState<readonly UploadResult[]>([]);
+  const [evidence, setEvidence] = useState<
+    readonly (UploadResult & { readonly preview: string })[]
+  >([]);
+  const [workerSearch, setWorkerSearch] = useState<string>("");
+  const pickableWorkers = (board?.workers ?? []).filter(
+    (row) =>
+      workerSearch.trim().length === 0 || row.name.includes(workerSearch.trim()),
+  );
   useEffect(() => {
     if (teamId === null) return;
     let active = true;
@@ -61,7 +71,7 @@ export default function TeamSafetyCredit(): JSX.Element {
       },
       (cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : "安全信用读取失败");
+          setError(errorMessage(cause, "安全信用读取失败"));
       },
     );
     return () => {
@@ -75,7 +85,10 @@ export default function TeamSafetyCredit(): JSX.Element {
     try {
       await action();
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "操作失败");
+      if (isUserCancel(cause)) return;
+      const message = errorMessage(cause, "操作失败");
+      setError(message);
+      await Taro.showToast({ icon: "none", title: message });
     } finally {
       setBusy(false);
     }
@@ -90,18 +103,33 @@ export default function TeamSafetyCredit(): JSX.Element {
   return (
     <Screen>
       <PageHeader title="安全信用" />
-      {error && <Notice>{error}</Notice>}
-      <Button variant="outline" onClick={() => setCreating(!creating)}>
+      {error && board !== null && <Notice tone="error">{error}</Notice>}
+      <Button
+        variant="outline"
+        disabled={board === null}
+        onClick={() => setCreating(!creating)}
+      >
         {creating ? "收起登记" : "登记违规"}
       </Button>
-      {creating && (
+      {creating && board !== null && (
         <Section title="违规登记">
+          {board.workers.length > 10 && (
+            <Field
+              value={workerSearch}
+              placeholder="搜索姓名后再选择"
+              onInput={setWorkerSearch}
+            />
+          )}
           <Picker
             mode="selector"
-            range={board?.workers.map((row) => row.name) ?? []}
+            range={pickableWorkers.map((row) => row.name)}
+            value={Math.max(
+              0,
+              pickableWorkers.findIndex((row) => row.memberId === memberId),
+            )}
             onChange={(event) =>
               setMemberId(
-                board?.workers[Number(event.detail.value)]?.memberId ?? "",
+                pickableWorkers[Number(event.detail.value)]?.memberId ?? "",
               )
             }
           >
@@ -147,29 +175,70 @@ export default function TeamSafetyCredit(): JSX.Element {
                   sourceType: ["camera", "album"],
                   sizeType: ["compressed"],
                 });
-                const uploaded = await Promise.all(
-                  photos.tempFilePaths.map(uploadImage),
+                const results = await Promise.allSettled(
+                  photos.tempFilePaths.map(async (path) => ({
+                    ...(await uploadImage(path)),
+                    preview: path,
+                  })),
                 );
-                setEvidence([...evidence, ...uploaded]);
+                const uploaded = results.flatMap((result) =>
+                  result.status === "fulfilled" ? [result.value] : [],
+                );
+                const failed = results.find(
+                  (result): result is PromiseRejectedResult =>
+                    result.status === "rejected",
+                );
+                setEvidence((current) => [...current, ...uploaded]);
+                if (failed !== undefined)
+                  throw new Error(
+                    `${results.length - uploaded.length} 张照片上传失败：${errorMessage(failed.reason, "请重试")}`,
+                  );
               });
             }}
           >
             添加凭证照片 · {evidence.length}/5
           </Button>
-          {evidence.map((photo, index) => (
-            <ListItem
-              key={photo.objectKey}
-              primary={`照片 ${index + 1}`}
-              chip="移除"
-              onClick={() =>
-                setEvidence(
-                  evidence.filter((row) => row.objectKey !== photo.objectKey),
-                )
-              }
-            />
-          ))}
+          {evidence.length > 0 && (
+            <View className="safety-evidence">
+              {evidence.map((photo, index) => (
+                <View key={photo.objectKey} className="safety-evidence__item">
+                  <Image
+                    className="safety-evidence__image"
+                    src={photo.preview}
+                    mode="aspectFill"
+                    onClick={() => {
+                      void Taro.previewImage({
+                        current: photo.preview,
+                        urls: evidence.map((row) => row.preview),
+                      });
+                    }}
+                  />
+                  <Button
+                    variant="text"
+                    disabled={busy}
+                    onClick={() =>
+                      setEvidence(
+                        evidence.filter(
+                          (row) => row.objectKey !== photo.objectKey,
+                        ),
+                      )
+                    }
+                  >
+                    移除第 {index + 1} 张
+                  </Button>
+                </View>
+              ))}
+            </View>
+          )}
           <Button
             loading={busy}
+            disabled={
+              busy ||
+              !memberId ||
+              !category.trim() ||
+              !description.trim() ||
+              evidence.length === 0
+            }
             onClick={() => {
               void perform(async () => {
                 if (
@@ -197,6 +266,7 @@ export default function TeamSafetyCredit(): JSX.Element {
                 setDescription("");
                 setEvidence([]);
                 refresh();
+                await Taro.showToast({ icon: "success", title: "已提交审核" });
               });
             }}
           >
@@ -205,7 +275,11 @@ export default function TeamSafetyCredit(): JSX.Element {
         </Section>
       )}
       {board === null ? (
-        <StateView title="读取中" />
+        error ? (
+          <StateView title="安全信用读取失败" sub={error} onRetry={refresh} />
+        ) : (
+          <StateView title="正在读取安全信用…" />
+        )
       ) : (
         <>
           <SafetyPolicySummary policies={board.policies} />

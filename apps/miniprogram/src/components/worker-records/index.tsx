@@ -1,4 +1,4 @@
-import Taro, { useDidShow, useRouter } from "@tarojs/taro";
+import Taro, { useDidShow, usePullDownRefresh, useRouter } from "@tarojs/taro";
 import { Button as NativeButton, Picker, View } from "@tarojs/components";
 import { useEffect, useState } from "react";
 import { Button, PageHeader, Screen } from "../ui";
@@ -27,6 +27,7 @@ import {
   type AttendanceRange,
 } from "../../services/worker-records";
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 const RANGES: readonly { value: AttendanceRange; label: string }[] = [
   { value: "TODAY", label: "今天" },
@@ -89,6 +90,7 @@ const RawRecord = ({
 export const WorkerRecords = (): JSX.Element => {
   const params = useRouter().params;
   const { revision, refresh } = usePageRefresh();
+  usePullDownRefresh(refresh);
   const [today, setToday] = useState(chinaToday);
   const [range, setRange] = useState<AttendanceRange>(
     params.range === "MONTH"
@@ -143,7 +145,7 @@ export const WorkerRecords = (): JSX.Element => {
           setResponse({
             key: requestKey,
             data: null,
-            error: cause instanceof Error ? cause.message : "无法读取考勤记录",
+            error: errorMessage(cause, "无法读取考勤记录"),
           });
       },
     );
@@ -174,6 +176,9 @@ export const WorkerRecords = (): JSX.Element => {
   }, [projectId, from, to]);
   // Data is fetched for all projects once; switching projects cannot race a prior project's response.
   const loaded = response?.key === requestKey ? response : null;
+  useEffect(() => {
+    if (loaded !== null) Taro.stopPullDownRefresh();
+  }, [loaded]);
   const layers =
     loaded?.data && !rangeError
       ? filterAttendance(loaded.data, projectId, from, to)
@@ -424,6 +429,23 @@ export const WorkerRecords = (): JSX.Element => {
                       </View>
                     )}
                   </View>
+                  {hasIssue && group.date <= today ? (
+                    <Button
+                      appearance="worker"
+                      variant="outline"
+                      onClick={() => {
+                        const recorded = group.records
+                          .filter((row) => row.status === "VALID")
+                          .map((row) => row.pointCode)
+                          .join(",");
+                        void Taro.navigateTo({
+                          url: `/pages/submit-makeup/index?projectId=${encodeURIComponent(group.projectId)}&date=${group.date}&recorded=${encodeURIComponent(recorded)}`,
+                        });
+                      }}
+                    >
+                      为 {group.date.slice(5).replace("-", "月")}日 申请补卡
+                    </Button>
+                  ) : null}
                   <View className="worker-records__detail-section">
                     <View className="worker-records__detail-title">
                       已批准补卡（{group.makeups.length} 次）

@@ -33,6 +33,7 @@ import {
 import { useSession } from "../../store/session";
 
 import { totalsStatItems } from "./view-model";
+import { errorMessage } from "../../services/error-messages";
 
 type Period = "DAILY" | "WEEKLY" | "MONTHLY";
 
@@ -76,7 +77,7 @@ export default function Reports(): JSX.Element {
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "REQUEST_FAILED");
+          setError(errorMessage(e, "操作未完成，请稍后重试。"));
         }
       }
     })();

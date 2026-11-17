@@ -6,6 +6,7 @@ import {
   type ProjectAttendance,
 } from "../services/project-attendance";
 import { useSession } from "../store/session";
+import { errorMessage } from "../services/error-messages";
 
 export const useMyProjectAttendance = (
   revision: number,
@@ -35,9 +36,7 @@ export const useMyProjectAttendance = (
         (reason: unknown) => {
           if (!cancelled)
             setError(
-              reason instanceof Error
-                ? reason.message
-                : "无法读取我的项目，请重试。",
+              errorMessage(reason, "无法读取我的项目，请重试。"),
             );
         },
       )

@@ -19,6 +19,7 @@ import type { Makeup, MyProjectMembership } from "../../services/me.types";
 import { useSession } from "../../store/session";
 import { FlowScreen } from "../../components/worker-flow";
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 const POINT_LABEL: Readonly<Record<Makeup["pointCode"], string>> = {
   SEGMENT_1_END: "上午下班",
@@ -72,7 +73,7 @@ export default function MyMakeups(): JSX.Element {
       (reason) => {
         if (!cancelled)
           setError(
-            reason instanceof Error ? reason.message : "无法读取补卡申请",
+            errorMessage(reason, "无法读取补卡申请"),
           );
       },
     );
@@ -205,7 +206,7 @@ export default function MyMakeups(): JSX.Element {
                 void Taro.navigateTo({ url: "/pages/submit-makeup/index" });
               }}
             >
-              新申请补卡
+              申请补卡
             </Button>
           </View>
           <ListItem

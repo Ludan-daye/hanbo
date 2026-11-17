@@ -43,6 +43,7 @@ import {
   type SystemSettings,
 } from "../../services/workflows";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 type Tab = "COMPANIES" | "ACCOUNTS" | "SETTINGS" | "AUDIT";
 type ScopeOption = { readonly id: string; readonly name: string };
@@ -114,7 +115,7 @@ export default function SystemManagement(): JSX.Element {
       } catch (failure: unknown) {
         if (!cancelled)
           setError(
-            failure instanceof Error ? failure.message : "平台数据读取失败",
+            errorMessage(failure, "平台数据读取失败"),
           );
       } finally {
         if (!cancelled) setLoading(false);
@@ -135,7 +136,7 @@ export default function SystemManagement(): JSX.Element {
       refresh();
       await Taro.showToast({ title: "已保存", icon: "success" });
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "保存失败");
+      setError(errorMessage(failure, "保存失败"));
     } finally {
       setBusy(false);
     }

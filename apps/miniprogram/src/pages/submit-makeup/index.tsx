@@ -23,7 +23,7 @@ import {
   fetchMyAttendancePlan,
   type EffectivePlan,
 } from "../../services/attendance-plans";
-import { chinaToday } from "../../services/time";
+import { chinaToday, formatChinaHm } from "../../services/time";
 import type {
   AttendancePointCode,
   MyProjectMembership,
@@ -32,17 +32,33 @@ import { useSession } from "../../store/session";
 import { FlowScreen } from "../../components/worker-flow";
 import { canSubmitWorkerMakeup, makeupPlanContext } from "./form-state";
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 export default function SubmitMakeup(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
   const workerAppearance = state.me?.roles.highestRoleCode === "WORKER";
-  const { taskId, projectId: requestedProjectId, mode } = useRouter().params;
+  const {
+    taskId,
+    projectId: requestedProjectId,
+    mode,
+    date: requestedDate,
+    pointCode: requestedPoint,
+    recorded: recordedParam,
+  } = useRouter().params;
+  const taskMode = Boolean(taskId) || mode === "overtime";
+  const recordedPoints = (recordedParam ?? "").split(",").filter(Boolean);
   const [projects, setProjects] = useState<
     readonly MyProjectMembership[] | null
   >(null);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [date, setDate] = useState<string>(chinaToday());
+  const [date, setDate] = useState<string>(() =>
+    requestedDate &&
+    /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) &&
+    requestedDate <= chinaToday()
+      ? requestedDate
+      : chinaToday(),
+  );
   const [time, setTime] = useState<string>("08:00");
   const [point, setPoint] = useState<AttendancePointCode>("");
   const [plan, setPlan] = useState<EffectivePlan | null>(null);
@@ -74,7 +90,7 @@ export default function SubmitMakeup(): JSX.Element {
       (cause) => {
         if (!cancelled) {
           const message =
-            cause instanceof Error ? cause.message : "无法读取项目";
+            errorMessage(cause, "无法读取项目");
           setError(message);
           setProjectError(message);
         }
@@ -92,9 +108,15 @@ export default function SubmitMakeup(): JSX.Element {
     setError(null);
     setPlanError(null);
     setLoadedContext(null);
-    const readPlan = async (): Promise<EffectivePlan> => {
+    const readPlan = async (): Promise<EffectivePlan | null> => {
       if (!taskId && mode !== "overtime") return fetchMyAttendancePlan(projectId, date);
       const task = mode === "overtime" ? await fetchOvertimeAttendanceToday(projectId) : await fetchTaskAttendanceToday(projectId, taskId!);
+      // 任务与加班补卡只针对当天的任务记录；日期以服务端返回为准，不允许改动。
+      // 日期变化会重新触发本次读取，这里返回 null 结束当前这一轮。
+      if (task.attendanceDate !== date) {
+        if (!cancelled) setDate(task.attendanceDate);
+        return null;
+      }
       const end = task.points.find((row) => row.kind === "END");
       return {
         name: task.shiftName ?? "临时任务",
@@ -119,16 +141,21 @@ export default function SubmitMakeup(): JSX.Element {
     };
     void readPlan().then(
       (value) => {
-        if (cancelled) return;
+        if (cancelled || value === null) return;
         setPlan(value);
-        setPoint(value.isWorkday ? (value.points[0]?.code ?? "") : "");
-        setTime(value.points[0]?.time ?? "08:00");
+        // 优先选未打卡的时点：显式指定 > 当天尚无有效记录的第一个 > 第一个。
+        const preferred =
+          value.points.find((row) => row.code === requestedPoint) ??
+          value.points.find((row) => !recordedPoints.includes(row.code)) ??
+          value.points[0];
+        setPoint(value.isWorkday ? (preferred?.code ?? "") : "");
+        setTime(preferred?.time ?? "08:00");
         setLoadedContext(makeupPlanContext(projectId, date));
       },
       (cause: unknown) => {
         if (!cancelled) {
           const message =
-            cause instanceof Error ? cause.message : "无法读取当天排班";
+            errorMessage(cause, "无法读取当天排班");
           setError(message);
           setPlanError(message);
         }
@@ -200,7 +227,7 @@ export default function SubmitMakeup(): JSX.Element {
         else await Taro.redirectTo({ url: "/pages/my-makeups/index" });
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "申请未提交，请重试");
+      setError(errorMessage(cause, "申请未提交，请重试"));
     } finally {
       if (!saved || !workerAppearance) busyRef.current = false;
       setBusy(false);
@@ -278,7 +305,7 @@ export default function SubmitMakeup(): JSX.Element {
                 mode="date"
                 value={date}
                 end={chinaToday()}
-                disabled={locked}
+                disabled={locked || taskMode}
                 onChange={(event) => {
                   if (busyRef.current || event.detail.value === date) return;
                   setLoadedContext(null);
@@ -294,7 +321,9 @@ export default function SubmitMakeup(): JSX.Element {
                   <View className="worker-makeup-form__label">日期</View>
                   <View className="worker-makeup-form__value-row">
                     <View>{date}</View>
-                    <View className="worker-makeup-form__change">选择</View>
+                    {!taskMode && (
+                      <View className="worker-makeup-form__change">选择</View>
+                    )}
                   </View>
                 </View>
               </Picker>
@@ -348,6 +377,7 @@ export default function SubmitMakeup(): JSX.Element {
                   <Picker
                     mode="time"
                     value={time}
+                    end={date === chinaToday() ? formatChinaHm(new Date().toISOString()) : undefined}
                     disabled={locked}
                     onChange={(event) => {
                       if (!busyRef.current) setTime(event.detail.value);
@@ -385,7 +415,7 @@ export default function SubmitMakeup(): JSX.Element {
                 </View>
               </View>
               {error && error !== planError && error !== projectError ? (
-                <Notice>{error}</Notice>
+                <Notice tone="error">{error}</Notice>
               ) : null}
               {submitted ? (
                 <>
@@ -511,7 +541,7 @@ export default function SubmitMakeup(): JSX.Element {
           </Button>
         </View>
       ) : null}
-      {error ? <Notice>{error}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
     </Screen>
   );
 }

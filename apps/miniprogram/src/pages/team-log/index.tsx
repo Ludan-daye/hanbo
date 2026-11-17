@@ -27,6 +27,7 @@ import {
   saveTeamDailySummary,
 } from "../../services/team-work";
 import { chinaToday } from "../../services/time";
+import { errorMessage } from "../../services/error-messages";
 
 export default function TeamLog(): JSX.Element {
   useSessionGuard();
@@ -38,12 +39,15 @@ export default function TeamLog(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const [saved, setSaved] = useState<TeamDailySummary | null>(null);
+  const [viewing, setViewing] = useState<"live" | "saved">("live");
+  const hours = (minutes: number): string => `${(minutes / 60).toFixed(1)} 小时`;
   useEffect(() => {
     if (teamId === null) return;
     let active: boolean = true;
     setData(null);
     setError(null);
     setSaved(null);
+    setViewing("live");
     void Promise.all([
       fetchTeamDailySummary(teamId, date),
       fetchSavedTeamDailySummary(teamId, date),
@@ -56,7 +60,7 @@ export default function TeamLog(): JSX.Element {
       },
       (cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : "日报生成失败");
+          setError(errorMessage(cause, "日报生成失败"));
       },
     );
     return () => {
@@ -70,11 +74,15 @@ export default function TeamLog(): JSX.Element {
     try {
       await action();
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "操作失败，请重试");
+      const message = errorMessage(cause, "操作失败，请重试");
+      setError(message);
+      await Taro.showToast({ icon: "none", title: message });
     } finally {
       setBusy(false);
     }
   };
+  const shown: TeamDailySummary | null =
+    viewing === "saved" && saved !== null ? saved : data;
   if (teamId === null)
     return (
       <Screen>
@@ -87,103 +95,111 @@ export default function TeamLog(): JSX.Element {
       <PageHeader title="班组日报" />
       <Subtitle>任务、考勤及安全汇总</Subtitle>
       <WorkDate value={date} onChange={setDate} />
-      {error && <Notice>{error}</Notice>}
-      {data === null ? (
+      {error && <Notice tone="error">{error}</Notice>}
+      {shown === null || data === null ? (
         <StateView
           title={error ? "日报生成失败" : "正在汇总…"}
+          kind={error ? "error" : "loading"}
           onRetry={refresh}
         />
       ) : (
         <>
           {saved !== null && (
             <Section
-              title={data === saved ? "已保存的日报" : "当前实时汇总"}
+              title={viewing === "saved" ? "已保存的日报" : "当前实时汇总"}
               sub={`最近保存：${workTimestamp(saved.generatedAt)}`}
             >
               <Button
                 variant="outline"
                 disabled={busy}
                 onClick={() => {
-                  if (data === saved) refresh();
-                  else setData(saved);
+                  // 回到实时汇总时重新读取，避免把刚保存的快照当作最新数据。
+                  if (viewing === "saved") refresh();
+                  else setViewing("saved");
                 }}
               >
-                {data === saved ? "查看最新汇总" : "查看已保存内容"}
+                {viewing === "saved" ? "查看最新汇总" : "查看已保存内容"}
               </Button>
             </Section>
           )}
           <Section
-            title={data.teamName}
-            sub={`${data.projectName} · 更新于 ${workTimestamp(data.generatedAt)}`}
+            title={shown.teamName}
+            sub={`${shown.projectName} · 更新于 ${workTimestamp(shown.generatedAt)}`}
           >
             <StatCards
               items={[
                 {
                   label: "任务完成",
-                  value: `${data.completedTaskCount}/${data.taskCount - data.cancelledTaskCount}`,
+                  value:
+                    shown.taskCount - shown.cancelledTaskCount === 0
+                      ? "暂无任务"
+                      : `${shown.completedTaskCount}/${shown.taskCount - shown.cancelledTaskCount}`,
                 },
-                { label: "实际出勤", value: `${data.actualAttendedDays} 人` },
-                {
-                  label: "正常工时",
-                  value: `${(data.normalMinutes / 60).toFixed(1)}h`,
-                },
-                {
-                  label: "加班工时",
-                  value: `${(data.overtimeMinutes / 60).toFixed(1)}h`,
-                },
-                {
-                  label: "未分类",
-                  value: `${(data.unclassifiedMinutes / 60).toFixed(1)}h`,
-                },
-                {
-                  label: "实际工时",
-                  value: `${(data.workedMinutes / 60).toFixed(1)} 小时`,
-                },
+                { label: "实际出勤", value: `${shown.actualAttendedDays} 人` },
+                { label: "正常工时", value: hours(shown.normalMinutes) },
+                { label: "加班工时", value: hours(shown.overtimeMinutes) },
+                { label: "未分类", value: hours(shown.unclassifiedMinutes) },
+                { label: "实际工时", value: hours(shown.workedMinutes) },
               ]}
             />
             <ListItem
               primary="临时用工"
-              secondary={`${data.temporaryWorkerCount} 人加入当天有效任务`}
+              secondary={`${shown.temporaryWorkerCount} 人加入当天有效任务`}
             />
             <ListItem
               primary="考勤待核查"
-              secondary={`缺卡 ${data.missingPunchCount} 人次`}
+              secondary={`缺卡 ${shown.missingPunchCount} 人次`}
             />
             <ListItem
               primary="安全情况"
-              secondary={`交底 ${data.briefingCount} 条 · 确认 ${data.acknowledgementCount} 人次 · 待整改 ${data.openIssueCount} 条 · 已整改 ${data.resolvedIssueCount} 条`}
+              secondary={`交底 ${shown.briefingCount} 条 · 确认 ${shown.acknowledgementCount} 人次 · 待整改 ${shown.openIssueCount} 条 · 已整改 ${shown.resolvedIssueCount} 条`}
             />
             <ListItem
               primary="已确认违规"
               secondary={
-                data.confirmedViolationCount === null
+                shown.confirmedViolationCount === null
                   ? "旧版日报未记录"
-                  : `${data.confirmedViolationCount} 次`
+                  : `${shown.confirmedViolationCount} 次`
               }
             />
-            {data.snapshotVersion === 1 && (
+            {shown.snapshotVersion === 1 && (
               <Notice>旧版日报工时未分类，可重新汇总。</Notice>
             )}
           </Section>
           <Section title="人员出勤">
-            {data.people.length === 0 ? (
+            {shown.people.length === 0 ? (
               <Subtitle>当天无考勤汇总记录。</Subtitle>
             ) : (
-              data.people.map((person, index) => (
+              shown.people.map((person, index) => (
                 <ListItem
                   key={`${person.name}-${index}`}
                   primary={person.name}
-                  secondary={`正常 ${(person.normalMinutes / 60).toFixed(1)}h · 加班 ${(person.overtimeMinutes / 60).toFixed(1)}h · 未分类 ${(person.unclassifiedMinutes / 60).toFixed(1)}h${person.safetyCreditScore === null ? "" : ` · 信用 ${person.safetyCreditScore}`} · ${person.flags.join(" / ") || "无异常"}`}
-                  chip={`${(person.workedMinutes / 60).toFixed(1)} 小时`}
+                  secondary={`正常 ${hours(person.normalMinutes)} · 加班 ${hours(person.overtimeMinutes)} · 未分类 ${hours(person.unclassifiedMinutes)}${person.safetyCreditScore === null ? "" : ` · 信用 ${person.safetyCreditScore}`} · ${person.flags.join(" / ") || "无异常"}`}
+                  chip={hours(person.workedMinutes)}
+                  tone={person.flags.length > 0 ? "danger" : undefined}
                 />
               ))
             )}
           </Section>
-          {data.tasks.map((task) => (
-            <Section key={task.id} title="工作任务">
-              <TaskDetails task={task} />
+          {shown.tasks.filter((task) => task.status !== "CANCELLED").length >
+            0 && (
+            <Section title="工作任务">
+              {shown.tasks
+                .filter((task) => task.status !== "CANCELLED")
+                .map((task) => (
+                  <TaskDetails key={task.id} task={task} />
+                ))}
             </Section>
-          ))}
+          )}
+          {shown.tasks.some((task) => task.status === "CANCELLED") && (
+            <Section title="已取消任务">
+              {shown.tasks
+                .filter((task) => task.status === "CANCELLED")
+                .map((task) => (
+                  <TaskDetails key={task.id} task={task} />
+                ))}
+            </Section>
+          )}
           <Button
             loading={busy}
             onClick={() => {
@@ -191,13 +207,15 @@ export default function TeamLog(): JSX.Element {
                 const result = await saveTeamDailySummary(teamId, date);
                 setData(result);
                 setSaved(result);
+                setViewing("saved");
+                await Taro.showToast({ icon: "success", title: "日报已保存" });
               });
             }}
           >
             {saved ? "重新汇总并保存日报" : "保存当前日报"}
           </Button>
-          {saved !== null && data === saved && (
-            <Notice>汇总已保存，补卡或整改后可重新生成。</Notice>
+          {saved !== null && viewing === "saved" && (
+            <Notice tone="success">汇总已保存，补卡或整改后可重新生成。</Notice>
           )}
           <Button
             variant="outline"
@@ -205,8 +223,9 @@ export default function TeamLog(): JSX.Element {
             onClick={() => {
               void perform(async () => {
                 await Taro.setClipboardData({
-                  data: `${data.workDate} ${data.projectName} / ${data.teamName}\n任务完成 ${data.completedTaskCount}/${data.taskCount - data.cancelledTaskCount}，取消 ${data.cancelledTaskCount}\n出勤 ${data.actualAttendedDays} 人，实际 ${(data.workedMinutes / 60).toFixed(1)} 小时，缺卡 ${data.missingPunchCount} 人次\n正常 ${(data.normalMinutes / 60).toFixed(1)} 小时，加班 ${(data.overtimeMinutes / 60).toFixed(1)} 小时，未分类 ${(data.unclassifiedMinutes / 60).toFixed(1)} 小时\n临时任务参与 ${data.temporaryWorkerCount} 人\n交底 ${data.briefingCount} 条，确认 ${data.acknowledgementCount} 人次，待整改 ${data.openIssueCount} 条\n${data.tasks.map((task) => `• ${task.title}：${task.assignments.map((person) => person.name).join("、") || "待安排"}`).join("\n")}`,
+                  data: `${shown.workDate} ${shown.projectName} / ${shown.teamName}\n任务完成 ${shown.completedTaskCount}/${shown.taskCount - shown.cancelledTaskCount}，取消 ${shown.cancelledTaskCount}\n出勤 ${shown.actualAttendedDays} 人，实际 ${hours(shown.workedMinutes)}，缺卡 ${shown.missingPunchCount} 人次\n正常 ${hours(shown.normalMinutes)}，加班 ${hours(shown.overtimeMinutes)}，未分类 ${hours(shown.unclassifiedMinutes)}\n临时任务参与 ${shown.temporaryWorkerCount} 人\n交底 ${shown.briefingCount} 条，确认 ${shown.acknowledgementCount} 人次，待整改 ${shown.openIssueCount} 条\n${shown.tasks.filter((task) => task.status !== "CANCELLED").map((task) => `• ${task.title}：${task.assignments.map((person) => person.name).join("、") || "待安排"}`).join("\n")}`,
                 });
+                await Taro.showToast({ icon: "success", title: "已复制" });
               });
             }}
           >

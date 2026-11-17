@@ -23,6 +23,7 @@ import {
 } from "../../services/face";
 import { fetchParticipants } from "../../services/management";
 import type { ProjectParticipant } from "../../services/management.types";
+import { errorMessage } from "../../services/error-messages";
 
 export default function FaceReviewPage(): JSX.Element {
   useSessionGuard();
@@ -54,7 +55,7 @@ export default function FaceReviewPage(): JSX.Element {
       (reason: unknown) => {
         if (!cancelled)
           setError(
-            reason instanceof Error ? reason.message : "读取审核列表失败",
+            errorMessage(reason, "读取审核列表失败"),
           );
       },
     );
@@ -72,7 +73,7 @@ export default function FaceReviewPage(): JSX.Element {
       const result = await fetchFacePhoto(projectId, id);
       setPhoto({ id, url: result.dataUrl });
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "读取底照失败");
+      setError(errorMessage(reason, "读取底照失败"));
     } finally {
       setBusy(false);
     }
@@ -101,7 +102,7 @@ export default function FaceReviewPage(): JSX.Element {
       setPhoto(null);
       refresh();
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "审核未完成");
+      setError(errorMessage(failure, "审核未完成"));
     } finally {
       setBusy(false);
     }
@@ -110,12 +111,16 @@ export default function FaceReviewPage(): JSX.Element {
     <Screen>
       <PageHeader title="人脸档案审核" />
       <Notice>核对本人及档案，不可审核自己的底照。</Notice>
-      {error !== null ? <Notice>{error}</Notice> : null}
+      {error !== null ? <Notice tone="error">{error}</Notice> : null}
       {projectId === undefined ? (
         <StateView title="请从项目成员页面进入" />
       ) : null}
       {projectId !== undefined && profiles === null ? (
-        <StateView title="读取审核列表" onRetry={refresh} />
+        <StateView
+          title={error ? "审核列表读取失败" : "正在读取审核列表…"}
+          kind={error ? "error" : "loading"}
+          onRetry={refresh}
+        />
       ) : null}
       {profiles?.length === 0 ? (
         <StateView

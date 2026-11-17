@@ -157,7 +157,7 @@ export const ProjectGeofence = ({
       {value !== null ? (
         <View className="project-geofence__address">{value.address}</View>
       ) : null}
-      {error !== null ? <Notice>{error}</Notice> : null}
+      {error !== null ? <Notice tone="error">{error}</Notice> : null}
     </View>
   );
 };

@@ -1,3 +1,4 @@
+import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import type {
   SafetyCreditBoard,
@@ -24,6 +25,7 @@ import {
   reviewSafetyAppeal,
   reviewSafetyViolation,
 } from "../../services/safety-credit";
+import { errorMessage } from "../../services/error-messages";
 
 type ReviewTab = "PENDING" | "APPEAL" | "ALL";
 export default function SafetyReview(): JSX.Element {
@@ -47,19 +49,33 @@ export default function SafetyReview(): JSX.Element {
       },
       (cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : "安全记录读取失败");
+          setError(errorMessage(cause, "安全记录读取失败"));
       },
     );
     return () => {
       active = false;
     };
   }, [projectId, revision]);
-  const perform = async (action: () => Promise<void>): Promise<void> => {
+  const perform = async (
+    action: () => Promise<void>,
+    confirmation: {
+      readonly title: string;
+      readonly content: string;
+      readonly danger?: boolean;
+    },
+  ): Promise<void> => {
     if (busy) return;
     if (!reason.trim()) {
       setError("请填写审核意见");
       return;
     }
+    const result = await Taro.showModal({
+      title: confirmation.title,
+      content: `${confirmation.content}\n审核意见：${reason.trim()}`,
+      confirmText: "确认",
+      confirmColor: confirmation.danger ? "#c33845" : "#0066d6",
+    });
+    if (!result.confirm) return;
     setBusy(true);
     setError(null);
     try {
@@ -67,12 +83,16 @@ export default function SafetyReview(): JSX.Element {
       setSelected(null);
       setReason("");
       refresh();
+      await Taro.showToast({ icon: "success", title: "已处理" });
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "审核失败");
+      const message = errorMessage(cause, "审核失败");
+      setError(message);
+      await Taro.showToast({ icon: "none", title: message });
     } finally {
       setBusy(false);
     }
   };
+  const reasonMissing: boolean = reason.trim().length === 0;
   const visible = (row: SafetyViolationView): boolean =>
     tab === "ALL" ||
     (tab === "PENDING"
@@ -88,7 +108,7 @@ export default function SafetyReview(): JSX.Element {
   return (
     <Screen>
       <PageHeader title="安全审核" />
-      {error && <Notice>{error}</Notice>}
+      {error && board !== null && <Notice tone="error">{error}</Notice>}
       <Segmented
         options={[
           { value: "PENDING", label: "待审核" },
@@ -99,7 +119,11 @@ export default function SafetyReview(): JSX.Element {
         onChange={(value: ReviewTab) => setTab(value)}
       />
       {board === null ? (
-        <StateView title="读取中" />
+        error ? (
+          <StateView title="安全记录读取失败" sub={error} onRetry={refresh} />
+        ) : (
+          <StateView title="正在读取安全记录…" />
+        )
       ) : (
         <>
           {board.violations.filter(visible).length === 0 && (
@@ -136,14 +160,21 @@ export default function SafetyReview(): JSX.Element {
                     <>
                       <Button
                         loading={busy}
+                        disabled={busy || reasonMissing}
                         onClick={() => {
-                          void perform(() =>
-                            reviewSafetyViolation(
-                              projectId,
-                              row.id,
-                              "CONFIRM",
-                              reason,
-                            ),
+                          void perform(
+                            () =>
+                              reviewSafetyViolation(
+                                projectId,
+                                row.id,
+                                "CONFIRM",
+                                reason,
+                              ),
+                            {
+                              title: "确认违规",
+                              content: "确认后按规则扣分，工人可申诉。",
+                              danger: true,
+                            },
                           );
                         }}
                       >
@@ -151,15 +182,21 @@ export default function SafetyReview(): JSX.Element {
                       </Button>
                       <Button
                         loading={busy}
+                        disabled={busy || reasonMissing}
                         variant="outline"
                         onClick={() => {
-                          void perform(() =>
-                            reviewSafetyViolation(
-                              projectId,
-                              row.id,
-                              "REJECT",
-                              reason,
-                            ),
+                          void perform(
+                            () =>
+                              reviewSafetyViolation(
+                                projectId,
+                                row.id,
+                                "REJECT",
+                                reason,
+                              ),
+                            {
+                              title: "驳回记录",
+                              content: "驳回后不扣分，记录保留。",
+                            },
                           );
                         }}
                       >
@@ -175,15 +212,21 @@ export default function SafetyReview(): JSX.Element {
                         <Section key={appeal.id} title="申诉处理">
                           <Button
                             loading={busy}
+                            disabled={busy || reasonMissing}
                             onClick={() => {
-                              void perform(() =>
-                                reviewSafetyAppeal(
-                                  projectId,
-                                  row.id,
-                                  appeal.id,
-                                  true,
-                                  reason,
-                                ),
+                              void perform(
+                                () =>
+                                  reviewSafetyAppeal(
+                                    projectId,
+                                    row.id,
+                                    appeal.id,
+                                    true,
+                                    reason,
+                                  ),
+                                {
+                                  title: "通过申诉",
+                                  content: "撤销该违规并恢复扣分。",
+                                },
                               );
                             }}
                           >
@@ -191,16 +234,23 @@ export default function SafetyReview(): JSX.Element {
                           </Button>
                           <Button
                             loading={busy}
+                            disabled={busy || reasonMissing}
                             variant="outline"
                             onClick={() => {
-                              void perform(() =>
-                                reviewSafetyAppeal(
-                                  projectId,
-                                  row.id,
-                                  appeal.id,
-                                  false,
-                                  reason,
-                                ),
+                              void perform(
+                                () =>
+                                  reviewSafetyAppeal(
+                                    projectId,
+                                    row.id,
+                                    appeal.id,
+                                    false,
+                                    reason,
+                                  ),
+                                {
+                                  title: "驳回申诉",
+                                  content: "维持原违规记录与扣分。",
+                                  danger: true,
+                                },
                               );
                             }}
                           >
@@ -211,15 +261,22 @@ export default function SafetyReview(): JSX.Element {
                   ) : (
                     <Button
                       loading={busy}
+                      disabled={busy || reasonMissing}
                       variant="danger"
                       onClick={() => {
-                        void perform(() =>
-                          reviewSafetyViolation(
-                            projectId,
-                            row.id,
-                            "REVOKE",
-                            reason,
-                          ),
+                        void perform(
+                          () =>
+                            reviewSafetyViolation(
+                              projectId,
+                              row.id,
+                              "REVOKE",
+                              reason,
+                            ),
+                          {
+                            title: "撤销违规",
+                            content: "撤销后恢复扣分，操作留痕。",
+                            danger: true,
+                          },
                         );
                       }}
                     >

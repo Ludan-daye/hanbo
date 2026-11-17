@@ -8,6 +8,7 @@ import { fetchMe } from "./auth";
 import type { AttendanceLocation } from "./geofence";
 import type { AttendancePointCode } from "./me.types";
 import { ApiError } from "./apiClient";
+import { messageForApiError } from "./error-messages";
 
 export type FaceProfile = {
   readonly id: string;
@@ -122,7 +123,11 @@ const uploadFaceVideoFile = async (
     const message: string =
       response.statusCode === 413 || code === "FACE_VIDEO_SIZE_INVALID"
         ? "录像超过 5MB，请重新录制。"
-        : `录像核验未完成（${response.statusCode}，${code}），请确认本次结果后再试。`;
+        : messageForApiError(
+            response.statusCode,
+            code,
+            "录像核验未完成，请确认本次结果后再试。",
+          );
     throw new ApiError(response.statusCode, message, body);
   }
   return body;

@@ -33,6 +33,7 @@ import {
 import { useSession } from "../../store/session";
 
 import { totalsStatItems } from "../reports/view-model";
+import { errorMessage } from "../../services/error-messages";
 
 type Period = "DAILY" | "WEEKLY" | "MONTHLY";
 const PERIOD_OPTIONS = [
@@ -71,7 +72,7 @@ export default function CompanyReports(): JSX.Element {
         if (!cancelled) setReport(data);
       } catch (e) {
         if (!cancelled)
-          setError(e instanceof Error ? e.message : "REQUEST_FAILED");
+          setError(errorMessage(e, "操作未完成，请稍后重试。"));
       }
     })();
     return () => {

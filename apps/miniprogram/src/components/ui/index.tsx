@@ -5,6 +5,8 @@ import { FRONTEND_DEMO } from "../../config/env";
 import { useSession } from "../../store/session";
 import { PrivacyAuthorization } from "../privacy-authorization";
 
+import { stateKindForTitle, type StateKind } from "./state-kind";
+
 import "./ui.scss";
 import "./worker.scss";
 
@@ -62,13 +64,23 @@ export const Section = ({
     {children}
   </View>
 );
-export const Notice = ({ children }: PropsWithChildren): JSX.Element => (
-  <View className="ui-notice">{children}</View>
+export const Notice = ({
+  children,
+  tone,
+}: PropsWithChildren<{
+  readonly tone?: "info" | "warning" | "error" | "success";
+}>): JSX.Element => (
+  <View
+    className={`ui-notice${tone && tone !== "info" ? ` ui-notice--${tone}` : ""}`}
+    role={tone === "error" ? "alert" : undefined}
+  >
+    {children}
+  </View>
 );
 
 type ButtonProps = PropsWithChildren<{
   readonly onClick?: () => void;
-  readonly variant?: "primary" | "outline" | "danger";
+  readonly variant?: "primary" | "outline" | "danger" | "text";
   readonly disabled?: boolean;
   readonly loading?: boolean;
   readonly appearance?: "worker";
@@ -147,28 +159,30 @@ export const StateView = ({
   title,
   sub,
   onRetry,
+  kind,
+  retryLabel,
 }: {
   readonly title: string;
   readonly sub?: string;
   readonly onRetry?: () => void;
-}): JSX.Element => (
-  <View
-    className={`ui-state ${title.includes("加载中") || title.includes("加载今日") ? "ui-state--loading" : ""}`}
-  >
-    <View className="ui-state__symbol">
-      {title.includes("失败") || title === "错误" || title === "出错"
-        ? "!"
-        : "·"}
+  /** 不传时按标题文案推断：含“失败/错误/未完成”等视为出错（优先），含“加载/读取/正在”视为加载中。 */
+  readonly kind?: StateKind;
+  readonly retryLabel?: string;
+}): JSX.Element => {
+  const resolved = kind ?? stateKindForTitle(title);
+  return (
+    <View className={`ui-state ui-state--${resolved}`}>
+      <View className="ui-state__symbol">{resolved === "error" ? "!" : "·"}</View>
+      <View className="ui-state__title">{title}</View>
+      {sub ? <View className="ui-subtitle">{sub}</View> : null}
+      {onRetry && resolved !== "loading" ? (
+        <Button variant="outline" onClick={onRetry}>
+          {retryLabel ?? "重新加载"}
+        </Button>
+      ) : null}
     </View>
-    <View className="ui-state__title">{title}</View>
-    {sub ? <View className="ui-subtitle">{sub}</View> : null}
-    {onRetry ? (
-      <Button variant="outline" onClick={onRetry}>
-        重新加载
-      </Button>
-    ) : null}
-  </View>
-);
+  );
+};
 
 export { PageHeader, AppHeader } from "./page-header";
 export { Segmented, type SegmentedOption } from "./segmented";

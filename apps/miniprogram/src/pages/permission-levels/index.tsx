@@ -25,6 +25,7 @@ import { displayProjectRole } from "../../routing/features";
 import { myProjectDetailUrl } from "../../services/project-attendance";
 
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 export default function PermissionLevels(): JSX.Element {
   useSessionGuard();
@@ -40,7 +41,7 @@ export default function PermissionLevels(): JSX.Element {
     void fetchMyProjects().then((rows) => {
       if (!cancelled) setProjects(rows);
     }, (cause: unknown) => {
-      if (!cancelled) setError(cause instanceof Error ? cause.message : "读取项目身份失败");
+      if (!cancelled) setError(errorMessage(cause, "读取项目身份失败"));
     });
     return () => { cancelled = true; };
   }, [role, revision]);

@@ -189,6 +189,10 @@
   opacity: 0.6;
   flex-shrink: 0;
 }
+.worker-month-stats .ui-statcards {
+  border-bottom: 0;
+  padding-bottom: 8Px;
+}
 .worker-reminders {
   margin-top: 16Px;
   border-top: 1Px solid #e5e8eb;

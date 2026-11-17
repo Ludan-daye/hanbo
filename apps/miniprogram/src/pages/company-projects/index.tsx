@@ -22,6 +22,7 @@ import type {
   ProjectStatus,
 } from "../../services/management.types";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 const STATUS_LABEL: Readonly<Record<ProjectStatus, string>> = {
   ACTIVE: "进行中",
@@ -50,7 +51,7 @@ export default function CompanyProjects(): JSX.Element {
       },
       (cause) => {
         if (!cancelled)
-          setError(cause instanceof Error ? cause.message : "无法读取项目");
+          setError(errorMessage(cause, "无法读取项目"));
       },
     );
     return () => {

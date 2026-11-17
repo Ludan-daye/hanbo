@@ -25,6 +25,7 @@ import type {
 import { fetchPendingMakeups } from "../services/makeups";
 import { chinaToday } from "../services/time";
 import { useSession } from "../store/session";
+import { errorMessage } from "../services/error-messages";
 
 type TeamOverview = {
   readonly teamId: string;
@@ -72,9 +73,7 @@ export const TeamLeaderOverview = ({
       (cause: unknown) => {
         if (!cancelled)
           setScopeError(
-            cause instanceof Error
-              ? cause.message
-              : "读取所管班组失败，请重试。",
+            errorMessage(cause, "读取所管班组失败，请重试。"),
           );
       },
     );
@@ -110,9 +109,7 @@ export const TeamLeaderOverview = ({
       (cause: unknown) => {
         if (!cancelled)
           setError(
-            cause instanceof Error
-              ? cause.message
-              : "读取班组工作信息失败，请重试。",
+            errorMessage(cause, "读取班组工作信息失败，请重试。"),
           );
       },
     );
@@ -149,7 +146,11 @@ export const TeamLeaderOverview = ({
       worker.displayName?.includes(keyword) ||
       worker.phone.includes(keyword),
   );
-  const attendanceUrl: string = `/pages/team-attendance/index?teamId=${encodeURIComponent(selected.scopeId)}`;
+  const attendanceUrl: string = `/pages/team-attendance/index?teamId=${encodeURIComponent(selected.scopeId)}&date=${date}`;
+  const makeupsUrl: string = `/pages/team-makeups/index?teamId=${encodeURIComponent(selected.scopeId)}&teamName=${encodeURIComponent(selected.scopeName)}`;
+  const openAttendance = (): void => {
+    void Taro.navigateTo({ url: attendanceUrl });
+  };
 
   return (
     <>
@@ -186,29 +187,33 @@ export const TeamLeaderOverview = ({
                 {
                   label: "今日已出勤",
                   value: String(data.report.totals.actualAttendedDays),
+                  onClick: openAttendance,
                 },
                 {
                   label: "缺卡人次",
                   value: String(data.report.totals.missingPunchCount),
+                  onClick: openAttendance,
+                  tone:
+                    data.report.totals.missingPunchCount > 0
+                      ? "danger"
+                      : undefined,
                 },
               ]}
             />
             <ListItem
-              primary="查看班组考勤"
+              primary="班组考勤"
               secondary={`迟到 ${data.report.totals.lateCount} · 早退 ${data.report.totals.earlyLeaveCount} · 已记录 ${(data.report.totals.workedMinutes / 60).toFixed(1)} 小时`}
               chip="日报／月报"
-              onClick={() => {
-                void Taro.navigateTo({ url: attendanceUrl });
-              }}
+              onClick={openAttendance}
             />
             <Subtitle>
-              按应勤成员统计，未到时点不计缺卡。
+              按应勤成员统计，未到时点不计缺卡。点击数字查看人员明细。
             </Subtitle>
             <ListItem
               primary={`本班待审批 · ${data.pendingCount} 条`}
-              chip="去处理"
+              chip={data.pendingCount > 0 ? "去处理" : "查看记录"}
               onClick={() => {
-                void Taro.navigateTo({ url: "/pages/team-makeups/index" });
+                void Taro.navigateTo({ url: makeupsUrl });
               }}
             />
           </Section>
@@ -247,6 +252,12 @@ export const TeamLeaderOverview = ({
                     key={worker.memberId}
                     primary={worker.displayName ?? "姓名待补录"}
                     secondary={`${day?.workType ?? "工种待补录"} · ${phone}`}
+                    tone={
+                      abnormalities.length > 0 && worker.requiresAttendance
+                        ? "danger"
+                        : undefined
+                    }
+                    onClick={openAttendance}
                     chip={
                       !worker.requiresAttendance
                         ? "无需考勤"

@@ -11,6 +11,7 @@ import {
 } from "../services/attendance-safety";
 
 import "./attendance-safety-card.scss";
+import { errorMessage } from "../services/error-messages";
 
 export type PunchSafetyReceipt = AttendanceSafetyReceipt & {
   readonly context: string;
@@ -53,9 +54,7 @@ export const AttendanceSafetyCard = ({
       (cause: unknown) => {
         if (active)
           setError(
-            cause instanceof Error
-              ? cause.message
-              : "安全交底读取失败，请重试。",
+            errorMessage(cause, "安全交底读取失败，请重试。"),
           );
       },
     );
@@ -88,9 +87,7 @@ export const AttendanceSafetyCard = ({
     } catch (cause: unknown) {
       if (currentGeneration !== generation.current) return;
       setError(
-        cause instanceof Error
-          ? cause.message
-          : "确认失败，请重新读取交底内容。",
+        errorMessage(cause, "确认失败，请重新读取交底内容。"),
       );
       onConfirmed(null);
     } finally {
@@ -170,7 +167,7 @@ export const AttendanceSafetyCard = ({
           )}
           {error !== null && (
             <>
-              <Notice>{error}</Notice>
+              <Notice tone="error">{error}</Notice>
               <Button
                 appearance={appearance}
                 variant="outline"

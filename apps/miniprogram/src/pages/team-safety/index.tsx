@@ -30,8 +30,13 @@ import {
   resolveSafetyIssue,
 } from "../../services/team-work";
 import { chinaToday } from "../../services/time";
+import { errorMessage } from "../../services/error-messages";
 
 type Tab = "BRIEFING" | "OPEN" | "ISSUE";
+const previousDay = (value: string): string =>
+  new Date(Date.parse(`${value}T00:00:00Z`) - 86400_000)
+    .toISOString()
+    .slice(0, 10);
 export default function TeamSafety(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
@@ -56,12 +61,19 @@ export default function TeamSafety(): JSX.Element {
   const [severity, setSeverity] = useState<"GENERAL" | "SERIOUS">("GENERAL");
   const [resolving, setResolving] = useState<string | null>(null);
   const [resolution, setResolution] = useState<string>("");
+  const [memberSearch, setMemberSearch] = useState<string>("");
+  const today: string = chinaToday();
+  const pickableMembers: readonly ProjectParticipant[] = members.filter(
+    (person) =>
+      memberSearch.trim().length === 0 ||
+      (person.displayName ?? "").includes(memberSearch.trim()) ||
+      person.phone.includes(memberSearch.trim()),
+  );
   useEffect(() => {
     if (teamId === null) return;
     let active: boolean = true;
     setBriefings(null);
     setError(null);
-    setResolving(null);
     void Promise.all([
       fetchTeamBriefings(teamId, date),
       fetchSafetyIssues(teamId, date),
@@ -85,7 +97,7 @@ export default function TeamSafety(): JSX.Element {
       },
       (cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : "安全记录读取失败");
+          setError(errorMessage(cause, "安全记录读取失败"));
       },
     );
     return () => {
@@ -99,21 +111,35 @@ export default function TeamSafety(): JSX.Element {
     try {
       await action();
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "操作失败，请重试");
+      const message = errorMessage(cause, "操作失败，请重试");
+      setError(message);
+      await Taro.showToast({ icon: "none", title: message });
     } finally {
       setBusy(false);
     }
   };
+  const reuseLatestBriefing = (): Promise<void> =>
+    perform(async () => {
+      if (teamId === null) return;
+      const previous = await fetchTeamBriefings(teamId, previousDay(date));
+      const latest = previous[previous.length - 1];
+      if (latest === undefined) {
+        await Taro.showToast({ icon: "none", title: "前一天没有交底记录" });
+        return;
+      }
+      setTitle(latest.title);
+      setContent(latest.content);
+    });
   if (teamId === null)
     return (
       <Screen>
-        <PageHeader title="安全管理" />
+        <PageHeader title="班组安全" />
         <StateView title="请先选择负责的班组" />
       </Screen>
     );
   return (
     <Screen>
-      <PageHeader title="安全管理" />
+      <PageHeader title="班组安全" />
       <Button
         variant="outline"
         onClick={() => {
@@ -122,7 +148,7 @@ export default function TeamSafety(): JSX.Element {
           });
         }}
       >
-        人员违规与安全信用
+        安全信用
       </Button>
       <WorkDate value={date} onChange={setDate} />
       <Segmented
@@ -137,17 +163,26 @@ export default function TeamSafety(): JSX.Element {
           setCreating(false);
         }}
       />
-      {error && <Notice>{error}</Notice>}
-      <Button variant="outline" onClick={() => setCreating(!creating)}>
+      {error && <Notice tone="error">{error}</Notice>}
+      <Button
+        variant="outline"
+        disabled={tab === "BRIEFING" && date < today}
+        onClick={() => setCreating(!creating)}
+      >
         {creating
           ? "收起"
           : tab === "BRIEFING"
-            ? "＋ 发布安全交底"
+            ? date < today
+              ? "往日交底不可补发"
+              : "＋ 发布安全交底"
             : "＋ 记录隐患"}
       </Button>
       {creating &&
         (tab === "BRIEFING" ? (
-          <Section title="发布交底" sub="发布后不可修改，补充内容需另发。">
+          <Section
+            title={`发布 ${date} 交底`}
+            sub="发布后不可修改，补充内容需另发。"
+          >
             <Field
               label="交底标题"
               value={title}
@@ -157,11 +192,29 @@ export default function TeamSafety(): JSX.Element {
             />
             <WorkNotes label="交底内容" value={content} onChange={setContent} />
             <Button
+              variant="text"
+              disabled={busy}
+              onClick={() => {
+                void reuseLatestBriefing();
+              }}
+            >
+              套用前一天交底
+            </Button>
+            <Button
               loading={busy}
+              disabled={busy || !title.trim() || !content.trim()}
               onClick={() => {
                 void perform(async () => {
                   if (!title.trim() || !content.trim())
                     throw new Error("请填写标题和交底内容。");
+                  if (date < today)
+                    throw new Error("交底只能发布给今天或之后的日期。");
+                  const confirmation = await Taro.showModal({
+                    title: `发布 ${date} 安全交底`,
+                    content: `《${title.trim()}》发布后不可修改，本班工人打卡前须确认。`,
+                    confirmText: "确认发布",
+                  });
+                  if (!confirmation.confirm) return;
                   await publishTeamBriefing(teamId, {
                     workDate: date,
                     title,
@@ -171,6 +224,7 @@ export default function TeamSafety(): JSX.Element {
                   setTitle("");
                   setContent("");
                   refresh();
+                  await Taro.showToast({ icon: "success", title: "已发布" });
                 });
               }}
             >
@@ -179,17 +233,31 @@ export default function TeamSafety(): JSX.Element {
           </Section>
         ) : (
           <Section title="记录隐患">
+            {members.length > 10 && (
+              <Field
+                value={memberSearch}
+                placeholder="搜索姓名或手机号后再选择"
+                onInput={setMemberSearch}
+              />
+            )}
             <Picker
               mode="selector"
               range={[
                 "班组现场（不关联个人）",
-                ...members.map((person) => person.displayName ?? "姓名待补录"),
+                ...pickableMembers.map(
+                  (person) => person.displayName ?? "姓名待补录",
+                ),
               ]}
+              value={
+                pickableMembers.findIndex(
+                  (person) => person.memberId === memberId,
+                ) + 1
+              }
               onChange={(event) =>
                 setMemberId(
                   Number(event.detail.value) === 0
                     ? null
-                    : members[Number(event.detail.value) - 1]!.memberId,
+                    : pickableMembers[Number(event.detail.value) - 1]!.memberId,
                 )
               }
             >
@@ -216,6 +284,7 @@ export default function TeamSafety(): JSX.Element {
             />
             <Button
               loading={busy}
+              disabled={busy || !description.trim()}
               onClick={() => {
                 void perform(async () => {
                   if (!description.trim()) throw new Error("请填写隐患内容。");
@@ -227,7 +296,9 @@ export default function TeamSafety(): JSX.Element {
                   });
                   setCreating(false);
                   setDescription("");
+                  setMemberId(null);
                   refresh();
+                  await Taro.showToast({ icon: "success", title: "已记录" });
                 });
               }}
             >
@@ -237,7 +308,8 @@ export default function TeamSafety(): JSX.Element {
         ))}
       {briefings === null ? (
         <StateView
-          title={error ? "安全记录加载失败" : "正在读取安全记录…"}
+          title={error ? "安全记录读取失败" : "正在读取安全记录…"}
+          kind={error ? "error" : "loading"}
           onRetry={refresh}
         />
       ) : tab === "BRIEFING" ? (
@@ -316,6 +388,7 @@ export default function TeamSafety(): JSX.Element {
                   />
                   <Button
                     loading={busy}
+                    disabled={busy || !resolution.trim()}
                     onClick={() => {
                       void perform(async () => {
                         if (!resolution.trim())

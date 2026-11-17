@@ -31,6 +31,7 @@ import {
 } from "../../services/work-entry";
 
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 type DemoRole = {
   readonly code: TestAccountCode;
@@ -98,7 +99,7 @@ export default function Login(): JSX.Element {
       await onLoggedIn();
     } catch (reason) {
       setError(
-        reason instanceof Error ? reason.message : "登录失败，请检查网络后重试",
+        errorMessage(reason, "登录失败，请检查网络后重试"),
       );
     } finally {
       setBusy(null);
@@ -210,7 +211,7 @@ export default function Login(): JSX.Element {
         <Notice>请在微信小程序内使用微信登录。</Notice>
       ) : null}
       {(error ?? sessionError) ? (
-        <Notice>{error ?? sessionError}</Notice>
+        <Notice tone="error">{error ?? sessionError}</Notice>
       ) : null}
       {FRONTEND_DEMO || TEST_LOGIN_ENABLED ? (
         <>

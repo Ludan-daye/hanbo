@@ -12,6 +12,7 @@ import { Button, Field, Notice } from "../ui/index";
 import { AccountAvatar } from "../account-avatar";
 
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 const nativeAvatarPicker: boolean = process.env.TARO_ENV === "weapp";
 
@@ -77,9 +78,7 @@ export const AccountProfileForm = ({
       selectAvatar(path);
     } catch (cause: unknown) {
       setError(
-        cause instanceof Error
-          ? cause.message
-          : "未完成头像选择，请重新选择图片。",
+        errorMessage(cause, "未完成头像选择，请重新选择图片。"),
       );
     }
   };
@@ -126,7 +125,7 @@ export const AccountProfileForm = ({
       setSavedMessage("账号资料已保存");
     } catch (cause: unknown) {
       setError(
-        cause instanceof Error ? cause.message : "资料保存失败，请重试。",
+        errorMessage(cause, "资料保存失败，请重试。"),
       );
     } finally {
       setBusy(false);
@@ -221,7 +220,7 @@ export const AccountProfileForm = ({
       <View className="account-identity-note">
         姓名、手机号须与本人档案一致。
       </View>
-      {error ? <Notice>{error}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
       <Button
         loading={busy}
         disabled={nicknameRejected}

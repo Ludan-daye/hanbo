@@ -20,6 +20,7 @@ import {
   type SessionPhase,
   type SessionState,
 } from "./sessionReducer";
+import { errorMessage } from "../services/error-messages";
 
 type SessionContextValue = {
   readonly state: SessionState;
@@ -75,9 +76,7 @@ export const SessionProvider = ({
       void loadMe().catch((cause: unknown): void => {
         dispatch({ type: "CLEAR" });
         setError(
-          cause instanceof Error
-            ? cause.message
-            : "读取登录状态失败，请重新登录。",
+          errorMessage(cause, "读取登录状态失败，请重新登录。"),
         );
       });
     }

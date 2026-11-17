@@ -26,6 +26,7 @@ import type {
   MyAttendanceDay,
   Makeup,
 } from "../../services/me.types";
+import { errorMessage } from "../../services/error-messages";
 
 const POINT_LABEL: Readonly<Record<AttendanceRecord["pointCode"], string>> = {
   SEGMENT_1_END: "上午下班",
@@ -102,7 +103,7 @@ function LegacyMyRecords(): JSX.Element {
       (reason) => {
         if (!cancelled)
           setError(
-            reason instanceof Error ? reason.message : "无法读取考勤记录",
+            errorMessage(reason, "无法读取考勤记录"),
           );
       },
     );

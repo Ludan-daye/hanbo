@@ -1,0 +1,11 @@
+.makeup-quick-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 16rpx;
+}
+.makeup-quick-reasons .ui-btn--text {
+  background: var(--surface-sunk);
+  border-radius: var(--radius-pill);
+  font-size: 24rpx;
+}

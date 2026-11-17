@@ -19,6 +19,7 @@ import {
   StateView,
   Subtitle,
 } from "./ui/index";
+import { errorMessage } from "../services/error-messages";
 
 type Row = DailyReportParticipant | RangeReportParticipant;
 type Filter = "ALL" | "WORKER" | "MANAGER";
@@ -109,9 +110,7 @@ export const ReportParticipants = ({
       await Taro.setClipboardData({ data: text });
     } catch (failure: unknown) {
       setError(
-        failure instanceof Error
-          ? failure.message
-          : "复制失败，请检查剪贴板权限。",
+        errorMessage(failure, "复制失败，请检查剪贴板权限。"),
       );
     }
   };
@@ -256,7 +255,7 @@ export const ReportParticipants = ({
       >
         复制当前明细
       </Button>
-      {error ? <Notice>{error}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
     </View>
   );
 };

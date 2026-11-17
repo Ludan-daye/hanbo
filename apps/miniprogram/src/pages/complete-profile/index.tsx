@@ -11,6 +11,7 @@ import { useSession } from "../../store/session";
 import { WorkEntryNotice } from "../../components/work-entry-notice";
 
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 export default function CompleteProfile(): JSX.Element {
   const { state, phase, refreshMe, clear } = useSession();
@@ -33,7 +34,7 @@ export default function CompleteProfile(): JSX.Element {
       await clear();
       await Taro.reLaunch({ url: "/pages/login/index" });
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "退出失败，请重试。");
+      setError(errorMessage(cause, "退出失败，请重试。"));
     } finally {
       setSigningOut(false);
     }
@@ -63,7 +64,7 @@ export default function CompleteProfile(): JSX.Element {
           ? "演示资料仅保存在本机。"
           : "填写本人资料。微信头像不用于考勤核验。"}
       </View>
-      {error ? <Notice>{error}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
       <Button
         variant="outline"
         loading={signingOut}

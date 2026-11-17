@@ -43,6 +43,7 @@ import {
   fetchMyFace,
   type MyFace,
 } from "../../services/face";
+import { errorMessage } from "../../services/error-messages";
 
 const livenessTestFlow: VideoFaceFlow<FaceLivenessTestResult> = {
   createSession: createLivenessTest,
@@ -89,7 +90,7 @@ export default function FaceProfilePage(): JSX.Element {
       (reason: unknown) => {
         if (!cancelled)
           setError(
-            reason instanceof Error ? reason.message : "读取人脸档案失败",
+            errorMessage(reason, "读取人脸档案失败"),
           );
       },
     );
@@ -140,7 +141,7 @@ export default function FaceProfilePage(): JSX.Element {
       await refreshMe();
     } catch (reason: unknown) {
       setError(
-        reason instanceof Error ? reason.message : "提交未完成，请重试。",
+        errorMessage(reason, "提交未完成，请重试。"),
       );
     } finally {
       operationLock.current = false;
@@ -156,7 +157,7 @@ export default function FaceProfilePage(): JSX.Element {
       await Taro.reLaunch({ url: "/pages/home/index" });
     } catch (cause: unknown) {
       setError(
-        cause instanceof Error ? cause.message : "读取登记结果失败，请重试。",
+        errorMessage(cause, "读取登记结果失败，请重试。"),
       );
     } finally {
       setBusy(false);
@@ -170,7 +171,7 @@ export default function FaceProfilePage(): JSX.Element {
       await clear();
       await Taro.reLaunch({ url: "/pages/login/index" });
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "退出失败，请重试。");
+      setError(errorMessage(cause, "退出失败，请重试。"));
     } finally {
       setBusy(false);
     }
@@ -283,9 +284,13 @@ export default function FaceProfilePage(): JSX.Element {
           </Subtitle>
         </>
       ) : null}
-      {error !== null ? <Notice>{error}</Notice> : null}
+      {error !== null ? <Notice tone="error">{error}</Notice> : null}
       {data === null ? (
-        <StateView title="读取人脸档案" onRetry={refresh} />
+        <StateView
+          title={error !== null ? "人脸档案读取失败" : "正在读取人脸档案…"}
+          kind={error !== null ? "error" : "loading"}
+          onRetry={refresh}
+        />
       ) : (
         <>
           {data.mode === "UNCONFIGURED" ? (

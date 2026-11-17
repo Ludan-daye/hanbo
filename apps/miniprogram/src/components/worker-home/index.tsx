@@ -1,5 +1,5 @@
 import { Button as NativeButton, View } from "@tarojs/components";
-import Taro from "@tarojs/taro";
+import Taro, { usePullDownRefresh } from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
 import { API_BASE_URL, FRONTEND_DEMO } from "../../config/env";
@@ -37,7 +37,7 @@ import {
   projectPunchUrl,
   type ProjectAttendance,
 } from "../../services/project-attendance";
-import { AppHeader, AppIcon, BottomNav, Button, Screen } from "../ui";
+import { AppHeader, AppIcon, BottomNav, Button, Screen, StatCards } from "../ui";
 import "./index.scss";
 
 const go = (url: string): void => {
@@ -118,6 +118,10 @@ export const WorkerHome = ({
     error: accountError,
     refresh: refreshAccount,
   } = useAccountProfile();
+  usePullDownRefresh(() => {
+    refresh();
+    refreshAccount();
+  });
   const { entries, loading, error } = useMyProjectAttendance(revision, refresh);
   const storageKey = workerHomeStorageKey({
     userId,
@@ -186,9 +190,12 @@ export const WorkerHome = ({
     };
   }, [revision, from, to, userId]);
 
+  useEffect(() => {
+    if (!loading) Taro.stopPullDownRefresh();
+  }, [loading]);
   const selection =
     !loading && error === null
-      ? resolveWorkerHomeSelection(entries, preference)
+      ? resolveWorkerHomeSelection(entries, preference, now)
       : null;
   const projectId = selection?.projectId ?? null;
   const current =
@@ -460,6 +467,30 @@ export const WorkerHome = ({
       <View className="worker-task" data-project-id={projectId ?? ""}>
         {renderTask()}
       </View>
+      {month ? (
+        <View className="worker-month-stats">
+          <StatCards
+            items={[
+              {
+                label: "本月出勤",
+                value: `${month.attendedDays} 天`,
+                onClick: () => go("/pages/my-records/index?range=MONTH"),
+              },
+              {
+                label: "本月工时",
+                value: `${(month.workedMinutes / 60).toFixed(1)} 小时`,
+                onClick: () => go("/pages/my-records/index?range=MONTH"),
+              },
+              {
+                label: "本月缺卡",
+                value: `${month.missingDays} 天`,
+                tone: month.missingDays > 0 ? "danger" : undefined,
+                onClick: () => go("/pages/my-records/index?range=MONTH"),
+              },
+            ]}
+          />
+        </View>
+      ) : null}
       {storageError ? (
         <View className="worker-inline-note">
           项目选择已生效，暂未保存为默认。

@@ -28,6 +28,7 @@ import type {
 } from "../../services/management.types";
 import { chinaToday } from "../../services/time";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 const STATUS_OPTIONS: ReadonlyArray<{ label: string; value: ProjectStatus }> = [
   { label: "筹备中", value: "PREPARING" },
@@ -73,7 +74,7 @@ export default function CreateProject(): JSX.Element {
       validateProjectLocation(location);
     } catch (cause: unknown) {
       setError(
-        cause instanceof Error ? cause.message : "工地位置无效，请重新选择。",
+        errorMessage(cause, "工地位置无效，请重新选择。"),
       );
       return;
     }
@@ -98,9 +99,7 @@ export default function CreateProject(): JSX.Element {
         url: `/pages/company-projects/index?companyId=${companyId}`,
       });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "REQUEST_FAILED";
-      setError(msg);
-      await Taro.showToast({ icon: "none", title: "创建失败" });
+      setError(errorMessage(e, "项目创建未完成，请稍后重试。"));
     } finally {
       setBusy(false);
     }
@@ -203,7 +202,7 @@ export default function CreateProject(): JSX.Element {
       >
         {busy ? "提交中…" : "创建项目"}
       </Button>
-      {error !== null ? <StateView title="错误" sub={error} /> : null}
+      {error !== null ? <Notice tone="error">{error}</Notice> : null}
     </Screen>
   );
 }

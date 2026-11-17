@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FRONTEND_DEMO, TEST_LOGIN_ENABLED } from "../../config/env";
 import { fetchMyRoleScopes } from "../../services/management";
 import type { WorkRoleScope } from "../../services/management.types";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
@@ -21,6 +22,7 @@ import { RolePanel } from "../../components/role-panels/index";
 import { roleHomePanel } from "../../routing/roleHome";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 export default function Workspace(): JSX.Element {
   useSessionGuard();
@@ -40,7 +42,7 @@ export default function Workspace(): JSX.Element {
       })
       .catch((cause: unknown) => {
         if (!cancelled)
-          setError(cause instanceof Error ? cause.message : "读取工作范围失败");
+          setError(errorMessage(cause, "读取工作范围失败"));
       });
     return () => {
       cancelled = true;
@@ -66,14 +68,16 @@ export default function Workspace(): JSX.Element {
       >
         权限等级与功能 ›
       </View>
-      <ListItem
-        primary="打卡流程测试"
-        secondary="定位 → 现场拍照 → 活体人脸识别"
-        chip="开始测试"
-        onClick={() => {
-          void Taro.navigateTo({ url: "/pages/punch-test/index" });
-        }}
-      />
+      {TEST_LOGIN_ENABLED || FRONTEND_DEMO ? (
+        <ListItem
+          primary="打卡流程测试"
+          secondary="定位 → 现场拍照 → 活体人脸识别（测试环境）"
+          chip="开始测试"
+          onClick={() => {
+            void Taro.navigateTo({ url: "/pages/punch-test/index" });
+          }}
+        />
+      ) : null}
       {error ? (
         <StateView title="加载失败" sub={error} onRetry={refresh} />
       ) : scopes === null ? (

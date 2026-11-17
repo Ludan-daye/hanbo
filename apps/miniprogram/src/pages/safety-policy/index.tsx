@@ -15,6 +15,7 @@ import {
   fetchSafetyPolicies,
   createSafetyPolicy,
 } from "../../services/safety-credit";
+import { errorMessage } from "../../services/error-messages";
 
 export default function SafetyPolicy(): JSX.Element {
   useSessionGuard();
@@ -39,7 +40,7 @@ export default function SafetyPolicy(): JSX.Element {
       },
       (cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : "规则读取失败");
+          setError(errorMessage(cause, "规则读取失败"));
       },
     );
     return () => {
@@ -49,7 +50,7 @@ export default function SafetyPolicy(): JSX.Element {
   return (
     <Screen>
       <PageHeader title="全局安全信用规则" />
-      {error && <Notice>{error}</Notice>}
+      {error && <Notice tone="error">{error}</Notice>}
       <Section title="新版本">
         <WorkDate value={date} onChange={setDate} />
         <Field
@@ -105,7 +106,7 @@ export default function SafetyPolicy(): JSX.Element {
                 (row) => setPolicies([...policies, row]),
                 (cause: unknown) =>
                   setError(
-                    cause instanceof Error ? cause.message : "规则保存失败",
+                    errorMessage(cause, "规则保存失败"),
                   ),
               )
               .finally(() => setBusy(false));

@@ -8,6 +8,7 @@ import { useSessionGuard } from "../../hooks/use-session-guard";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { chinaToday } from "../../services/time";
 import { fetchWorktimeConfiguration, saveWorktimeConfiguration, type WorktimeConfiguration } from "../../services/worktime";
+import { errorMessage } from "../../services/error-messages";
 
 const tomorrow = (): string => new Date(Date.parse(`${chinaToday()}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
 export default function ProjectWorktime(): JSX.Element {
@@ -32,7 +33,7 @@ export default function ProjectWorktime(): JSX.Element {
       const latest = [...value.versions].sort((a, b) => b.version - a.version)[0];
       setRule(latest?.config ?? value.defaultConfig);
       setStartsOn(latest && latest.startsOn > tomorrow() ? latest.startsOn : tomorrow());
-    }, (cause: unknown) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "规则读取失败"); });
+    }, (cause: unknown) => { if (!cancelled) setError(errorMessage(cause, "规则读取失败")); });
     return () => { cancelled = true; };
   }, [projectId, revision]);
   const update = (value: Partial<WorktimeRule>): void => { setRule((current) => ({ ...current, ...value })); setSaved(null); };
@@ -45,12 +46,12 @@ export default function ProjectWorktime(): JSX.Element {
     try {
       setConfiguration(await saveWorktimeConfiguration(projectId, { expectedVersion: configuration.latestVersion, startsOn, config: rule }));
       setSaved(`${startsOn} 生效`);
-    } catch (cause: unknown) { setError(cause instanceof Error ? cause.message : "保存失败"); }
+    } catch (cause: unknown) { setError(errorMessage(cause, "保存失败")); }
     finally { operation.current = false; setBusy(false); }
   };
   return <Screen>
     <PageHeader title="工时规则" />
-    {error && <Notice>{error}</Notice>}
+    {error && <Notice tone="error">{error}</Notice>}
     {saved && <Notice>{saved}</Notice>}
     {configuration === null ? <StateView title={error ? "读取失败" : "加载中"} onRetry={error ? refresh : undefined} /> : <>
       <Section title="计时设置">

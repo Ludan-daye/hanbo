@@ -1,1 +1,1 @@
-export default definePageConfig({ navigationBarTitleText: "工地考勤" });
+export default definePageConfig({ navigationBarTitleText: "工地考勤", enablePullDownRefresh: true });

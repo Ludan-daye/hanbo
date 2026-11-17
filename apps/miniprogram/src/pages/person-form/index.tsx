@@ -31,6 +31,7 @@ import {
 } from "../../services/workflows";
 import { chinaToday, formatChinaDate } from "../../services/time";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 const emptyPerson = (enteredAt: string): PersonForm => ({
   displayName: "",
@@ -118,7 +119,7 @@ export default function PersonFormPage(): JSX.Element {
         if (!cancelled) {
           setLoadFailed(true);
           setError(
-            failure instanceof Error ? failure.message : "读取人员资料失败",
+            errorMessage(failure, "读取人员资料失败"),
           );
           setLoading(false);
         }
@@ -156,7 +157,7 @@ export default function PersonFormPage(): JSX.Element {
       )
         throw new Error("请填写姓名、11 位手机号、工作种类和项目岗位。");
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "请检查项目职级。");
+      setError(errorMessage(failure, "请检查项目职级。"));
       return;
     }
     if (memberId && body.status !== "ACTIVE") {
@@ -175,7 +176,7 @@ export default function PersonFormPage(): JSX.Element {
       await Taro.showToast({ title: "已保存", icon: "success" });
       await Taro.navigateBack();
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "保存人员资料失败");
+      setError(errorMessage(failure, "保存人员资料失败"));
     } finally {
       setBusy(false);
     }
@@ -334,7 +335,7 @@ export default function PersonFormPage(): JSX.Element {
           </Button>
         </>
       )}
-      {error ? <Notice>{error}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
     </Screen>
   );
 }

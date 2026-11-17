@@ -27,6 +27,7 @@ import type {
 } from "../../services/management.types";
 import { fetchParticipantPage } from "../../services/workflows";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 type Filter = "ALL" | ProjectPermissionRole;
 const FILTER_OPTIONS = [
@@ -86,7 +87,7 @@ export default function Participants(): JSX.Element {
       },
       (failure: unknown): void => {
         if (!cancelled)
-          setError(failure instanceof Error ? failure.message : "读取人员失败");
+          setError(errorMessage(failure, "读取人员失败"));
       },
     );
     return (): void => {

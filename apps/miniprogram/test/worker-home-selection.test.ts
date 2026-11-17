@@ -144,6 +144,21 @@ describe("worker home current project", () => {
     });
   });
 
+  test("suggests the only project with a pending point today without saving it", () => {
+    const now = "2026-10-31T01:00:00.000Z";
+    const done = ready("a", [point("CUSTOM_START", "08:00", recorded("VALID"))]);
+    expect(resolveWorkerHomeSelection([done, ready("b")], null, now)).toEqual({
+      projectId: "b",
+      reason: "suggested",
+      preference: null,
+    });
+    expect(resolveWorkerHomeSelection([ready("a"), ready("b")], null, now)).toEqual({
+      projectId: null,
+      reason: "choice-required",
+      preference: null,
+    });
+  });
+
   test("restores a remembered project independently of project ordering", () => {
     expect(
       resolveWorkerHomeSelection([ready("b"), ready("a")], { projectId: "a" }),

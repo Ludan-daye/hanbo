@@ -13,6 +13,7 @@ import {
 } from "./ui/index";
 import { fetchTeamTaskTemplates } from "../services/team-work";
 import { workTimestamp } from "./team-work-fields";
+import { errorMessage } from "../services/error-messages";
 
 export const TeamTaskTemplates = ({
   teamId,
@@ -42,7 +43,7 @@ export const TeamTaskTemplates = ({
         (cause: unknown) => {
           if (active)
             setError(
-              cause instanceof Error ? cause.message : "历史安排读取失败",
+              errorMessage(cause, "历史安排读取失败"),
             );
         },
       );
@@ -67,7 +68,7 @@ export const TeamTaskTemplates = ({
         nextCursor: result.nextCursor,
       });
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "历史安排读取失败");
+      setError(errorMessage(cause, "历史安排读取失败"));
     } finally {
       setBusy(false);
     }
@@ -81,7 +82,7 @@ export const TeamTaskTemplates = ({
         maxLength={80}
         disabled={busy}
       />
-      {error && <Notice>{error}</Notice>}
+      {error && <Notice tone="error">{error}</Notice>}
       {page === null ? (
         <StateView
           title={error ? "读取失败" : "正在读取…"}

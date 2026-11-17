@@ -6,6 +6,7 @@ import type {
 import { Button, ListItem, Notice, Section, Subtitle } from "./ui/index";
 import { workTimestamp } from "./team-work-fields";
 import { previewSafetyEvidence } from "../services/safety-credit";
+import { errorMessage } from "../services/error-messages";
 
 export const safetyStatusLabel = (
   status: SafetyViolationView["status"],
@@ -100,7 +101,7 @@ export const SafetyViolationCard = ({
             void previewSafetyEvidence(row.id, index)
               .catch((cause: unknown) =>
                 setError(
-                  cause instanceof Error ? cause.message : "照片读取失败",
+                  errorMessage(cause, "照片读取失败"),
                 ),
               )
               .finally(() => setBusy(false));
@@ -109,7 +110,7 @@ export const SafetyViolationCard = ({
           凭证照片 {index + 1}
         </Button>
       ))}
-      {error && <Notice>{error}</Notice>}
+      {error && <Notice tone="error">{error}</Notice>}
     </>
   );
 };

@@ -26,6 +26,7 @@ import {
   updateTeam,
 } from "../../services/workflows";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 export default function TeamDetail(): JSX.Element {
   useSessionGuard();
@@ -59,7 +60,7 @@ export default function TeamDetail(): JSX.Element {
       },
       (failure: unknown): void => {
         if (!cancelled)
-          setError(failure instanceof Error ? failure.message : "读取班组失败");
+          setError(errorMessage(failure, "读取班组失败"));
       },
     );
     return (): void => {
@@ -83,7 +84,7 @@ export default function TeamDetail(): JSX.Element {
       },
       (failure: unknown): void => {
         if (!cancelled)
-          setError(failure instanceof Error ? failure.message : "读取成员失败");
+          setError(errorMessage(failure, "读取成员失败"));
       },
     );
     return (): void => {
@@ -117,7 +118,7 @@ export default function TeamDetail(): JSX.Element {
       );
       await Taro.showToast({ title: "班组资料已保存", icon: "success" });
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "保存班组失败");
+      setError(errorMessage(failure, "保存班组失败"));
     } finally {
       setBusy(false);
     }

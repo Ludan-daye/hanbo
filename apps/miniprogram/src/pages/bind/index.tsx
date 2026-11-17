@@ -23,6 +23,7 @@ import { useSession } from "../../store/session";
 import { WorkEntryNotice } from "../../components/work-entry-notice";
 
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 export default function Bind(): JSX.Element {
   const { state, phase, refreshMe, clear } = useSession();
@@ -65,9 +66,7 @@ export default function Bind(): JSX.Element {
       setCode("");
     } catch (cause) {
       setError(
-        cause instanceof Error
-          ? cause.message
-          : "绑定失败，请确认邀请码后重试。",
+        errorMessage(cause, "绑定失败，请确认邀请码后重试。"),
       );
     } finally {
       setBusy(false);
@@ -89,9 +88,7 @@ export default function Bind(): JSX.Element {
       });
     } catch (cause: unknown) {
       setError(
-        cause instanceof Error
-          ? cause.message
-          : "读取绑定信息失败，请重新登录查看。",
+        errorMessage(cause, "读取绑定信息失败，请重新登录查看。"),
       );
     } finally {
       setBusy(false);
@@ -106,9 +103,7 @@ export default function Bind(): JSX.Element {
       await Taro.showToast({
         icon: "none",
         title:
-          cause instanceof Error
-            ? cause.message
-            : "会话退出失败，本机登录已清除。",
+          errorMessage(cause, "会话退出失败，本机登录已清除。"),
       });
     } finally {
       await Taro.reLaunch({ url: "/pages/login/index" });
@@ -143,7 +138,7 @@ export default function Bind(): JSX.Element {
                 />
               ) : null}
             </View>
-            {error ? <Notice>{error}</Notice> : null}
+            {error ? <Notice tone="error">{error}</Notice> : null}
             <Button
               loading={busy}
               onClick={() => {
@@ -172,7 +167,7 @@ export default function Bind(): JSX.Element {
                   setError(null);
                 }}
               />
-              {error ? <Notice>{error}</Notice> : null}
+              {error ? <Notice tone="error">{error}</Notice> : null}
               <Button
                 loading={busy}
                 disabled={editingProfile}
@@ -360,7 +355,7 @@ export default function Bind(): JSX.Element {
           </Button>
         </View>
       )}
-      {error ? <Notice>{error}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
       <Button
         variant="outline"
         disabled={busy}

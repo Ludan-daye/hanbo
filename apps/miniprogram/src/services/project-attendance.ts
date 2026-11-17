@@ -1,6 +1,7 @@
 import type { ApiClient } from "./apiClient";
 import type { AttendanceToday, MyProjectMembership } from "./me.types";
 import { chinaToday } from "./time";
+import { errorMessage } from "./error-messages";
 
 export type ReadyProjectAttendance = {
   readonly project: MyProjectMembership;
@@ -76,9 +77,7 @@ const readProjectAttendance = async (
       project,
       status: "error",
       error:
-        reason instanceof Error
-          ? reason.message
-          : "无法读取该项目的今日安排，请重试。",
+        errorMessage(reason, "无法读取该项目的今日安排，请重试。"),
     };
   }
 };

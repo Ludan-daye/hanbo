@@ -1,1 +1,1 @@
-export default definePageConfig({ navigationBarTitleText: "团队考勤" });
+export default definePageConfig({ navigationBarTitleText: "班组考勤" });

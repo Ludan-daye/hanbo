@@ -29,6 +29,7 @@ import { workerProjectStatus } from "../../services/worker-home";
 import pin from "../../assets/icons/pin.png";
 import { FlowScreen } from "../../components/worker-flow";
 import { useSession } from "../../store/session";
+import { errorMessage, isUserCancel } from "../../services/error-messages";
 import "./index.scss";
 
 const statusLabel: Readonly<Record<MyProjectDetail["status"], string>> = {
@@ -36,12 +37,6 @@ const statusLabel: Readonly<Record<MyProjectDetail["status"], string>> = {
   ACTIVE: "进行中",
   SUSPENDED: "已暂停",
   COMPLETED: "已完工",
-};
-const errorMessage = (cause: unknown): string => {
-  if (cause instanceof Error) return cause.message;
-  if (typeof cause === "object" && cause !== null && "errMsg" in cause)
-    return String(cause.errMsg);
-  return "操作未完成，请重试。";
 };
 
 export default function MyProjectDetailPage(): JSX.Element {
@@ -92,7 +87,7 @@ export default function MyProjectDetailPage(): JSX.Element {
     try {
       await Taro.makePhoneCall({ phoneNumber: phone });
     } catch (cause: unknown) {
-      setActionError(errorMessage(cause));
+      if (!isUserCancel(cause)) setActionError(errorMessage(cause));
     }
   };
   const showLocation = async (): Promise<void> => {
@@ -139,7 +134,7 @@ export default function MyProjectDetailPage(): JSX.Element {
     today.points.some((point) => point.record === null);
   if (workerAppearance) {
     return (
-      <FlowScreen title="项目详情">
+      <FlowScreen title={project?.projectName ?? "项目详情"}>
         <View className="worker-project-detail">
           {!projectId ? (
             <StateView title="请从我的项目选择工地" />
@@ -172,6 +167,18 @@ export default function MyProjectDetailPage(): JSX.Element {
                     本项目考勤
                   </View>
                 </View>
+                {canPunch ? (
+                  <Button
+                    appearance="worker"
+                    onClick={() => {
+                      void Taro.navigateTo({
+                        url: projectPunchUrl(project.projectId),
+                      });
+                    }}
+                  >
+                    去打卡
+                  </Button>
+                ) : null}
               </View>
               <View className="worker-project-detail__schedule">
                 <View className="worker-project-detail__section-title">
@@ -259,18 +266,7 @@ export default function MyProjectDetailPage(): JSX.Element {
                           });
                         }}
                       >
-                        查看我的任务与计时
-                      </Button>
-                    ) : null}
-                    {canPunch ? (
-                      <Button
-                        onClick={() => {
-                          void Taro.navigateTo({
-                            url: projectPunchUrl(project.projectId),
-                          });
-                        }}
-                      >
-                        去打卡
+                        查看我的任务
                       </Button>
                     ) : null}
                     <View className="worker-project-detail__muted">
@@ -385,29 +381,14 @@ export default function MyProjectDetailPage(): JSX.Element {
               </Section>
               <Section title="打卡与计工说明">
                 <ListItem
-                  primary="定位 → 现场照片 → 活体人脸核验"
-                  secondary="底照审核通过、定位在范围内后，可拍照刷脸打卡。"
+                  primary="定位 → 现场照片 → 安全交底 → 活体人脸核验"
+                  secondary="底照审核通过、定位在范围内后，拍照并确认交底即可刷脸打卡。"
                 />
                 <Notice>
-                  <View>统计出勤和总工时，不作工资依据。</View>
-                  <View>暂未区分工日、零星用工及加班。</View>
+                  <View>工时按有效打卡计算，区分正常、加班与未分类，不作工资依据。</View>
                 </Notice>
               </Section>
-              {actionError ? <Notice>{actionError}</Notice> : null}
-              <ListItem
-                primary="本项目考勤"
-                onClick={() => {
-                  void Taro.navigateTo({
-                    url: `/pages/my-records/index?projectId=${encodeURIComponent(project.projectId)}`,
-                  });
-                }}
-              />
-              <ListItem
-                primary="返回项目"
-                onClick={() => {
-                  void Taro.reLaunch({ url: "/pages/my-projects/index" });
-                }}
-              />
+              {actionError ? <Notice tone="error">{actionError}</Notice> : null}
             </>
           )}
         </View>
@@ -627,15 +608,15 @@ export default function MyProjectDetailPage(): JSX.Element {
           </Section>
           <Section title="打卡要求">
             <ListItem
-              primary="定位 → 现场照片 → 活体人脸核验"
+              primary="定位 → 现场照片 → 安全交底 → 活体人脸核验"
               secondary="底照审核通过后可打卡，提交后查看结果。"
             />
             <ListItem
               primary="计工说明"
-              secondary="统计出勤和总工时，暂未区分工日、零星及加班。"
+              secondary="工时按有效打卡计算，区分正常、加班与未分类，不作工资依据。"
             />
           </Section>
-          {actionError ? <Notice>{actionError}</Notice> : null}
+          {actionError ? <Notice tone="error">{actionError}</Notice> : null}
         </>
       )}
     </Screen>

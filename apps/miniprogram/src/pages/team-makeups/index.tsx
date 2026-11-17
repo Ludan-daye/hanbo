@@ -27,6 +27,9 @@ import {
 
 import { workTimestamp } from "../../components/team-work-fields";
 import { formatChinaHm } from "../../services/time";
+import { errorMessage } from "../../services/error-messages";
+
+import "./index.scss";
 
 const POINT_LABEL: Readonly<Record<PendingMakeup["pointCode"], string>> = {
   SEGMENT_1_END: "上午下班",
@@ -38,6 +41,12 @@ type ReviewAction = (
   id: string,
   body: { readonly approvalReason: string },
 ) => Promise<unknown>;
+const QUICK_REASONS: readonly string[] = [
+  "情况属实",
+  "已核实出勤",
+  "与现场记录不符",
+];
+const ALL_SCOPES = "全部范围";
 export default function TeamMakeups(): JSX.Element {
   useSessionGuard();
 
@@ -46,7 +55,13 @@ export default function TeamMakeups(): JSX.Element {
   const [tab, setTab] = useState<"PENDING" | "REVIEWED">("PENDING");
   const [items, setItems] = useState<readonly InboxMakeup[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [scope, setScope] = useState<string>("全部范围");
+  const router = Taro.useRouter();
+  const requestedTeamName: string | null = router.params.teamName
+    ? decodeURIComponent(router.params.teamName)
+    : null;
+  const [scope, setScope] = useState<string | null>(
+    requestedTeamName === null ? ALL_SCOPES : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Readonly<Record<string, string>>>({});
@@ -56,7 +71,6 @@ export default function TeamMakeups(): JSX.Element {
     setError(null);
     setItems(null);
     setNextCursor(null);
-    setOpenId(null);
     const load = tab === "PENDING" ? fetchMakeupInbox : fetchReviewedMakeups;
     void load(null).then(
       (page) => {
@@ -67,7 +81,7 @@ export default function TeamMakeups(): JSX.Element {
       },
       (cause) => {
         if (!cancelled)
-          setError(cause instanceof Error ? cause.message : "无法读取审批列表");
+          setError(errorMessage(cause, "无法读取审批列表"));
       },
     );
     return () => {
@@ -80,16 +94,18 @@ export default function TeamMakeups(): JSX.Element {
     title: string,
   ): Promise<void> => {
     if (busy !== null) return;
-    const approvalReason = (reasons[id] ?? "").trim();
-    if (approvalReason.length === 0) {
-      await Taro.showToast({ icon: "none", title: "请填写审批意见" });
+    const typed = (reasons[id] ?? "").trim();
+    const isReject = action === rejectMakeup;
+    if (isReject && typed.length === 0) {
+      await Taro.showToast({ icon: "none", title: "驳回请填写原因" });
       return;
     }
+    const approvalReason = typed.length > 0 ? typed : "情况属实";
     const confirmation = await Taro.showModal({
       title,
       content: `审批意见：${approvalReason}`,
-      confirmText: "确认处理",
-      confirmColor: "#2675ed",
+      confirmText: isReject ? "确认驳回" : "确认通过",
+      confirmColor: isReject ? "#c33845" : "#0066d6",
     });
     if (!confirmation.confirm) return;
     setBusy(id);
@@ -100,15 +116,32 @@ export default function TeamMakeups(): JSX.Element {
       setOpenId(null);
       await Taro.showToast({ icon: "success", title: "已处理" });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "审批未完成，请重试");
+      setError(errorMessage(cause, "审批未完成，请重试"));
     } finally {
       setBusy(null);
     }
   };
   const label = (item: InboxMakeup): string =>
     `${item.projectName} · ${item.teamName ?? "项目直属"}`;
-  const scopes = ["全部范围", ...new Set((items ?? []).map(label))];
-  const activeScope = scopes.includes(scope) ? scope : "全部范围";
+  const scopes = [ALL_SCOPES, ...new Set((items ?? []).map(label))];
+  const requestedItem: InboxMakeup | undefined =
+    requestedTeamName === null
+      ? undefined
+      : // 班组范围名称的格式为“项目 / 班组”，与工作范围接口保持一致。
+        (items ?? []).find(
+          (item) =>
+            `${item.projectName} / ${item.teamName}` === requestedTeamName ||
+            item.teamName === requestedTeamName,
+        );
+  const requestedScope: string | null =
+    requestedItem === undefined ? null : label(requestedItem);
+  const activeScope: string =
+    scope !== null && scopes.includes(scope)
+      ? scope
+      : (requestedScope ?? ALL_SCOPES);
+  const visibleItems: readonly InboxMakeup[] = (items ?? []).filter(
+    (item) => activeScope === ALL_SCOPES || label(item) === activeScope,
+  );
   const loadMore = async (): Promise<void> => {
     if (nextCursor === null || busy !== null) return;
     setBusy("page");
@@ -120,7 +153,7 @@ export default function TeamMakeups(): JSX.Element {
       setItems((rows) => [...(rows ?? []), ...page.items]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "读取下一页失败");
+      setError(errorMessage(cause, "读取下一页失败"));
     } finally {
       setBusy(null);
     }
@@ -158,14 +191,16 @@ export default function TeamMakeups(): JSX.Element {
         </Notice>
         <View className="report-section-title">
           {tab === "PENDING" ? "待处理申请" : "已处理记录"} ·{" "}
-          {items?.length ?? 0} 条
+          {visibleItems.length}
+          {activeScope === ALL_SCOPES ? "" : ` / ${items?.length ?? 0}`} 条
         </View>
         {items === null && error === null ? (
-          <StateView title="加载中…" />
+          <StateView title="正在读取审批列表…" />
         ) : null}
-        {error ? (
-          <StateView title="操作未完成" sub={error} onRetry={refresh} />
+        {items === null && error ? (
+          <StateView title="审批列表读取失败" sub={error} onRetry={refresh} />
         ) : null}
+        {items !== null && error ? <Notice tone="error">{error}</Notice> : null}
         {items?.length === 0 && nextCursor === null ? (
           <StateView
             title={tab === "PENDING" ? "全部处理完毕" : "暂无处理记录"}
@@ -179,11 +214,13 @@ export default function TeamMakeups(): JSX.Element {
         {items?.length === 0 && nextCursor !== null ? (
           <StateView title="当前页无记录" sub="请继续加载后续申请。" />
         ) : null}
-        {(items ?? [])
-          .filter(
-            (item) => activeScope === "全部范围" || label(item) === activeScope,
-          )
-          .map((item) => {
+        {items !== null && items.length > 0 && visibleItems.length === 0 ? (
+          <StateView
+            title="该范围暂无记录"
+            sub="切换到“全部范围”查看其它项目或班组。"
+          />
+        ) : null}
+        {visibleItems.map((item) => {
             const name = item.displayName ?? "待完善姓名";
             return (
               <View key={item.id} className="form-card">
@@ -216,9 +253,26 @@ export default function TeamMakeups(): JSX.Element {
                   </>
                 ) : openId === item.id ? (
                   <View>
+                    <View className="makeup-quick-reasons">
+                      {QUICK_REASONS.map((reason) => (
+                        <Button
+                          key={reason}
+                          variant="text"
+                          disabled={busy !== null}
+                          onClick={() => {
+                            setReasons((previous) => ({
+                              ...previous,
+                              [item.id]: reason,
+                            }));
+                          }}
+                        >
+                          {reason}
+                        </Button>
+                      ))}
+                    </View>
                     <Field
                       value={reasons[item.id] ?? ""}
-                      placeholder="填写审批意见（必填）"
+                      placeholder="审批意见（通过可留空，驳回必填）"
                       onInput={(value) => {
                         setReasons((previous) => ({
                           ...previous,
@@ -229,10 +283,7 @@ export default function TeamMakeups(): JSX.Element {
                     <View className="action-row">
                       <Button
                         loading={busy === item.id}
-                        disabled={
-                          busy !== null ||
-                          (reasons[item.id] ?? "").trim().length === 0
-                        }
+                        disabled={busy !== null}
                         onClick={() => {
                           void review(
                             item.id,
@@ -274,7 +325,7 @@ export default function TeamMakeups(): JSX.Element {
                 )}
               </View>
             );
-          })}
+        })}
         {nextCursor !== null ? (
           <Button
             variant="outline"

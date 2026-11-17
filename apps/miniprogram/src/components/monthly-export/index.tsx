@@ -10,6 +10,7 @@ import {
   type ReportExport,
 } from "../../services/report-exports";
 import { chinaMonth, formatChinaHm } from "../../services/time";
+import { errorMessage } from "../../services/error-messages";
 
 type Props = {
   readonly scope: ExportScope;
@@ -53,7 +54,7 @@ export const MonthlyExport = ({
       } catch (cause: unknown) {
         if (!cancelled)
           setError(
-            cause instanceof Error ? cause.message : "导出任务加载失败。",
+            errorMessage(cause, "导出任务加载失败。"),
           );
       }
     };
@@ -71,7 +72,7 @@ export const MonthlyExport = ({
       await requestReportExport({ scope, scopeId, month });
       setRevision((n) => n + 1);
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "创建导出失败。");
+      setError(errorMessage(cause, "创建导出失败。"));
     } finally {
       setBusy(false);
     }
@@ -84,7 +85,7 @@ export const MonthlyExport = ({
       await openReportExport(job);
     } catch (cause: unknown) {
       setError(
-        cause instanceof Error ? cause.message : "文件打开失败，请重试。",
+        errorMessage(cause, "文件打开失败，请重试。"),
       );
     } finally {
       setBusy(false);
@@ -122,7 +123,7 @@ export const MonthlyExport = ({
       </Notice>
       {error !== null ? (
         <View>
-          <Notice>{error}</Notice>
+          <Notice tone="error">{error}</Notice>
           <Button variant="outline" onClick={() => setRevision((n) => n + 1)}>
             刷新任务
           </Button>

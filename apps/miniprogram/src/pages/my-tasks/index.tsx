@@ -1,4 +1,4 @@
-import Taro from "@tarojs/taro";
+import Taro, { usePullDownRefresh } from "@tarojs/taro";
 import { View } from "@tarojs/components";
 import { useEffect, useState } from "react";
 import type { SafetyBriefing, TeamTask } from "@construction/domain";
@@ -21,15 +21,18 @@ import {
   fetchMyTasks,
   joinTemporaryTask,
 } from "../../services/team-work";
-import { chinaToday } from "../../services/time";
+import { chinaToday, formatChinaDate, formatChinaHm } from "../../services/time";
 
 import "./index.scss";
+import { errorMessage } from "../../services/error-messages";
 
 export default function MyTasks(): JSX.Element {
   useSessionGuard();
   const { refreshMe } = useSession();
   const { revision, refresh } = usePageRefresh();
+  usePullDownRefresh(refresh);
   const [date, setDate] = useState<string>(chinaToday());
+  const isToday = date === chinaToday();
   const [tasks, setTasks] = useState<readonly TeamTask[] | null>(null);
   const [briefings, setBriefings] = useState<readonly SafetyBriefing[]>([]);
   const [code, setCode] = useState<string>("");
@@ -49,9 +52,9 @@ export default function MyTasks(): JSX.Element {
       },
       (cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : "工作任务读取失败");
+          setError(errorMessage(cause, "工作任务读取失败"));
       },
-    );
+    ).finally(() => Taro.stopPullDownRefresh());
     return () => {
       active = false;
     };
@@ -63,7 +66,7 @@ export default function MyTasks(): JSX.Element {
     try {
       await action();
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "操作失败，请重试");
+      setError(errorMessage(cause, "操作失败，请重试"));
     } finally {
       setBusy(false);
     }
@@ -76,7 +79,7 @@ export default function MyTasks(): JSX.Element {
         </View>
         <View className="worker-tasks__join">
           <Button variant="outline" onClick={() => setJoining(!joining)}>
-            {joining ? "收起邀请码" : "六位邀请码入场"}
+            {joining ? "收起" : "输入邀请码"}
           </Button>
           {joining && (
             <Section title="加入临时任务" sub="使用本人专属邀请码">
@@ -111,7 +114,7 @@ export default function MyTasks(): JSX.Element {
             </Section>
           )}
         </View>
-        {error && <Notice>{error}</Notice>}
+        {error && <Notice tone="error">{error}</Notice>}
         {tasks === null ? (
           <StateView
             title={error ? "任务加载失败" : "正在读取任务…"}
@@ -122,7 +125,11 @@ export default function MyTasks(): JSX.Element {
             {tasks.length === 0 && (
               <StateView
                 title="当天暂无工作任务"
-                sub="常规打卡入口：我的项目。"
+                sub="常规打卡请到“我的项目”。"
+                retryLabel="查看我的项目"
+                onRetry={() => {
+                  void Taro.navigateTo({ url: "/pages/my-projects/index" });
+                }}
               />
             )}
             {tasks.map((task) => (
@@ -146,7 +153,7 @@ export default function MyTasks(): JSX.Element {
                       >
                         <Subtitle>
                           {person.startedAt
-                            ? `开工：${new Date(person.startedAt).toLocaleString()}`
+                            ? `开工：${formatChinaDate(person.startedAt)} ${formatChinaHm(person.startedAt)}`
                             : "到现场后开始打卡"}
                         </Subtitle>
                         <Subtitle>
@@ -158,6 +165,7 @@ export default function MyTasks(): JSX.Element {
                           <Subtitle>班组长已确认退场，记录保留。</Subtitle>
                         )}
                         {task.status === "OPEN" &&
+                          isToday &&
                           !person.finishedAt &&
                           !person.exitConfirmedAt && (
                             <Button
@@ -172,6 +180,7 @@ export default function MyTasks(): JSX.Element {
                             </Button>
                           )}
                         {task.status === "OPEN" &&
+                          isToday &&
                           person.startedAt &&
                           !person.finishedAt && (
                             <Button
@@ -217,18 +226,12 @@ export default function MyTasks(): JSX.Element {
                     disabled={briefing.acknowledged || busy}
                     onClick={() => {
                       void perform(async () => {
-                        const confirm = await Taro.showModal({
-                          title: "确认安全交底",
-                          content: "理解作业要求后确认；有疑问请联系班组长。",
-                        });
-                        if (confirm.confirm) {
-                          await acknowledgeBriefing(briefing.id);
-                          refresh();
-                        }
+                        await acknowledgeBriefing(briefing.id);
+                        refresh();
                       });
                     }}
                   >
-                    {briefing.acknowledged ? "已阅读并确认" : "我已阅读并理解"}
+                    {briefing.acknowledged ? "已确认" : "已阅读并理解"}
                   </Button>
                 </Section>
               ))}

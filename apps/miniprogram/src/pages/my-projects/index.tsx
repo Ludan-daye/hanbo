@@ -1,4 +1,5 @@
 import { View } from "@tarojs/components";
+import Taro, { usePullDownRefresh } from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
 import {
@@ -27,7 +28,11 @@ export default function MyProjects(): JSX.Element {
   const { state } = useSession();
   const workerAppearance = state.me?.roles.highestRoleCode === "WORKER";
   const { revision, refresh } = usePageRefresh();
+  usePullDownRefresh(refresh);
   const { entries, loading, error } = useMyProjectAttendance(revision, refresh);
+  useEffect(() => {
+    if (!loading) Taro.stopPullDownRefresh();
+  }, [loading]);
   const [filter, setFilter] = useState<"ALL" | "TODAY">("ALL");
   const [now, setNow] = useState(() => new Date().toISOString());
   useEffect(() => {
@@ -48,9 +53,8 @@ export default function MyProjects(): JSX.Element {
       (entry) => workerHomeNextPoint(entry, now) !== null,
     )?.project.projectId;
     return (
-      <FlowScreen title="瀚渤 · 智慧工地" root>
+      <FlowScreen title="我的项目" root>
         <View className="worker-projects">
-          <View className="worker-projects__heading">我的项目</View>
           {!loading && !error ? (
             <Subtitle>{entries.length} 个项目</Subtitle>
           ) : null}

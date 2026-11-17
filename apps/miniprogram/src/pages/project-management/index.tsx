@@ -26,6 +26,7 @@ import type {
 import { createTeam, fetchManagedTeams } from "../../services/workflows";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSession } from "../../store/session";
+import { errorMessage } from "../../services/error-messages";
 
 type Tab = "TEAMS" | "INVITATIONS";
 
@@ -77,7 +78,7 @@ export default function ProjectManagement(): JSX.Element {
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "REQUEST_FAILED");
+          setError(errorMessage(e, "操作未完成，请稍后重试。"));
         }
       }
     })();
@@ -99,7 +100,7 @@ export default function ProjectManagement(): JSX.Element {
     if (!teamName.trim() || creating) return;
     setCreating(true); setError(null);
     try { await createTeam(projectId, teamName.trim()); setTeamName(""); refresh(); await Taro.showToast({ title: "班组已创建", icon: "success" }); }
-    catch (failure: unknown) { setError(failure instanceof Error ? failure.message : "创建班组失败"); }
+    catch (failure: unknown) { setError(errorMessage(failure, "创建班组失败")); }
     finally { setCreating(false); }
   };
 
@@ -115,7 +116,7 @@ export default function ProjectManagement(): JSX.Element {
       );
       await Taro.showToast({ icon: "success", title: "已撤销" });
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "撤销失败");
+      setError(errorMessage(failure, "撤销失败"));
     } finally {
       setBusyId(null);
     }

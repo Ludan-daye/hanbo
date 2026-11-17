@@ -94,7 +94,7 @@ export const TeamTaskForm = ({
       {children}
       <ListItem
         primary="时间安排"
-        secondary={`${startDate} ${startTime} — ${startDate === endDate ? "" : `${endDate}（次日） `}${endTime}`}
+        secondary={`${startDate} ${startTime} — ${startDate === endDate ? "" : `${endDate}${Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`) === 86400000 ? "（次日）" : ""} `}${endTime}`}
         chip={showTime ? "收起" : "修改"}
         onClick={() => setShowTime(!showTime)}
       />
@@ -139,6 +139,13 @@ export const TeamTaskForm = ({
           <Picker
             mode="selector"
             range={["不指定工种", ...trades, "自定义工种"]}
+            value={
+              customTrade
+                ? trades.length + 1
+                : workType
+                  ? trades.indexOf(workType) + 1
+                  : 0
+            }
             onChange={(event) => {
               const index: number = Number(event.detail.value);
               setCustomTrade(index === trades.length + 1);
@@ -164,7 +171,7 @@ export const TeamTaskForm = ({
           />
         </>
       )}
-      {error && <Notice>{error}</Notice>}
+      {error && <Notice tone="error">{error}</Notice>}
       <Button
         loading={busy}
         disabled={busy}

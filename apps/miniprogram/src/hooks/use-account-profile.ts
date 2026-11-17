@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { fetchAccountProfile, type AccountProfile } from "../services/account";
 import { useSession } from "../store/session";
 import { usePageRefresh } from "./use-page-refresh";
+import { errorMessage } from "../services/error-messages";
 
 export const useAccountProfile = (): {
   readonly profile: AccountProfile | null;
@@ -26,9 +27,7 @@ export const useAccountProfile = (): {
       (cause: unknown): void => {
         if (!cancelled)
           setError(
-            cause instanceof Error
-              ? cause.message
-              : "账号资料读取失败，请重试。",
+            errorMessage(cause, "账号资料读取失败，请重试。"),
           );
       },
     );

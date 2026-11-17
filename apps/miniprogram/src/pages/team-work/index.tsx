@@ -54,6 +54,7 @@ import {
   reuseTaskTemplate,
 } from "../../services/team-task-draft";
 import { chinaToday } from "../../services/time";
+import { errorMessage } from "../../services/error-messages";
 
 export default function TeamWork(): JSX.Element {
   useSessionGuard();
@@ -66,6 +67,10 @@ export default function TeamWork(): JSX.Element {
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState<{
+    readonly taskId: string;
+    readonly message: string;
+  } | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const [defaults, setDefaults] = useState<TeamTaskDefaults | null>(null);
   const [draft, setDraft] = useState<TeamTaskDetails | null>(null);
@@ -113,7 +118,7 @@ export default function TeamWork(): JSX.Element {
       },
       (cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : "读取工作安排失败");
+          setError(errorMessage(cause, "读取工作安排失败"));
       },
     );
     return () => {
@@ -158,14 +163,21 @@ export default function TeamWork(): JSX.Element {
     setPicking(false);
     setInviteAfterSave(false);
   };
-  const perform = async (action: () => Promise<void>): Promise<void> => {
+  const perform = async (
+    action: () => Promise<void>,
+    forTaskId: string | null = null,
+  ): Promise<void> => {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setTaskError(null);
     try {
       await action();
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "操作失败，请重试");
+      const message = errorMessage(cause, "操作失败，请重试");
+      if (forTaskId === null) setError(message);
+      else setTaskError({ taskId: forTaskId, message });
+      await Taro.showToast({ icon: "none", title: message });
     } finally {
       setBusy(false);
     }
@@ -205,7 +217,7 @@ export default function TeamWork(): JSX.Element {
           setDate(value);
         }}
       />
-      {error && <Notice>{error}</Notice>}
+      {error && <Notice tone="error">{error}</Notice>}
       <Button
         disabled={busy || defaults === null || members === null}
         onClick={() => {
@@ -264,9 +276,9 @@ export default function TeamWork(): JSX.Element {
                   ...details,
                   memberIds: selected,
                 });
+                const savedDate: string = taskChinaParts(saved.startsAt)[0];
                 setCreating(false);
                 setSelected([]);
-                setDate(taskChinaParts(saved.startsAt)[0]);
                 setExpandedId(saved.id);
                 setMoreTaskId(null);
                 if (inviteAfterSave) {
@@ -276,7 +288,8 @@ export default function TeamWork(): JSX.Element {
                   setRealName("");
                   setPhone("");
                 }
-                refresh();
+                if (savedDate === date) refresh();
+                else setDate(savedDate);
                 await Taro.showToast({ title: "安排已发布", icon: "success" });
               })
             }
@@ -351,6 +364,9 @@ export default function TeamWork(): JSX.Element {
               {expandedId === task.id && (
                 <>
                   <TaskDetails task={task} />
+                  {taskError?.taskId === task.id && (
+                    <Notice tone="error">{taskError.message}</Notice>
+                  )}
                   <Button
                     variant="outline"
                     disabled={busy}
@@ -416,7 +432,7 @@ export default function TeamWork(): JSX.Element {
                           await updateTeamTask(teamId, task.id, details);
                           setEditingTaskId(null);
                           refresh();
-                        })
+                        }, task.id)
                       }
                     />
                   )}
@@ -434,6 +450,7 @@ export default function TeamWork(): JSX.Element {
                             void perform(async () => {
                               const result = await Taro.showModal({
                                 title: `撤下 ${person.name}`,
+                                confirmColor: "#c33845",
                                 content:
                                   "取消本次安排，保留档案和项目身份。",
                               });
@@ -444,7 +461,7 @@ export default function TeamWork(): JSX.Element {
                                 person.memberId,
                               );
                               refresh();
-                            });
+                            }, task.id);
                           }}
                         />
                       ))}
@@ -502,7 +519,7 @@ export default function TeamWork(): JSX.Element {
                                   title: "人员已安排",
                                   icon: "success",
                                 });
-                              });
+                              }, task.id);
                             }}
                           >
                             确认安排 {addedMemberIds.length} 人
@@ -540,6 +557,7 @@ export default function TeamWork(): JSX.Element {
                                     title: `确认 ${person.name} 退场`,
                                     content:
                                       "退出本项目，保留档案；未完成任务须先结束。",
+                                    confirmColor: "#c33845",
                                   });
                                   if (result.confirm) {
                                     await confirmTaskExit(
@@ -549,7 +567,7 @@ export default function TeamWork(): JSX.Element {
                                     );
                                     refresh();
                                   }
-                                });
+                                }, task.id);
                               }
                         }
                       />
@@ -566,7 +584,7 @@ export default function TeamWork(): JSX.Element {
                             );
                             setTaskId(task.id);
                             setIssued(null);
-                          });
+                          }, task.id);
                         }}
                       >
                         邀请临时工 / 管理邀请码
@@ -613,6 +631,11 @@ export default function TeamWork(): JSX.Element {
                       />
                       <Button
                         loading={busy}
+                        disabled={
+                          busy ||
+                          realName.trim().length === 0 ||
+                          phone.length !== 11
+                        }
                         onClick={() => {
                           void perform(async () => {
                             if (
@@ -626,10 +649,12 @@ export default function TeamWork(): JSX.Element {
                               { realName: realName.trim(), phone },
                             );
                             setIssued(result);
+                            setRealName("");
+                            setPhone("");
                             setInvites(
                               await fetchTaskInvitations(teamId, task.id),
                             );
-                          });
+                          }, task.id);
                         }}
                       >
                         生成六位邀请码
@@ -673,6 +698,13 @@ export default function TeamWork(): JSX.Element {
                               ? undefined
                               : () => {
                                   void perform(async () => {
+                                    const result = await Taro.showModal({
+                                      title: `作废 ${invite.name} 的邀请码`,
+                                      content:
+                                        "作废后该邀请码立即失效，需重新生成。",
+                                      confirmColor: "#c33845",
+                                    });
+                                    if (!result.confirm) return;
                                     await revokeTaskInvitation(
                                       teamId,
                                       task.id,
@@ -686,7 +718,7 @@ export default function TeamWork(): JSX.Element {
                                     );
                                     if (issued?.id === invite.id)
                                       setIssued(null);
-                                  });
+                                  }, task.id);
                                 }
                           }
                         />

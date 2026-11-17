@@ -28,6 +28,7 @@ import {
   type PlanInput,
 } from "../../services/attendance-plans";
 import { chinaToday } from "../../services/time";
+import { errorMessage } from "../../services/error-messages";
 
 const tomorrow = (): string =>
   new Date(Date.parse(`${chinaToday()}T00:00:00Z`) + 86400_000)
@@ -42,10 +43,14 @@ const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 
 export default function Schedules(): JSX.Element {
   useSessionGuard();
-  const requestedProject = Taro.useRouter().params.projectId;
+  const router = Taro.useRouter();
+  const requestedProject = router.params.projectId;
+  const requestedTeam = router.params.teamId;
   const { revision, refresh } = usePageRefresh();
   const [scopes, setScopes] = useState<readonly PlanScope[] | null>(null);
   const [scopeIndex, setScopeIndex] = useState<number>(0);
+  const [dirty, setDirty] = useState<boolean>(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const scope = scopes?.[scopeIndex] ?? null;
   const [configuration, setConfiguration] = useState<PlanConfiguration | null>(
     null,
@@ -63,33 +68,44 @@ export default function Schedules(): JSX.Element {
   const [saved, setSaved] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const operation = useRef<boolean>(false);
+  const requestedTeamApplied = useRef<boolean>(false);
   useEffect(() => {
     let cancelled = false;
-    setError(null);
+    setLoadError(null);
     void fetchPlanScopes().then(
       (rows) => {
-        if (!cancelled)
-          setScopes(
-            requestedProject
-              ? rows.filter((row) => row.projectId === requestedProject)
-              : rows,
-          );
+        if (cancelled) return;
+        const available = requestedProject
+          ? rows.filter((row) => row.projectId === requestedProject)
+          : rows;
+        setScopes(available);
+        // 只在首次进入时定位到入口指定的班组；之后再次显示页面保留当前选择。
+        if (requestedTeamApplied.current) return;
+        requestedTeamApplied.current = true;
+        const teamIndex = requestedTeam
+          ? available.findIndex(
+              (row) => row.scopeType === "TEAM" && row.scopeId === requestedTeam,
+            )
+          : -1;
+        if (teamIndex >= 0) setScopeIndex(teamIndex);
       },
       (cause: unknown) => {
         if (!cancelled)
-          setError(cause instanceof Error ? cause.message : "无法读取排班对象");
+          setLoadError(errorMessage(cause, "无法读取排班对象"));
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [requestedProject, revision]);
+  }, [requestedProject, requestedTeam, revision]);
   useEffect(() => {
     if (scope === null) return;
     let cancelled = false;
     setConfiguration(null);
     setError(null);
+    setLoadError(null);
     setSaved(null);
+    setDirty(false);
     void fetchPlanConfiguration(scope).then(
       (config) => {
         if (cancelled) return;
@@ -108,13 +124,17 @@ export default function Schedules(): JSX.Element {
       },
       (cause: unknown) => {
         if (!cancelled)
-          setError(cause instanceof Error ? cause.message : "无法读取排班");
+          setLoadError(errorMessage(cause, "无法读取排班"));
       },
     );
     return () => {
       cancelled = true;
     };
   }, [scope, revision]);
+  const touch = (): void => {
+    setSaved(null);
+    setDirty(true);
+  };
   const updatePoint = (
     code: string,
     values: Partial<ScheduledAttendancePoint>,
@@ -122,7 +142,20 @@ export default function Schedules(): JSX.Element {
     setPoints((rows) =>
       rows.map((row) => (row.code === code ? { ...row, ...values } : row)),
     );
-    setSaved(null);
+    touch();
+  };
+  const switchScope = async (index: number): Promise<void> => {
+    if (index === scopeIndex) return;
+    if (dirty) {
+      const confirmation = await Taro.showModal({
+        title: "放弃未保存的修改",
+        content: "切换安排对象后，当前未保存的打卡安排将丢失。",
+        confirmText: "放弃并切换",
+        confirmColor: "#c33845",
+      });
+      if (!confirmation.confirm) return;
+    }
+    setScopeIndex(index);
   };
   const addPoint = (): void => {
     const before = points[points.length - 2];
@@ -143,7 +176,7 @@ export default function Schedules(): JSX.Element {
       graceMins: 0,
     };
     setPoints([...points.slice(0, -1), point, last]);
-    setSaved(null);
+    touch();
   };
   const input = (): PlanInput => ({
     expectedId: configuration?.id ?? null,
@@ -160,7 +193,7 @@ export default function Schedules(): JSX.Element {
     try {
       validateAttendancePoints(points);
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "打卡点配置无效");
+      setError(errorMessage(cause, "打卡点配置无效"));
       return;
     }
     if (
@@ -176,11 +209,13 @@ export default function Schedules(): JSX.Element {
     setBusy(true);
     try {
       setConfiguration(await savePlanConfiguration(scope, input()));
+      setDirty(false);
       setSaved(
         `已保存：从 ${startsOn} 起每天 ${points.length} 次，只对授权范围内的下级生效。`,
       );
+      await Taro.showToast({ icon: "success", title: "已保存" });
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "保存失败，请重试");
+      setError(errorMessage(cause, "保存失败，请重试"));
     } finally {
       operation.current = false;
       setBusy(false);
@@ -213,9 +248,10 @@ export default function Schedules(): JSX.Element {
           workdays: [1, 2, 3, 4, 5, 6, 7],
         }),
       );
+      setDirty(false);
       setSaved(`已设置从 ${startsOn} 起继承上级排班。`);
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "操作失败，请重试");
+      setError(errorMessage(cause, "操作失败，请重试"));
     } finally {
       operation.current = false;
       setBusy(false);
@@ -228,11 +264,12 @@ export default function Schedules(): JSX.Element {
         <View>默认上、下班各一次，上级可调整下级安排。</View>
         <View>优先级：个人 ＞ 班组 ＞ 项目。最早次日生效。</View>
       </Notice>
-      {error ? (
-        <StateView title="操作未完成" sub={error} onRetry={refresh} />
+      {loadError ? (
+        <StateView title="打卡安排读取失败" sub={loadError} onRetry={refresh} />
       ) : null}
-      {saved ? <Notice>{saved}</Notice> : null}
-      {scopes === null && !error ? <StateView title="加载中…" /> : null}
+      {scopes === null && !loadError ? (
+        <StateView title="正在读取安排对象…" />
+      ) : null}
       {scopes?.length === 0 ? (
         <StateView title="暂无可设置的下级" sub="自己的打卡要求由上级安排。" />
       ) : null}
@@ -242,23 +279,25 @@ export default function Schedules(): JSX.Element {
           disabled={busy}
           range={(scopes ?? []).map((row) => row.label)}
           value={scopeIndex}
-          onChange={(event) => setScopeIndex(Number(event.detail.value))}
+          onChange={(event) => {
+            void switchScope(Number(event.detail.value));
+          }}
         >
-          <ListItem primary="安排对象" secondary={scope.label} chip="切换" />
+          <ListItem
+            primary="安排对象"
+            secondary={scope.label}
+            chip={(scopes?.length ?? 0) > 1 ? "切换" : "当前"}
+          />
         </Picker>
       ) : null}
-      {scope && configuration === null && !error ? (
-        <StateView title="读取排班中…" />
+      {scope && configuration === null && !loadError ? (
+        <StateView title="正在读取打卡安排…" />
       ) : null}
       {configuration ? (
         <View>
-          {configuration.id === null && scope?.scopeType !== "PROJECT" ? (
+          {configuration.inherit ||
+          (configuration.id === null && scope?.scopeType !== "PROJECT") ? (
             <Notice>当前继承上级，保存后启用专属安排。</Notice>
-          ) : null}
-          {configuration.inherit ? (
-            <Notice>
-              当前继承上级，可保存专属安排。
-            </Notice>
           ) : null}
           <Section
             title={`每天 ${points.length} 次打卡`}
@@ -268,7 +307,10 @@ export default function Schedules(): JSX.Element {
               placeholder=""
               label="安排名称"
               value={name}
-              onInput={setName}
+              onInput={(value) => {
+                setName(value);
+                touch();
+              }}
               disabled={busy}
             />
             {points.map((point, index) => (
@@ -329,9 +371,10 @@ export default function Schedules(): JSX.Element {
                 <Button
                   variant="outline"
                   disabled={busy || points.length <= 2}
-                  onClick={() =>
-                    setPoints(points.filter((row) => row.code !== point.code))
-                  }
+                  onClick={() => {
+                    setPoints(points.filter((row) => row.code !== point.code));
+                    touch();
+                  }}
                 >
                   移除本次打卡
                 </Button>
@@ -346,6 +389,7 @@ export default function Schedules(): JSX.Element {
               onClick={() => {
                 setPoints(defaultAttendancePoints);
                 setName("每日两次");
+                touch();
               }}
             >
               使用每天两次
@@ -357,7 +401,10 @@ export default function Schedules(): JSX.Element {
               disabled={busy}
               start={tomorrow()}
               value={startsOn}
-              onChange={(event) => setStartsOn(event.detail.value)}
+              onChange={(event) => {
+                setStartsOn(event.detail.value);
+                touch();
+              }}
             >
               <ListItem primary="生效日期" secondary={startsOn} chip="选择" />
             </Picker>
@@ -365,7 +412,10 @@ export default function Schedules(): JSX.Element {
               <Button
                 variant="outline"
                 disabled={busy}
-                onClick={() => setEndsOn(startsOn)}
+                onClick={() => {
+                  setEndsOn(startsOn);
+                  touch();
+                }}
               >
                 设置截止日期
               </Button>
@@ -376,14 +426,20 @@ export default function Schedules(): JSX.Element {
                   disabled={busy}
                   start={startsOn}
                   value={endsOn}
-                  onChange={(event) => setEndsOn(event.detail.value)}
+                  onChange={(event) => {
+                    setEndsOn(event.detail.value);
+                    touch();
+                  }}
                 >
                   <ListItem primary="截止日期" secondary={endsOn} />
                 </Picker>
                 <Button
                   variant="outline"
                   disabled={busy}
-                  onClick={() => setEndsOn(null)}
+                  onClick={() => {
+                    setEndsOn(null);
+                    touch();
+                  }}
                 >
                   长期有效
                 </Button>
@@ -395,12 +451,13 @@ export default function Schedules(): JSX.Element {
                   key={label}
                   className={`ui-segmented__item ${workdays.includes(index + 1) ? "ui-segmented__item--active" : ""}`}
                   onClick={() => {
-                    if (!busy)
-                      setWorkdays(
-                        workdays.includes(index + 1)
-                          ? workdays.filter((day) => day !== index + 1)
-                          : [...workdays, index + 1].sort(),
-                      );
+                    if (busy) return;
+                    setWorkdays(
+                      workdays.includes(index + 1)
+                        ? workdays.filter((day) => day !== index + 1)
+                        : [...workdays, index + 1].sort(),
+                    );
+                    touch();
                   }}
                 >
                   周{label}
@@ -408,6 +465,8 @@ export default function Schedules(): JSX.Element {
               ))}
             </View>
           </Section>
+          {error ? <Notice tone="error">{error}</Notice> : null}
+          {saved ? <Notice tone="success">{saved}</Notice> : null}
           <Button loading={busy} onClick={() => void save()}>
             保存打卡安排
           </Button>

@@ -49,8 +49,8 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       url: "/pages/team-makeups/index",
     },
     {
-      title: "团队考勤",
-      sub: "掌握班组每日出勤",
+      title: "班组考勤",
+      sub: "班组日报、周报与月报",
       icon: "chart",
       url: "/pages/team-attendance/index",
     },
