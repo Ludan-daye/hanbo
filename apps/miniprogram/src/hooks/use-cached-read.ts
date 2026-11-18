@@ -90,6 +90,8 @@ export const useCachedRead = <T>(
   key: string | null,
   fetcher: () => Promise<T>,
   revision: number,
+  /** 读取失败、服务端又没给出说明时显示的话。 */
+  fallback: string = "读取失败，请重试。",
 ): CachedRead<T> => {
   const [state, setState] = useState<ReadState<T>>(() =>
     startRead<T>(
@@ -130,7 +132,7 @@ export const useCachedRead = <T>(
             ...previous,
             loading: false,
             refreshing: false,
-            error: errorMessage(cause, "读取失败，请重试。"),
+            error: errorMessage(cause, fallback),
           }));
       },
     );

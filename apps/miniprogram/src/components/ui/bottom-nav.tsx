@@ -2,7 +2,6 @@ import { Button, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 
 import { useSession } from "../../store/session";
-import { AppIcon } from "./icon";
 import { LineIcon } from "./line-icon";
 import { PRESS } from "./press";
 
@@ -24,9 +23,12 @@ const ITEMS: readonly NavItem[] = [
   { key: "profile", title: "我的", icon: "user", url: "/pages/profile/index" },
 ];
 
+/**
+ * 底部导航在每个根页面都出现，所以先于各页面统一成新样子：
+ * 不管页面改没改版，切换时导航都不变。appearance 仅为兼容旧调用保留。
+ */
 export const BottomNav = ({
   active,
-  appearance,
 }: {
   readonly active: NavKey;
   readonly appearance?: "worker" | "sign";
@@ -44,9 +46,7 @@ export const BottomNav = ({
       : item,
   );
   return (
-    <View
-      className={`ui-bottom-nav${appearance ? ` ${appearance}-nav` : ""}`}
-    >
+    <View className="ui-bottom-nav sign-nav">
       {items.map((item) => (
         <Button
           key={item.key}
@@ -56,14 +56,10 @@ export const BottomNav = ({
             if (active !== item.key) void Taro.reLaunch({ url: item.url });
           }}
         >
-          {appearance === "sign" ? (
-            <LineIcon
-              name={item.icon}
-              tone={active === item.key ? "ink" : "soft"}
-            />
-          ) : (
-            <AppIcon name={item.icon} />
-          )}
+          <LineIcon
+            name={item.icon}
+            tone={active === item.key ? "ink" : "soft"}
+          />
           <View>{item.title}</View>
         </Button>
       ))}

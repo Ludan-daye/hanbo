@@ -145,9 +145,11 @@
   font-size: 32rpx;
   font-weight: 600;
 }
+// “00:00” 宽 2.27em，标牌内容区宽 582rpx：244rpx 放得下，两边还各留十几 rpx
 .ui-sign__clock {
   margin-top: 10rpx;
-  font-size: 276rpx;
+  font-size: 244rpx;
+  white-space: nowrap;
   line-height: 0.88;
   letter-spacing: -2rpx;
 }
@@ -925,4 +927,13 @@
 }
 .ui-screen--sign .ui-state .ui-btn {
   margin-top: 42rpx;
+}
+// 人脸录像界面盖在改版页面上时，跟着用灰底，两个按钮都占满一行
+.ui-screen--sign .video-face {
+  background: var(--page);
+}
+.ui-screen--sign .video-face .ui-btn--outline {
+  display: flex;
+  width: 100%;
+  min-height: 122rpx;
 }
