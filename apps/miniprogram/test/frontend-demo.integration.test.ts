@@ -548,15 +548,9 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     await client.request("/account/profile", {
       method: "PUT",
       data: {
-        nickname: "张师傅",
         realName: "待入场成员",
         phone: "13800000006",
       },
-    });
-    expect(sessionPhase(await restoreSession())).toBe("profile-required");
-    await client.request("/account/avatar", {
-      method: "POST",
-      data: { avatarDataUrl: "data:image/png;base64,iVBORw0KGgo=" },
     });
     expect(sessionEntryUrl(sessionPhase(await restoreSession()))).toBe(
       "/pages/bind/index",

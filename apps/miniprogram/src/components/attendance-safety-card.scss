@@ -29,8 +29,7 @@
     margin-top: 20Px;
   }
 
-  .ui-subtitle,
-  .worker-safety__hint {
+  .ui-subtitle {
     color: #626d78;
     font-size: 14Px;
     line-height: 1.6;
@@ -45,16 +44,7 @@
   }
 }
 
+// Stay mounted while hidden so the briefing is already loaded when its step opens.
 .worker-safety--waiting {
-  padding-bottom: 0;
-
-  .punch-step__title {
-    font-size: 16Px;
-    font-weight: 500;
-    margin-bottom: 4Px;
-  }
-
-  .worker-safety__content {
-    display: none;
-  }
+  display: none;
 }

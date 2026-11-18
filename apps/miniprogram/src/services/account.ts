@@ -36,7 +36,7 @@ export const saveWorkerRegistration = async (
   });
 
 export type AccountProfileInput = {
-  readonly nickname: string;
+  readonly nickname?: string;
   readonly realName: string;
   readonly phone: string;
 };

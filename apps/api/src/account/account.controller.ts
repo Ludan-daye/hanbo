@@ -20,6 +20,7 @@ import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import type { AuthenticatedUser } from "../auth/auth.types.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { UploadedMultipartFile } from "../uploads/uploads.types.js";
+import { parseAccountProfileRequest } from "./account-body.parsers.js";
 import { AccountService } from "./account.service.js";
 import type { AccountProfile } from "./account.types.js";
 import { WorkerRegistrationService } from "./worker-registration.service.js";
@@ -37,20 +38,6 @@ const workerRegistrationSchema = z
     payrollBankCard: z.string().max(30),
   })
   .strict();
-
-const profileSchema = z.object({
-  nickname: z.string().trim().min(1).max(32),
-  realName: z
-    .string()
-    .trim()
-    .min(1)
-    .max(30)
-    .regex(/^[\p{L}\p{M} ·•・.'’-]+$/u),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^1[3-9]\d{9}$/),
-});
 
 @AllowIncompleteAccount()
 @Controller("account")
@@ -96,10 +83,10 @@ export class AccountController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: unknown,
   ): Promise<AccountProfile> {
-    const parsed = profileSchema.safeParse(body);
-    if (!parsed.success)
-      throw new BadRequestException({ message: "ACCOUNT_PROFILE_INVALID" });
-    return this.accounts.setProfile(user.userId, parsed.data);
+    return this.accounts.setProfile(
+      user.userId,
+      parseAccountProfileRequest(body),
+    );
   }
 
   @Post("avatar")

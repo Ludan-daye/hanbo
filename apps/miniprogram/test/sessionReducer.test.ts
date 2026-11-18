@@ -41,6 +41,18 @@ describe("sessionReducer / sessionPhase", () => {
     expect(sessionPhase(s)).toBe("norole");
   });
 
+  test("real name and phone complete the profile without nickname or avatar", () => {
+    let s = sessionReducer(initialSessionState, { type: "SET_TOKENS", accessToken: "a", refreshToken: "r" });
+    s = sessionReducer(s, { type: "SET_ME", faceEnrollmentRequired: false, accountProfile: { ...accountProfile, nickname: null, avatarDataUrl: null }, me: me({ isBound: true, highest: "WORKER" }) });
+    expect(sessionPhase(s)).toBe("ready");
+  });
+
+  test("missing phone keeps the user on the profile step", () => {
+    let s = sessionReducer(initialSessionState, { type: "SET_TOKENS", accessToken: "a", refreshToken: "r" });
+    s = sessionReducer(s, { type: "SET_ME", faceEnrollmentRequired: false, accountProfile: { ...accountProfile, phone: null }, me: me({ isBound: true, highest: "WORKER" }) });
+    expect(sessionPhase(s)).toBe("profile-required");
+  });
+
   test("unbound user goes to bind", () => {
     let s = sessionReducer(initialSessionState, { type: "SET_TOKENS", accessToken: "a", refreshToken: "r" });
     s = sessionReducer(s, { type: "SET_ME", faceEnrollmentRequired: false, accountProfile, me: me({ isBound: false, highest: null }) });

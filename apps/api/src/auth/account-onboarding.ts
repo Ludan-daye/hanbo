@@ -5,16 +5,11 @@ export const ALLOW_INCOMPLETE_ACCOUNT = "allowIncompleteAccount";
 export const AllowIncompleteAccount = (): ReturnType<typeof SetMetadata> =>
   SetMetadata(ALLOW_INCOMPLETE_ACCOUNT, true);
 
-type OnboardingProfile = Pick<
-  User,
-  "openid" | "nickname" | "avatarObjectKey" | "encryptedRealName" | "phone"
->;
+type OnboardingProfile = Pick<User, "openid" | "encryptedRealName" | "phone">;
 
 export const assertAccountProfileComplete = (user: OnboardingProfile): void => {
   if (
     !user.openid?.trim() ||
-    !user.nickname?.trim() ||
-    !user.avatarObjectKey ||
     !user.encryptedRealName?.trim() ||
     !/^1[3-9]\d{9}$/.test(user.phone ?? "")
   ) {

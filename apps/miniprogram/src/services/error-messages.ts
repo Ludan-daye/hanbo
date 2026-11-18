@@ -43,7 +43,7 @@ export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   PROJECT_COMPANY_CANNOT_CHANGE: "不能通过项目设置变更所属公司。",
   PROJECT_CODE_ALREADY_EXISTS:
     "该项目编号已被同一公司其他项目使用，请更换编号。",
-  ACCOUNT_PROFILE_REQUIRED: "请先完善头像、昵称、真实姓名和手机号。",
+  ACCOUNT_PROFILE_REQUIRED: "请先完善真实姓名和手机号。",
   WORKER_REGISTRATION_REQUIRED: "请完成用工登记各项必填资料。",
   WORKER_REGISTRATION_INVALID: "用工资料不完整或格式有误，请核对全部必填项。",
   WORKER_PROFILE_NOT_BOUND: "请先用邀请码绑定本人工人档案。",
@@ -53,7 +53,7 @@ export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   LOCATION_ACCURACY_INSUFFICIENT: "定位精度不足，请到开阔位置后重试。",
   OUTSIDE_GEOFENCE: "超出考勤范围，请到场后打卡。",
   ACCOUNT_BINDING_REQUIRED: "请先使用邀请码绑定本人档案。",
-  ACCOUNT_PROFILE_INVALID: "请填写有效昵称、真实姓名和 11 位手机号。",
+  ACCOUNT_PROFILE_INVALID: "请填写真实姓名和 11 位手机号，昵称最多 32 个字符。",
   ACCOUNT_IDENTITY_MISMATCH:
     "姓名或手机号与档案不符，请核对或联系管理员。",
   ACCOUNT_NICKNAME_INVALID: "昵称须为 1 至 32 个字符，请修改后重试。",

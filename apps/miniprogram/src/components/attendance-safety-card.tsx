@@ -109,11 +109,6 @@ export const AttendanceSafetyCard = ({
       )}
       <View className="punch-step__body">
         <View className="punch-step__title">本次打卡安全交底</View>
-        {appearance === "worker" && disabled && receipt === null && (
-          <View className="worker-safety__hint">
-            完成定位和现场照片后阅读并确认。
-          </View>
-        )}
         <View className="worker-safety__content">
           {notice === null && error === null && (
             <Subtitle>正在读取交底…</Subtitle>

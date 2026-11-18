@@ -15,6 +15,7 @@ import {
 import { RolePanel } from "../../components/role-panels/index";
 import { WorkerHome } from "../../components/worker-home";
 import { TeamLeaderOverview } from "../../components/team-leader-overview";
+import { LeaderPunchCard } from "../../components/leader-punch-card";
 import { AccountAvatar } from "../../components/account-avatar";
 import { useAccountProfile } from "../../hooks/use-account-profile";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
@@ -112,7 +113,7 @@ export default function Home(): JSX.Element {
               void Taro.navigateTo({ url: "/pages/profile/index" });
             }}
           >
-            {account?.nickname
+            {account?.realName
               ? permissionLabel(state.me?.roles.highestRoleCode ?? null)
               : "完善本人资料"}
           </View>
@@ -128,7 +129,10 @@ export default function Home(): JSX.Element {
       </View>
       {accountError ? <Notice>{accountError}</Notice> : null}
       {panel === "teamLeader" ? (
-        <TeamLeaderOverview revision={revision} onRefresh={refresh} />
+        <>
+          <LeaderPunchCard revision={revision} onRefresh={refresh} />
+          <TeamLeaderOverview revision={revision} onRefresh={refresh} />
+        </>
       ) : (
         <View className="home-hero">
           <View className="home-hero__label">

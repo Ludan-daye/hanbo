@@ -75,17 +75,11 @@ export const workerHomeReminders = (
   const reminders: WorkerReminder[] = [];
   const blocker = workerFaceBlocker(face, isDemo);
   if (blocker) reminders.push(blocker);
-  if (
-    account &&
-    (!account.realName ||
-      !account.phone ||
-      !account.nickname ||
-      !account.avatarDataUrl)
-  )
+  if (account && (!account.realName || !account.phone))
     reminders.push({
       id: "profile",
       title: "完善本人资料",
-      description: "完善姓名、手机号、头像和昵称。",
+      description: "完善真实姓名和手机号。",
       url: "/pages/profile/index",
     });
   if (month?.missingDays)

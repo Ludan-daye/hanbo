@@ -191,6 +191,7 @@ export default function Bind(): JSX.Element {
               {editingProfile && state.accountProfile !== null ? (
                 <AccountProfileForm
                   appearance="worker"
+                  identityOnly
                   profile={state.accountProfile}
                   submitLabel="保存本人资料"
                   onSaved={async () => {
@@ -324,6 +325,7 @@ export default function Bind(): JSX.Element {
           />
           {editingProfile && state.accountProfile !== null ? (
             <AccountProfileForm
+              identityOnly
               profile={state.accountProfile}
               submitLabel="保存本人资料"
               onSaved={async (): Promise<void> => {

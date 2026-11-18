@@ -51,6 +51,7 @@ export default function CompleteProfile(): JSX.Element {
         {state.accountProfile !== null ? (
           <AccountProfileForm
             appearance="worker"
+            identityOnly
             profile={state.accountProfile}
             submitLabel="保存并继续"
             onSaved={async (): Promise<void> => {
@@ -62,7 +63,7 @@ export default function CompleteProfile(): JSX.Element {
       <View className="complete-profile-note">
         {FRONTEND_DEMO
           ? "演示资料仅保存在本机。"
-          : "填写本人资料。微信头像不用于考勤核验。"}
+          : "头像和昵称可稍后在“我的”中设置。"}
       </View>
       {error ? <Notice tone="error">{error}</Notice> : null}
       <Button

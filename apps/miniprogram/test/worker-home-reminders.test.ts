@@ -83,6 +83,23 @@ describe("worker home actionable reminders", () => {
       }),
     ]);
   });
+  test("does not remind workers about an optional nickname or avatar", () => {
+    expect(
+      workerHomeReminders(
+        {
+          workerRegistration: "COMPLETE",
+          realName: "张建国",
+          phone: "13800000001",
+          nickname: null,
+          avatarDataUrl: null,
+          isBound: true,
+          phoneMasked: "138****0001",
+        },
+        face("APPROVED"),
+        null,
+      ),
+    ).toEqual([]);
+  });
   test("passes demo mode to approved enrollment reminders", () => {
     expect(
       workerHomeReminders(null, face("APPROVED", "DEVELOPMENT"), null),

@@ -73,8 +73,6 @@ export const sessionPhase = (state: SessionState): SessionPhase => {
     return "loading";
   }
   if (
-    !state.accountProfile.nickname?.trim() ||
-    !state.accountProfile.avatarDataUrl ||
     !state.accountProfile.realName?.trim() ||
     !/^1[3-9]\d{9}$/.test(state.accountProfile.phone ?? "")
   ) {

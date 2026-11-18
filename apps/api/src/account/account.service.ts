@@ -110,7 +110,9 @@ export class AccountService {
       await transaction.user.update({
         where: { id: userId },
         data: {
-          nickname: profile.nickname,
+          ...(profile.nickname === undefined
+            ? {}
+            : { nickname: profile.nickname }),
           phone: profile.phone,
           encryptedRealName: encryptPersonnelName(
             profile.realName,

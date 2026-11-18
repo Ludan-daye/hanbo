@@ -360,14 +360,15 @@ const routeDemo = (
       return response(state, profile);
     if (method === "PUT" && path === "/account/profile") {
       const { nickname, realName, phone } = options.data as {
-        readonly nickname: string;
+        readonly nickname?: string;
         readonly realName: string;
         readonly phone: string;
       };
       if (
-        typeof nickname !== "string" ||
-        nickname.trim().length === 0 ||
-        nickname.trim().length > 32
+        nickname !== undefined &&
+        (typeof nickname !== "string" ||
+          nickname.trim().length === 0 ||
+          nickname.trim().length > 32)
       ) {
         throw new ApiError(400, "昵称须为 1 至 32 个字符。", { path });
       }
@@ -394,7 +395,7 @@ const routeDemo = (
         );
       const updated: AccountProfile = {
         ...profile,
-        nickname: nickname.trim(),
+        nickname: nickname === undefined ? profile.nickname : nickname.trim(),
         realName: realName.trim(),
         phone: phone.trim(),
         phoneMasked: phone.trim().replace(/^(\d{3})\d+(\d{4})$/, "$1****$2"),
@@ -448,13 +449,9 @@ const routeDemo = (
     const account = state.accountProfiles?.[userId];
     if (
       !account?.realName?.trim() ||
-      !/^1[3-9]\d{9}$/.test(account.phone ?? "") ||
-      !account.nickname?.trim() ||
-      !account.avatarDataUrl
+      !/^1[3-9]\d{9}$/.test(account.phone ?? "")
     )
-      throw new ApiError(403, "请先完善头像、昵称、真实姓名和手机号。", {
-        path,
-      });
+      throw new ApiError(403, "请先完善真实姓名和手机号。", { path });
     const target = state.people.find(
       (person) => person.profileId === invitation.profileId,
     );
