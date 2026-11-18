@@ -672,6 +672,8 @@
 }
 .project-card__footer > view:last-child {
   color: var(--clay);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
 }
 .project-card__details .ui-listitem {
   padding: 18rpx 0;
@@ -754,6 +756,8 @@
 }
 .management-link {
   color: var(--clay);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
   font-size: 24rpx;
   min-height: 88rpx;
   display: flex;

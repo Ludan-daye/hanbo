@@ -1,44 +1,69 @@
 import { Button as TaroButton, Input, View } from "@tarojs/components";
-import type { PropsWithChildren, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  type PropsWithChildren,
+  type ReactNode,
+} from "react";
 
 import { FRONTEND_DEMO } from "../../config/env";
 import { useSession } from "../../store/session";
 import { PrivacyAuthorization } from "../privacy-authorization";
 
+import type { HeaderAppearance } from "./page-header";
+import { PRESS } from "./press";
+import { SkeletonRows, SkeletonSign } from "./skeleton";
 import { stateKindForTitle, type StateKind } from "./state-kind";
 
 import "./ui.scss";
 import "./worker.scss";
+import "./kit.scss";
+
+/** 当前页面是不是改版后的样子；公共组件据此决定读取中显示骨架还是转圈。 */
+const SignScreen = createContext<boolean>(false);
 
 export const Screen = ({
   children,
   appearance,
   header,
 }: PropsWithChildren<{
-  readonly appearance?: "worker";
+  /** "sign" 是改版后的样子（灰底、标牌、白条）；"worker" 是还没改版的工人页面。 */
+  readonly appearance?: HeaderAppearance;
   readonly header?: ReactNode;
 }>): JSX.Element => {
   const { phase } = useSession();
+  const sign = appearance === "sign";
   return (
-    <View className={`ui-screen${appearance === "worker" ? " worker-ui" : ""}`}>
-      {phase === "loading" ? (
-        <View className="session-loading">
-          <View className="ui-btn__spinner" />
-          <View>正在连接工作现场…</View>
-        </View>
-      ) : (
-        <>
-          {header}
-          {FRONTEND_DEMO ? (
-            <View className="demo-mode-strip">
-              本机演示 · 定位与人脸均为模拟
+    <SignScreen.Provider value={sign}>
+      <View
+        className={`ui-screen${appearance === "worker" ? " worker-ui" : ""}${sign ? " ui-screen--sign" : ""}`}
+      >
+        {phase === "loading" ? (
+          sign ? (
+            <>
+              <SkeletonSign />
+              <SkeletonRows rows={3} gap />
+            </>
+          ) : (
+            <View className="session-loading">
+              <View className="ui-btn__spinner" />
+              <View>正在连接工作现场…</View>
             </View>
-          ) : null}
-          {children}
-        </>
-      )}
-      <PrivacyAuthorization />
-    </View>
+          )
+        ) : (
+          <>
+            {header}
+            {FRONTEND_DEMO ? (
+              <View className="demo-mode-strip">
+                本机演示，定位和人脸都是模拟的
+              </View>
+            ) : null}
+            {children}
+          </>
+        )}
+        <PrivacyAuthorization />
+      </View>
+    </SignScreen.Provider>
   );
 };
 export const Title = ({ children }: PropsWithChildren): JSX.Element => (
@@ -80,10 +105,14 @@ export const Notice = ({
 
 type ButtonProps = PropsWithChildren<{
   readonly onClick?: () => void;
+  /** 三级：primary 黑色实心（一屏只放一个）、outline 黑框、text 下划线文字；danger 是红框。 */
   readonly variant?: "primary" | "outline" | "danger" | "text";
   readonly disabled?: boolean;
+  /** 提交中：按钮变灰、不能再点。文案由调用方换成“…中”。 */
   readonly loading?: boolean;
   readonly appearance?: "worker";
+  /** 改版页面里黑框按钮默认按内容宽度，wide 让它占满一行。 */
+  readonly wide?: boolean;
 }>;
 
 export const Button = ({
@@ -93,14 +122,16 @@ export const Button = ({
   disabled,
   loading,
   appearance,
+  wide,
 }: ButtonProps): JSX.Element => (
   <TaroButton
-    className={`ui-btn ui-btn--${variant ?? "primary"}${appearance === "worker" ? " worker-button" : ""}`}
+    className={`ui-btn ui-press ui-btn--${variant ?? "primary"}${appearance === "worker" ? " worker-button" : ""}${wide ? " ui-btn--wide" : ""}`}
+    {...PRESS}
     onClick={onClick}
     disabled={disabled === true || loading === true ? true : undefined}
   >
     {loading === true ? <View className="ui-btn__spinner" /> : null}
-    <View>{children}</View>
+    <View className="ui-btn__label">{children}</View>
   </TaroButton>
 );
 
@@ -169,7 +200,15 @@ export const StateView = ({
   readonly kind?: StateKind;
   readonly retryLabel?: string;
 }): JSX.Element => {
+  const sign = useContext(SignScreen);
   const resolved = kind ?? stateKindForTitle(title);
+  // 改版页面里读取中不转圈：用骨架把版面站住，数据到了原位替换。
+  if (sign && resolved === "loading")
+    return (
+      <View aria-label={title}>
+        <SkeletonRows rows={3} gap />
+      </View>
+    );
   return (
     <View className={`ui-state ui-state--${resolved}`}>
       <View className="ui-state__symbol">{resolved === "error" ? "!" : "·"}</View>
@@ -191,3 +230,30 @@ export { StatCard, StatCards } from "./stat-card";
 export { CopyButton } from "./copy-button";
 export { BottomNav } from "./bottom-nav";
 export { AppIcon, type IconName } from "./icon";
+export { LineIcon, type LineIconName } from "./line-icon";
+export { PRESS } from "./press";
+export {
+  Sign,
+  SignAlert,
+  SignButton,
+  SignClock,
+  SignCount,
+  SignLine,
+  SignNote,
+  SignText,
+  SignTop,
+} from "./sign";
+export {
+  Card,
+  Numbers,
+  Row,
+  Say,
+  SectionTitle,
+  Sheet,
+  type NumberItem,
+} from "./sheet";
+export { Status } from "./status";
+export { statusKindFor, type StatusKind } from "./status-kind";
+export { BottomBar, Stamp, Steps } from "./flow";
+export { DateSwitch, FormError, FormRow } from "./form";
+export { SkeletonRows, SkeletonSign } from "./skeleton";
