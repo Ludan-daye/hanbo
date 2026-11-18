@@ -21,3 +21,6 @@ apps/miniprogram/project.private.config.json
 /*.xlsx
 /*.docx
 /未命名.txt
+
+# 本地隔离工作目录
+.worktrees/
