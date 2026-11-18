@@ -120,10 +120,13 @@ export const PageHeader = ({
   title,
   appearance,
   footer,
+  onBack,
 }: {
   readonly title: string;
   readonly appearance?: HeaderAppearance;
   readonly footer?: ReactNode;
+  /** 页面里有自己的“上一层”（比如同一个页面里的子视图）时，由它决定返回到哪。 */
+  readonly onBack?: () => void;
 }): JSX.Element => (
   <HeaderFrame appearance={appearance} footer={footer}>
     {appearance === "sign" ? (
@@ -132,7 +135,8 @@ export const PageHeader = ({
         aria-label="返回"
         {...PRESS}
         onClick={() => {
-          void returnToPreviousPage();
+          if (onBack) onBack();
+          else void returnToPreviousPage();
         }}
       >
         <View className="ui-chevron ui-chevron--back" />
@@ -142,7 +146,8 @@ export const PageHeader = ({
         className="ui-header__back"
         aria-label="返回"
         onClick={() => {
-          void returnToPreviousPage();
+          if (onBack) onBack();
+          else void returnToPreviousPage();
         }}
       >
         ‹
