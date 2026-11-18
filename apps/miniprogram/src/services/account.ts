@@ -8,6 +8,7 @@ import { ACCESS_TOKEN_KEY, API_BASE_URL, FRONTEND_DEMO } from "../config/env";
 import { fetchMe } from "./auth";
 import { apiClient } from "./client";
 import { readDemoPhoto } from "./demo/photo";
+import { noteWrite } from "./read-cache";
 
 export type AccountProfile = {
   readonly workerRegistration: WorkerRegistrationStatus;
@@ -76,5 +77,6 @@ export const saveAccountAvatar = async (
     throw new Error("登录已过期，请重新登录后设置头像。");
   if (response.statusCode < 200 || response.statusCode >= 300)
     throw new Error(`头像保存失败（${response.statusCode}），请稍后重试。`);
+  noteWrite();
   return JSON.parse(response.data) as AccountProfile;
 };

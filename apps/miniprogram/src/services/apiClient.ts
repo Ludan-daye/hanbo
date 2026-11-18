@@ -1,6 +1,7 @@
 import Taro from "@tarojs/taro";
 
 import { messageForApiError } from "./error-messages";
+import { noteWrite } from "./read-cache";
 
 export type RequestOptions = {
   readonly method?: "GET" | "POST" | "PUT" | "DELETE";
@@ -158,6 +159,8 @@ export const createApiClient = (baseUrl: string): ApiClient => {
     }
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
+      // 写操作成功：读取缓存作废，回到上一页时也会重读。
+      if ((options.method ?? "GET") !== "GET") noteWrite();
       return res.data as T;
     }
     if (res.statusCode === 401 && useAuth) {

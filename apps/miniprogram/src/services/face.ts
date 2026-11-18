@@ -9,6 +9,7 @@ import type { AttendanceLocation } from "./geofence";
 import type { AttendancePointCode } from "./me.types";
 import { ApiError } from "./apiClient";
 import { messageForApiError } from "./error-messages";
+import { noteWrite } from "./read-cache";
 
 export type FaceProfile = {
   readonly id: string;
@@ -130,6 +131,7 @@ const uploadFaceVideoFile = async (
           );
     throw new ApiError(response.statusCode, message, body);
   }
+  noteWrite();
   return body;
 };
 
@@ -213,7 +215,9 @@ export const enrollMyFace = async (
   consentVersion: string,
 ): Promise<FaceProfile> => {
   if (FRONTEND_DEMO) {
-    return demoEnrollFace(await readDemoPhoto(filePath), consentVersion);
+    const profile = demoEnrollFace(await readDemoPhoto(filePath), consentVersion);
+    noteWrite();
+    return profile;
   }
   await fetchMe();
   const accessToken = String(Taro.getStorageSync("accessToken") || "");
@@ -232,6 +236,7 @@ export const enrollMyFace = async (
       `人脸底照提交失败（${response.statusCode}），请检查图片和登录状态后重试。`,
     );
   }
+  noteWrite();
   return JSON.parse(response.data) as FaceProfile;
 };
 

@@ -21,6 +21,7 @@ import {
   type SessionState,
 } from "./sessionReducer";
 import { errorMessage } from "../services/error-messages";
+import { clearReadCache } from "../services/read-cache";
 
 type SessionContextValue = {
   readonly state: SessionState;
@@ -87,12 +88,15 @@ export const SessionProvider = ({
       try {
         await logout();
       } finally {
+        // 退出后不能留着这个人的数据，下一个登录的人不该看到。
+        clearReadCache();
         dispatch({ type: "CLEAR" });
       }
     },
     onLoggedIn: async () => {
       const accessToken = String(Taro.getStorageSync(ACCESS_TOKEN_KEY) || "");
       const refreshToken = String(Taro.getStorageSync(REFRESH_TOKEN_KEY) || "");
+      clearReadCache();
       dispatch({ type: "CLEAR" });
       dispatch({ accessToken, refreshToken, type: "SET_TOKENS" });
       try {

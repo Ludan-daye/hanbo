@@ -19,6 +19,7 @@ import { ROLE_LEVEL } from "@construction/domain/roles.js";
 import { participantPermissionRole } from "../../routing/permissionLevels";
 
 import { ApiError, type ApiClient, type RequestOptions } from "../apiClient";
+import { noteWrite } from "../read-cache";
 import type { AccountProfile } from "../account";
 import { emptyWorkerRegistration, normalizeWorkerRegistration, workerRegistrationError, type WorkerRegistration } from "@construction/domain";
 import type {
@@ -1572,6 +1573,7 @@ export const createDemoClient = (): ApiClient => ({
         throw new ApiError(400, "未知的演示身份。", { code });
       demoMe(state, code);
       Taro.setStorageSync(STORAGE_KEY, state);
+      noteWrite();
       return {
         accessToken: `demo:${code}`,
         refreshToken: `demo-refresh:${code}`,
@@ -1595,6 +1597,8 @@ export const createDemoClient = (): ApiClient => ({
           }
         : result.state;
     Taro.setStorageSync(STORAGE_KEY, next);
+    // 和真实接口一致：写操作成功后读取缓存作废。
+    if (options?.method && options.method !== "GET") noteWrite();
     return result.data as T;
   },
 });
