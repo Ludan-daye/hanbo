@@ -1,21 +1,45 @@
+// 设计变量。规矩见 docs/superpowers/specs/2026-11-19-ui-redesign-design.md：
+// 一屏只有一处橙色、一个黑色实心按钮；橙底上写黑字；不用阴影和渐变。
 page,
 body,
 .taro_page {
+  // 标牌设计
+  --hi: #ff6a13; // 反光橙：每屏只用一处
+  --k: #000000;
+  --page: #edeef0; // 混凝土灰：页面底色
+  --sheet: #ffffff;
+  --well: #f4f5f6; // 白条里的凹陷块
+  --hair: #eef0f1;
+  --muted: #7a8087;
+  --ph: #b4b9be; // 占位字、箭头
+  --warn: #ffd100;
+  --bad: #d7261e;
+  --good: #00843d;
+  --r-sign: 48rpx;
+  --r-sheet: 36rpx;
+  --r-btn: 36rpx;
+  --r-chip: 20rpx;
+  --gutter: 36rpx;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --num:
+    "HanboDigits", "DIN Alternate", "Bahnschrift", -apple-system, sans-serif;
+
+  // 旧变量名：还没改版的页面继续用这些名字，颜色跟着新色板走
   --bg: #ffffff;
   --surface: #ffffff;
-  --surface-sunk: #f5f6f7;
-  --ink: #101820;
-  --ink-soft: #626d78;
-  --line: #e5e8eb;
-  --clay: #0066d6;
-  --clay-pressed: #004fa8;
-  --clay-tint: #edf5ff;
-  --steel: #3c4856;
-  --primary: #101820;
-  --primary-pressed: #303b45;
-  --gold: #d79134;
-  --success: #14805e;
-  --danger: #c33845;
+  --surface-sunk: var(--well);
+  --ink: #000000;
+  --ink-soft: var(--muted);
+  --line: #e4e6e9;
+  --clay: #000000;
+  --clay-pressed: #000000;
+  --clay-tint: var(--well);
+  --steel: #3d4349;
+  --primary: #000000;
+  --primary-pressed: #23272b;
+  --gold: #6b5000;
+  --success: var(--good);
+  --danger: var(--bad);
   --radius-card: 20rpx;
   --radius-pill: 999rpx;
   --shadow-soft: none;

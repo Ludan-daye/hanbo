@@ -1,4 +1,6 @@
 @use "./styles/tokens.scss";
+@use "./styles/digits-font.scss";
+@use "./styles/motion.scss";
 
 page,
 body,
@@ -40,7 +42,11 @@ textarea {
   scroll-view,
   div,
   span,
-  img {
+  img,
+  taro-view-core,
+  taro-text-core,
+  taro-button-core,
+  taro-image-core {
     animation: none !important;
     transition: none !important;
   }

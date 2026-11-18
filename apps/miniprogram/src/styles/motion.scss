@@ -1,0 +1,65 @@
+// 动效。只动 transform 和 opacity，都由样式完成，不为动画改数据。
+// 系统开了“减少动态效果”时，app.scss 会把这里的动画全部关掉。
+
+// 数字：等宽的窄体粗字
+.num {
+  font-family: var(--num);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+// 按下：立刻变，松开后 120ms 回弹。配合 components/ui/press.ts 的 PRESS 使用
+.ui-press {
+  transition:
+    transform 0.12s var(--ease),
+    opacity 0.12s var(--ease);
+}
+.is-pressed {
+  opacity: 0.72;
+  transform: scale(0.985);
+  transition: none;
+}
+
+// 展开的内容淡入
+.m-fade {
+  animation: m-fade 0.14s var(--ease) both;
+}
+@keyframes m-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+// 换到下一步：从右边 24rpx 处滑入
+.m-step {
+  animation: m-step 0.18s var(--ease) both;
+}
+@keyframes m-step {
+  from {
+    opacity: 0;
+    transform: translateX(24rpx);
+  }
+}
+
+// 盖章：全应用唯一有“落下”感的动效
+.m-stamp {
+  animation: m-stamp 0.24s var(--ease) both;
+}
+@keyframes m-stamp {
+  from {
+    opacity: 0;
+    transform: rotate(-4deg) scale(1.5);
+  }
+}
+
+// 骨架：唯一循环的动效
+.sk {
+  background: #dfe2e5;
+  border-radius: 12rpx;
+  animation: sk 1.2s ease-in-out infinite;
+}
+@keyframes sk {
+  50% {
+    opacity: 0.45;
+  }
+}
