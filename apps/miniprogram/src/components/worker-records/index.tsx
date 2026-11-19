@@ -1,18 +1,16 @@
+import { Picker, Text, View } from "@tarojs/components";
 import Taro, { useDidShow, usePullDownRefresh, useRouter } from "@tarojs/taro";
-import { Button as NativeButton, Picker, View } from "@tarojs/components";
-import { useEffect, useState } from "react";
-import { Button, PageHeader, Screen } from "../ui";
+import { Fragment, useEffect, useState } from "react";
+
 import { usePageRefresh } from "../../hooks/use-page-refresh";
+import { errorMessage } from "../../services/error-messages";
 import {
   fetchMyAttendanceDays,
   fetchMyAttendanceRecords,
   fetchMyMakeups,
   fetchMyProjects,
 } from "../../services/me";
-import type {
-  AttendanceRecord,
-  MyProjectMembership,
-} from "../../services/me.types";
+import type { MyProjectMembership } from "../../services/me.types";
 import { chinaToday, formatChinaHm } from "../../services/time";
 import { summarizeWorkerMonth } from "../../services/worker-home";
 import {
@@ -22,71 +20,97 @@ import {
   attendanceProjectOptions,
   filterAttendance,
   groupAttendanceDays,
-  workerRecordDayStatus as dayStatus,
   type AttendanceLayers,
   type AttendanceRange,
+  type WorkerRecordDay,
 } from "../../services/worker-records";
-import "./index.scss";
-import { errorMessage } from "../../services/error-messages";
+import {
+  Button,
+  FormError,
+  FormRow,
+  Links,
+  Notice,
+  Numbers,
+  PageHeader,
+  Row,
+  Screen,
+  SectionTitle,
+  Segmented,
+  Sheet,
+  SignLine,
+  SkeletonRows,
+  StateView,
+  Status,
+  Timeline,
+  type SegmentedOption,
+  type TimelineItem,
+} from "../ui";
+import {
+  abnormalReasonLabel,
+  dayHasIssue,
+  dayLabel,
+  dayMakeupUrl,
+  dayNotes,
+  dayPoints,
+  dayRowStatus,
+  fullDateLabel,
+  hoursText,
+  pointName,
+  rangeHeading,
+  rangeSign,
+} from "./day-view";
 
-const RANGES: readonly { value: AttendanceRange; label: string }[] = [
+import "./index.scss";
+
+const RANGES: ReadonlyArray<SegmentedOption<AttendanceRange>> = [
   { value: "TODAY", label: "今天" },
   { value: "WEEK", label: "近7天" },
   { value: "MONTH", label: "本月" },
   { value: "CUSTOM", label: "自选" },
 ];
-const POINT_LABEL: Readonly<Record<string, string>> = {
-  SEGMENT_1_END: "上午下班",
-  SEGMENT_1_START: "上午上班",
-  SEGMENT_2_END: "下午下班",
-  SEGMENT_2_START: "下午上班",
-};
-const pointName = (row: {
-  readonly pointLabel?: string | null;
-  readonly pointCode: string;
-}): string => row.pointLabel ?? POINT_LABEL[row.pointCode] ?? row.pointCode;
-const minutesLabel = (minutes: number): string =>
-  `${Math.floor(minutes / 60)}小时${minutes % 60 ? `${minutes % 60}分钟` : ""}`;
-const reasonLabel = (reason: string | null): string =>
-  reason === "OUTSIDE_GEOFENCE"
-    ? "超出考勤范围"
-    : reason === "FACE_NOT_PASSED"
-      ? "人脸核验未通过"
-      : reason
-        ? "核验异常"
-        : "";
-const dayLabel = (value: string): string => {
-  const date = new Date(`${value}T00:00:00Z`);
-  return `${date.getUTCMonth() + 1}月${date.getUTCDate()}日 · 星期${"日一二三四五六"[date.getUTCDay()]}`;
-};
-const RawRecord = ({
-  row,
-}: {
-  readonly row: AttendanceRecord;
-}): JSX.Element => (
-  <View className="worker-records__record">
-    <View className="worker-records__record-line">
-      <View>
-        {pointName(row)} · {formatChinaHm(row.occurredAt)}
-      </View>
-      <View
-        className={
-          row.status === "VALID"
-            ? "worker-records__success"
-            : "worker-records__error"
-        }
-      >
-        {row.status === "VALID" ? "核验通过" : "核验未通过"}
-      </View>
-    </View>
-    {row.abnormalReason ? (
-      <View className="worker-records__muted">
-        原因：{reasonLabel(row.abnormalReason)}
-      </View>
-    ) : null}
-  </View>
-);
 
+/**
+ * 一天里的时点：打过的卡和补上的卡。
+ * 页面只知道这天打了哪些卡、有没有缺卡，不知道缺的是哪一张，所以缺卡只留一行“还有卡没打”。
+ */
+const timelineItems = (group: WorkerRecordDay): TimelineItem[] => {
+  const points = dayPoints(group);
+  if (points.length === 0)
+    return [{ key: "none", state: "todo", title: "这一天没有打卡记录" }];
+  const items = points.map(
+    (point): TimelineItem =>
+      point.kind === "invalid"
+        ? {
+            key: point.key,
+            state: "todo",
+            title: point.name,
+            sub: point.note ? `${point.time}，${point.note}` : point.time,
+            right: <Status kind="bad">核验未通过</Status>,
+          }
+        : {
+            key: point.key,
+            state: "done",
+            title: point.name,
+            sub: point.note ?? undefined,
+            right: (
+              <Text className="num worker-records__time">{point.time}</Text>
+            ),
+          },
+  );
+  return group.summary?.isMissingPunch
+    ? [
+        ...items,
+        {
+          key: "missing",
+          state: "todo",
+          title: "还有卡没打",
+          right: <Text className="worker-records__missing">没有记录</Text>,
+        },
+      ]
+    : items;
+};
+
+/** 我的考勤：所有角色同一套版式。顶上一句结论，下面按天列出，有问题的那天下面就是补卡入口。 */
 export const WorkerRecords = (): JSX.Element => {
   const params = useRouter().params;
   const { revision, refresh } = usePageRefresh();
@@ -109,7 +133,10 @@ export const WorkerRecords = (): JSX.Element => {
   const [projects, setProjects] = useState<readonly MyProjectMembership[]>([]);
   const [projectError, setProjectError] = useState(false);
   const [projectRevision, setProjectRevision] = useState(0);
-  const [opened, setOpened] = useState<string | null>(null);
+  // null：还没点过哪一天，这时默认展开最近一个有问题的日子。
+  const [opened, setOpened] = useState<{ readonly key: string | null } | null>(
+    null,
+  );
   const [statsOpen, setStatsOpen] = useState(false);
   const [response, setResponse] = useState<{
     readonly key: string;
@@ -210,62 +237,31 @@ export const WorkerRecords = (): JSX.Element => {
     projectId,
   );
   const names = new Map(options.map((option) => [option.id, option.name]));
-  const projectName = (id: string): string => names.get(id) ?? `项目 ${id}`;
+  const projectName = (id: string): string => names.get(id) ?? "未命名项目";
   const selectRange = (value: AttendanceRange): void => {
     if (value === "CUSTOM" && range !== "CUSTOM") setCustom({ from, to });
     setRange(value);
   };
+  const loading = loaded === null && !rangeError;
+  // 看全部项目、手里又不止一个项目时，每一天要写明是哪个项目的。
+  const showProject = projectId === null && options.length > 2;
+  // 只有一天时（比如从“今天的记录”进来）直接展开它。
+  const openKey =
+    opened !== null
+      ? opened.key
+      : groups.length === 1
+        ? groups[0].key
+        : (groups.find((group) => dayHasIssue(group))?.key ?? null);
+  const invalidRecords =
+    layers?.records.filter((row) => row.status === "INVALID") ?? [];
+
   return (
-    <Screen
-      appearance="worker"
-      header={<PageHeader title="我的考勤" appearance="worker" />}
-    >
-      <View className="worker-records">
-        <Picker
-          mode="selector"
-          range={options.map((option) => option.name)}
-          value={Math.max(
-            0,
-            options.findIndex((option) => option.id === (projectId ?? "")),
-          )}
-          onChange={(event) =>
-            setProjectId(options[Number(event.detail.value)]?.id || null)
-          }
-        >
-          <View
-            className="worker-records__project"
-            role="button"
-            aria-label="切换考勤项目"
-          >
-            <View>{projectId ? projectName(projectId) : "全部项目"}</View>
-            <View className="worker-records__muted">切换</View>
-          </View>
-        </Picker>
-        {projectError ? (
-          <View className="worker-records__project-warning">
-            项目名加载失败，记录仍可查看。
-            <NativeButton
-              className="worker-records__text-button"
-              onClick={() => setProjectRevision((v) => v + 1)}
-            >
-              重试名称
-            </NativeButton>
-          </View>
-        ) : null}
-        <View className="worker-records__ranges">
-          {RANGES.map((item) => (
-            <NativeButton
-              key={item.value}
-              className={`worker-records__range${range === item.value ? " worker-records__range--selected" : ""}`}
-              onClick={() => selectRange(item.value)}
-            >
-              {item.label}
-            </NativeButton>
-          ))}
-        </View>
-        {range === "CUSTOM" ? (
-          <View>
-            <View className="worker-records__dates">
+    <Screen header={<PageHeader title="我的考勤" />}>
+      <Segmented options={RANGES} value={range} onChange={selectRange} />
+      {range === "CUSTOM" ? (
+        <>
+          <View className="worker-records__dates">
+            <Sheet gap>
               <Picker
                 mode="date"
                 value={from}
@@ -277,10 +273,12 @@ export const WorkerRecords = (): JSX.Element => {
                   }))
                 }
               >
-                <View className="worker-records__date">
-                  <View className="worker-records__muted">开始日期</View>
-                  <View>{from}</View>
-                </View>
+                <FormRow
+                  label="开始日期"
+                  value={fullDateLabel(from)}
+                  error={rangeError !== null}
+                  chevron
+                />
               </Picker>
               <Picker
                 mode="date"
@@ -294,254 +292,197 @@ export const WorkerRecords = (): JSX.Element => {
                   }))
                 }
               >
-                <View className="worker-records__date">
-                  <View className="worker-records__muted">结束日期</View>
-                  <View>{to}</View>
-                </View>
+                <FormRow
+                  label="结束日期"
+                  value={fullDateLabel(to)}
+                  error={rangeError !== null}
+                  chevron
+                />
               </Picker>
-            </View>
-            <View
-              className={
-                rangeError ? "worker-records__error" : "worker-records__muted"
-              }
-            >
-              {rangeError ?? "日期范围最长 93 天。"}
-            </View>
+            </Sheet>
           </View>
-        ) : (
-          <View className="worker-records__period">
-            {from} — {to}
-          </View>
-        )}
-        <View className="worker-records__summary">
-          {total ? (
-            <>
-              <View className="worker-records__summary-line">
-                实际出勤 {total.attendedDays} 天 · 已记录工时{" "}
-                {(total.workedMinutes / 60).toFixed(1)} 小时
-              </View>
-              <View className="worker-records__muted">
-                {classified && (
-                  <>
-                    正常 {(classified.normalMinutes / 60).toFixed(1)}h · 加班{" "}
-                    {(classified.overtimeMinutes / 60).toFixed(1)}h · 未分类{" "}
-                    {(classified.unclassifiedMinutes / 60).toFixed(1)}h
-                  </>
-                )}
-              </View>
-            </>
+          {rangeError ? (
+            <FormError>{rangeError}</FormError>
           ) : (
-            <View className="worker-records__muted">
-              {loaded?.error || rangeError ? "统计暂不可用" : "正在读取考勤…"}
-            </View>
+            <Notice>一次最多看 93 天。</Notice>
           )}
-        </View>
-        {loaded?.error ? (
-          <View className="worker-records__state">
-            <View className="worker-records__heading">考勤加载失败</View>
-            <View className="worker-records__muted">{loaded.error}</View>
-            <View className="worker-records__muted">筛选已保留，请重试。</View>
-            <Button appearance="worker" onClick={refresh}>
-              重新加载
-            </Button>
-          </View>
-        ) : null}
-        {layers && groups.length === 0 ? (
-          <View className="worker-records__state">
-            <View className="worker-records__heading">
-              这段时间暂无考勤记录
+        </>
+      ) : null}
+
+      {total ? (
+        <SignLine {...rangeSign(range, total)} />
+      ) : loading ? (
+        <View className="worker-records__sk sk" />
+      ) : null}
+
+      <Sheet gap>
+        <Picker
+          mode="selector"
+          range={options.map((option) => option.name)}
+          value={Math.max(
+            0,
+            options.findIndex((option) => option.id === (projectId ?? "")),
+          )}
+          onChange={(event) =>
+            setProjectId(options[Number(event.detail.value)]?.id || null)
+          }
+        >
+          <FormRow label="项目" chevron>
+            <View className="worker-records__value">
+              {projectId ? projectName(projectId) : "全部项目"}
             </View>
-            <View className="worker-records__muted">
-              可切换上方日期或项目查看。
-            </View>
-          </View>
-        ) : null}
-        {groups.map((group) => {
-          const expanded = opened === group.key;
-          const status = dayStatus(group, today);
-          const hasIssue =
-            group.summary?.isAbsent ||
-            group.summary?.isLate ||
-            group.summary?.isEarlyLeave ||
-            group.summary?.isMissingPunch ||
-            group.records.some((row) => row.status === "INVALID");
-          return (
-            <View key={group.key} className="worker-records__day">
-              <NativeButton
-                className="worker-records__day-toggle"
-                aria-expanded={expanded}
-                onClick={() => setOpened(expanded ? null : group.key)}
-              >
-                <View className="worker-records__day-line">
-                  <View className="worker-records__day-title">
-                    {dayLabel(group.date)}
-                  </View>
-                  <View>
-                    {group.summary
-                      ? minutesLabel(group.summary.workedMinutes)
-                      : "待汇总"}
-                  </View>
-                </View>
-                <View className="worker-records__day-line worker-records__muted">
-                  <View className="worker-records__project-name">
-                    {projectName(group.projectId)}
-                  </View>
-                  <View
-                    className={
-                      hasIssue
-                        ? "worker-records__error"
-                        : group.makeups.length
-                          ? "worker-records__link"
-                          : ""
-                    }
-                  >
-                    {status}
-                  </View>
-                </View>
-                <View className="worker-records__expand-label">
-                  {expanded ? "收起明细" : "查看明细"}
-                </View>
-              </NativeButton>
-              {expanded ? (
-                <View className="worker-records__details">
-                  <View className="worker-records__detail-section">
-                    <View className="worker-records__detail-title">日汇总</View>
-                    {group.summary ? (
-                      <>
-                        <View>
-                          {minutesLabel(group.summary.workedMinutes)} · {status}
-                        </View>
-                        <View className="worker-records__muted">
-                          正常 {(group.summary.normalMinutes / 60).toFixed(1)}h
-                          · 加班{" "}
-                          {(group.summary.overtimeMinutes / 60).toFixed(1)}h ·
-                          未分类{" "}
-                          {(group.summary.unclassifiedMinutes / 60).toFixed(1)}h
-                        </View>
-                        <View className="worker-records__muted">
-                          {group.summary.teamName ?? "项目直属"} · 已补卡{" "}
-                          {group.summary.approvedMakeupCount} 次
-                        </View>
-                      </>
-                    ) : (
-                      <View className="worker-records__muted">
-                        暂无日汇总，以原始记录为准。
-                      </View>
-                    )}
-                  </View>
-                  {hasIssue && group.date <= today ? (
-                    <Button
-                      appearance="worker"
-                      variant="outline"
-                      onClick={() => {
-                        const recorded = group.records
-                          .filter((row) => row.status === "VALID")
-                          .map((row) => row.pointCode)
-                          .join(",");
-                        void Taro.navigateTo({
-                          url: `/pages/submit-makeup/index?projectId=${encodeURIComponent(group.projectId)}&date=${group.date}&recorded=${encodeURIComponent(recorded)}`,
-                        });
-                      }}
-                    >
-                      为 {group.date.slice(5).replace("-", "月")}日 申请补卡
-                    </Button>
-                  ) : null}
-                  <View className="worker-records__detail-section">
-                    <View className="worker-records__detail-title">
-                      已批准补卡（{group.makeups.length} 次）
+          </FormRow>
+        </Picker>
+      </Sheet>
+      {projectError ? (
+        <>
+          <Notice>项目名没读到，记录照常能看。</Notice>
+          <Button
+            variant="text"
+            onClick={() => setProjectRevision((value) => value + 1)}
+          >
+            重新读取项目名
+          </Button>
+        </>
+      ) : null}
+
+      {rangeError ? null : (
+        <SectionTitle>{rangeHeading(from, to)}</SectionTitle>
+      )}
+      {loading ? <SkeletonRows rows={3} /> : null}
+      {loaded?.error ? (
+        <StateView
+          kind="error"
+          title="考勤没读到"
+          sub={loaded.error}
+          onRetry={refresh}
+        />
+      ) : null}
+      {layers && groups.length === 0 ? (
+        <StateView
+          kind="empty"
+          title="这段时间没有考勤记录"
+          sub="换个日期或项目再看。"
+        />
+      ) : null}
+      {groups.length > 0 ? (
+        <Sheet>
+          {groups.map((group) => {
+            const expanded = openKey === group.key;
+            return (
+              <Fragment key={group.key}>
+                <Row
+                  title={dayLabel(group.date)}
+                  sub={showProject ? projectName(group.projectId) : undefined}
+                  status={dayRowStatus(group, today)}
+                  chevron={!expanded}
+                  onClick={() =>
+                    setOpened({ key: expanded ? null : group.key })
+                  }
+                />
+                {expanded ? (
+                  <View className="worker-records__detail m-fade">
+                    <Timeline items={timelineItems(group)} />
+                    <View className="worker-records__note">
+                      {dayNotes(group).map((line) => (
+                        <View key={line}>{line}</View>
+                      ))}
                     </View>
-                    {group.makeups.length ? (
-                      group.makeups.map((row) => (
-                        <View className="worker-records__record" key={row.id}>
-                          <View className="worker-records__record-line">
-                            <View>
-                              {pointName(row)} ·{" "}
-                              {formatChinaHm(row.requestedOccurredAt)}
-                            </View>
-                            <View className="worker-records__link">
-                              补卡已生效
-                            </View>
-                          </View>
-                        </View>
-                      ))
-                    ) : (
-                      <View className="worker-records__muted">
-                        暂无已批准补卡。
-                      </View>
-                    )}
+                    {dayHasIssue(group) && group.date <= today ? (
+                      <Row
+                        title="为这一天申请补卡"
+                        hazard
+                        chevron
+                        onClick={() => {
+                          void Taro.navigateTo({ url: dayMakeupUrl(group) });
+                        }}
+                      />
+                    ) : null}
                   </View>
-                  <View className="worker-records__detail-section">
-                    <View className="worker-records__detail-title">
-                      原始打卡明细（{group.records.length} 次）
-                    </View>
-                    {group.records.length ? (
-                      group.records.map((row) => (
-                        <RawRecord key={row.id} row={row} />
-                      ))
-                    ) : (
-                      <View className="worker-records__muted">
-                        暂无原始打卡记录。
-                        {group.makeups.length ? "已批准补卡有效。" : ""}
-                      </View>
-                    )}
-                  </View>
-                </View>
-              ) : null}
-            </View>
-          );
-        })}
-        <View className="worker-records__actions">
-          <NativeButton
-            className="worker-records__text-button"
-            disabled={!layers}
+                ) : null}
+              </Fragment>
+            );
+          })}
+        </Sheet>
+      ) : null}
+
+      <Links>
+        {layers ? (
+          <Button
+            variant="text"
             onClick={() => setStatsOpen((value) => !value)}
           >
-            {statsOpen ? "收起核验统计" : "核验统计"}
-          </NativeButton>
-          <NativeButton
-            className="worker-records__text-button"
-            onClick={() => {
-              void Taro.navigateTo({ url: "/pages/submit-makeup/index" });
-            }}
-          >
-            申请补卡
-          </NativeButton>
-        </View>
-        {statsOpen && layers ? (
-          <View className="worker-records__verification">
-            <View className="worker-records__heading">核验统计</View>
-            <View className="worker-records__record-line">
-              <View>原始打卡次数</View>
-              <View>{layers.records.length}</View>
-            </View>
-            <View className="worker-records__record-line">
-              <View>核验通过</View>
-              <View>
-                {layers.records.filter((row) => row.status === "VALID").length}
-              </View>
-            </View>
-            <View className="worker-records__record-line">
-              <View>核验未通过</View>
-              <View>
-                {
-                  layers.records.filter((row) => row.status === "INVALID")
-                    .length
-                }
-              </View>
-            </View>
-            {layers.records
-              .filter((row) => row.status === "INVALID")
-              .map((row) => (
-                <View key={row.id} className="worker-records__invalid">
-                  <View className="worker-records__muted">
-                    {row.attendanceDate} · {projectName(row.projectId)}
-                  </View>
-                  <RawRecord row={row} />
-                </View>
-              ))}
-          </View>
+            {statsOpen ? "收起统计" : "全部统计"}
+          </Button>
         ) : null}
-      </View>
+        <Button
+          variant="text"
+          onClick={() => {
+            void Taro.navigateTo({ url: "/pages/submit-makeup/index" });
+          }}
+        >
+          申请补卡
+        </Button>
+      </Links>
+      {statsOpen && layers && classified ? (
+        <View className="m-fade">
+          <SectionTitle>全部统计</SectionTitle>
+          <Numbers
+            wrap
+            items={[
+              {
+                value: hoursText(classified.normalMinutes),
+                label: "正常工时",
+              },
+              {
+                value: hoursText(classified.overtimeMinutes),
+                label: "加班工时",
+              },
+              {
+                value: hoursText(classified.unclassifiedMinutes),
+                label: "未分类工时",
+              },
+              {
+                value: String(layers.records.length),
+                unit: "次",
+                label: "打卡",
+              },
+              {
+                value: String(layers.records.length - invalidRecords.length),
+                unit: "次",
+                label: "核验通过",
+              },
+              {
+                value: String(invalidRecords.length),
+                unit: "次",
+                label: "核验未通过",
+                tone: invalidRecords.length > 0 ? "bad" : undefined,
+              },
+            ]}
+          />
+          {invalidRecords.length > 0 ? (
+            <>
+              <SectionTitle>核验未通过的打卡</SectionTitle>
+              <Sheet>
+                {invalidRecords.map((row) => (
+                  <Row
+                    key={row.id}
+                    title={pointName(row)}
+                    titleNum={formatChinaHm(row.occurredAt)}
+                    sub={[
+                      abnormalReasonLabel(row.abnormalReason),
+                      dayLabel(row.attendanceDate),
+                      projectName(row.projectId),
+                    ]
+                      .filter(Boolean)
+                      .join("，")}
+                  />
+                ))}
+              </Sheet>
+            </>
+          ) : null}
+        </View>
+      ) : null}
     </Screen>
   );
 };

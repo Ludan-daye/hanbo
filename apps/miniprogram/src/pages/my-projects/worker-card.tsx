@@ -1,113 +1,74 @@
-import { View } from "@tarojs/components";
+import { Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { Button } from "../../components/ui";
+
+import {
+  Button,
+  Card,
+  CardActions,
+  CardMeta,
+  CardTitle,
+  Divider,
+  KV,
+} from "../../components/ui";
 import { displayProjectRole } from "../../routing/features";
 import {
   myProjectDetailUrl,
   type ProjectAttendance,
 } from "../../services/project-attendance";
-import { formatChinaDate } from "../../services/time";
-import { workerProjectCardStatus } from "./worker-card-state";
-import {
-  summarizeOtherWorkerProjects,
-  workerHomeNextPoint,
-} from "../../services/worker-home-selection";
+import type { ProjectCardView } from "./worker-card-state";
 
+const go = (url: string): void => {
+  void Taro.navigateTo({ url });
+};
+
+/**
+ * “我的项目”里的一张卡片：项目、今天的状态、下一张卡，加一个现在最该做的操作。
+ * 一屏只有一个黑按钮，所以哪张卡片用黑按钮由页面决定（primary）。
+ */
 export const WorkerProjectCard = ({
   entry,
-  now,
+  view,
   primary,
   onRetry,
 }: {
   readonly entry: ProjectAttendance;
-  readonly now: string;
+  readonly view: ProjectCardView;
   readonly primary: boolean;
   readonly onRetry: () => void;
 }): JSX.Element => {
-  const next = workerHomeNextPoint(entry, now);
-  const stale =
-    entry.status === "ready" &&
-    entry.today.attendanceDate !== formatChinaDate(now);
-  const abnormal =
-    summarizeOtherWorkerProjects([entry], null, formatChinaDate(now))
-      .abnormalProjects > 0;
-  const failed = entry.status === "error" || stale;
-  const label = workerProjectCardStatus(entry, now);
-  const detail = (): void => {
-    void Taro.navigateTo({ url: myProjectDetailUrl(entry.project.projectId) });
-  };
+  const { action, next } = view;
   return (
-    <View
-      className={`worker-projects__card${primary ? " worker-projects__card--primary" : ""}`}
-      data-project-id={entry.project.projectId}
-    >
-      <View className="worker-projects__project" role="button" onClick={detail}>
-        <View className="worker-projects__name">
-          {entry.project.projectName}
-        </View>
-        <View className="worker-projects__detail-label">详情</View>
-      </View>
-      <View className="worker-projects__meta">
-        {entry.project.teamName ?? "未分配班组"} ·{" "}
-        {displayProjectRole(entry.project.projectRoleLabel)}
-      </View>
-      <View
-        className={`worker-projects__status${failed || abnormal ? " worker-projects__status--attention" : ""}`}
-      >
-        {label}
-      </View>
-      {failed ? (
-        <>
-          <View className="worker-projects__meta">
-            {entry.status === "error"
-              ? entry.error
-              : "日期已变化，请刷新今日安排。"}
-          </View>
-          <Button variant="outline" onClick={onRetry}>
-            重新读取安排
-          </Button>
-        </>
-      ) : next && entry.status === "ready" ? (
-        <>
-          <View className="worker-projects__meta">
-            {next.label} · {entry.today.attendanceDate}
-          </View>
-          <View className="worker-projects__time">{next.scheduledTime}</View>
+    <View data-project-id={entry.project.projectId}>
+      <Card gap>
+        <CardTitle status={view.status}>{entry.project.projectName}</CardTitle>
+        <CardMeta>
+          {entry.project.teamName ?? "未分配班组"}，
+          {displayProjectRole(entry.project.projectRoleLabel)}
+        </CardMeta>
+        {view.hint !== null ? <CardMeta>{view.hint}</CardMeta> : null}
+        {next !== null ? (
+          <>
+            <Divider />
+            <KV label="下一张卡">
+              {next.label} <Text className="num">{next.scheduledTime}</Text>
+            </KV>
+          </>
+        ) : null}
+        <CardActions>
           <Button
             variant={primary ? "primary" : "outline"}
-            onClick={() => {
-              void Taro.navigateTo({
-                url: `/pages/punch/index?projectId=${encodeURIComponent(entry.project.projectId)}`,
-              });
-            }}
+            onClick={action.kind === "retry" ? onRetry : () => go(action.url)}
           >
-            去打卡
+            {action.label}
           </Button>
-        </>
-      ) : (
-        <View className="worker-projects__meta">
-          {entry.status === "ready" && !entry.today.configured
-            ? "请联系管理员确认打卡安排。"
-            : entry.status === "ready"
-              ? entry.today.attendanceDate
-              : ""}
-        </View>
-      )}
-      <View className="worker-projects__links">
-        <View role="button" onClick={detail}>
-          查看项目
-        </View>
-        <View
-          role="button"
-          onClick={() => {
-            void Taro.navigateTo({
-              url: `/pages/my-records/index?projectId=${encodeURIComponent(entry.project.projectId)}`,
-            });
-          }}
-        >
-          本项目考勤
-        </View>
-      </View>
+          <Button
+            variant="text"
+            onClick={() => go(myProjectDetailUrl(entry.project.projectId))}
+          >
+            项目详情
+          </Button>
+        </CardActions>
+      </Card>
     </View>
   );
 };

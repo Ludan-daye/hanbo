@@ -1,1 +1,1 @@
-export default definePageConfig({ navigationBarTitleText: "提交补卡" });
+export default definePageConfig({ navigationBarTitleText: "申请补卡" });

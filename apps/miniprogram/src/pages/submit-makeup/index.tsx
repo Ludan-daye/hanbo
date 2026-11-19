@@ -1,18 +1,23 @@
-import { Picker, Textarea, View } from "@tarojs/components";
+import { Picker, Text, View } from "@tarojs/components";
 import Taro, { useRouter } from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 
 import {
+  BottomBar,
   Button,
-  ListItem,
+  FormArea,
+  FormRow,
   Notice,
   PageHeader,
   Screen,
-  Section,
-  Segmented,
+  Sheet,
   StateView,
 } from "../../components/ui/index";
+import {
+  dayLabel,
+  fullDateLabel,
+} from "../../components/worker-records/day-view";
 import {
   fetchMyProjects,
   fetchTaskAttendanceToday,
@@ -29,14 +34,42 @@ import type {
   MyProjectMembership,
 } from "../../services/me.types";
 import { useSession } from "../../store/session";
-import { FlowScreen } from "../../components/worker-flow";
 import { canSubmitWorkerMakeup, makeupPlanContext } from "./form-state";
 import "./index.scss";
 import { errorMessage } from "../../services/error-messages";
 
+/** 点一下去选的一行。值太长时单行省略；还没有值时显示灰色的提示。 */
+const PickRow = ({
+  label,
+  value,
+  placeholder,
+  chevron,
+  error,
+}: {
+  readonly label: string;
+  readonly value?: string | null;
+  readonly placeholder?: string;
+  readonly chevron?: boolean;
+  readonly error?: boolean;
+}): JSX.Element =>
+  value ? (
+    <FormRow label={label} required chevron={chevron} error={error}>
+      <View className="submit-makeup__value">{value}</View>
+    </FormRow>
+  ) : (
+    <FormRow
+      label={label}
+      required
+      placeholder={placeholder}
+      chevron={chevron}
+      error={error}
+    />
+  );
+
 export default function SubmitMakeup(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
+  // 版式不分角色；只有提交之后去哪一页，工人和管理人员不一样。
   const workerAppearance = state.me?.roles.highestRoleCode === "WORKER";
   const {
     taskId,
@@ -89,8 +122,7 @@ export default function SubmitMakeup(): JSX.Element {
       },
       (cause) => {
         if (!cancelled) {
-          const message =
-            errorMessage(cause, "无法读取项目");
+          const message = errorMessage(cause, "无法读取项目");
           setError(message);
           setProjectError(message);
         }
@@ -109,8 +141,12 @@ export default function SubmitMakeup(): JSX.Element {
     setPlanError(null);
     setLoadedContext(null);
     const readPlan = async (): Promise<EffectivePlan | null> => {
-      if (!taskId && mode !== "overtime") return fetchMyAttendancePlan(projectId, date);
-      const task = mode === "overtime" ? await fetchOvertimeAttendanceToday(projectId) : await fetchTaskAttendanceToday(projectId, taskId!);
+      if (!taskId && mode !== "overtime")
+        return fetchMyAttendancePlan(projectId, date);
+      const task =
+        mode === "overtime"
+          ? await fetchOvertimeAttendanceToday(projectId)
+          : await fetchTaskAttendanceToday(projectId, taskId!);
       // 任务与加班补卡只针对当天的任务记录；日期以服务端返回为准，不允许改动。
       // 日期变化会重新触发本次读取，这里返回 null 结束当前这一轮。
       if (task.attendanceDate !== date) {
@@ -154,8 +190,7 @@ export default function SubmitMakeup(): JSX.Element {
       },
       (cause: unknown) => {
         if (!cancelled) {
-          const message =
-            errorMessage(cause, "无法读取当天排班");
+          const message = errorMessage(cause, "无法读取当天排班");
           setError(message);
           setPlanError(message);
         }
@@ -174,7 +209,9 @@ export default function SubmitMakeup(): JSX.Element {
     try {
       await Taro.redirectTo({ url: "/pages/my-makeups/index?status=PENDING" });
     } catch {
-      setError("申请已提交，返回失败。点击“查看我的补卡”，勿重复提交。");
+      setError(
+        "申请已经提交，只是没能跳到补卡记录。点“查看我的补卡”，不要重复提交。",
+      );
     }
   };
   const workerCanSubmit = canSubmitWorkerMakeup({
@@ -233,41 +270,53 @@ export default function SubmitMakeup(): JSX.Element {
       setBusy(false);
     }
   };
-  if (workerAppearance) {
-    const projectIndex =
-      projects?.findIndex((row) => row.projectId === projectId) ?? -1;
-    const selectedProject = projectIndex >= 0 ? projects?.[projectIndex] : null;
-    const currentPlan =
-      loadedContext === makeupPlanContext(projectId, date) ? plan : null;
-    const pointIndex =
-      currentPlan?.points.findIndex((row) => row.code === point) ?? -1;
-    const selectedPoint =
-      pointIndex >= 0 ? currentPlan?.points[pointIndex] : null;
-    const locked = busy || submitted;
-    return (
-      <FlowScreen title={taskId ? "申请完工补卡" : "申请补卡"}>
-        <View className="worker-makeup-form">
-          {taskId && (
-            <View className="worker-makeup-form__hint">
-              实际完工须晚于开工，间隔不超过 24 小时。审批后计工。
-            </View>
-          )}
-          {projectError ? (
-            <StateView
-              title="项目加载失败"
-              sub={projectError}
-              onRetry={() => setProjectRevision((value) => value + 1)}
-            />
-          ) : projects === null ? (
-            <StateView title="正在读取项目…" />
-          ) : projects.length === 0 ? (
-            <StateView
-              title="还没有加入项目"
-              sub="请联系管理员分配项目。"
-              onRetry={() => setProjectRevision((value) => value + 1)}
-            />
-          ) : (
-            <>
+
+  const projectIndex =
+    projects?.findIndex((row) => row.projectId === projectId) ?? -1;
+  const selectedProject = projectIndex >= 0 ? projects?.[projectIndex] : null;
+  const currentPlan =
+    loadedContext === makeupPlanContext(projectId, date) ? plan : null;
+  const pointIndex =
+    currentPlan?.points.findIndex((row) => row.code === point) ?? -1;
+  const selectedPoint =
+    pointIndex >= 0 ? currentPlan?.points[pointIndex] : null;
+  const locked = busy || submitted;
+  const today = chinaToday();
+  // 这一天排了卡、能补：才有“补哪张卡”和“实际时间”可选。
+  const canPick =
+    planError === null &&
+    currentPlan !== null &&
+    currentPlan.isWorkday &&
+    currentPlan.points.length > 0;
+  const title = taskId
+    ? "申请完工补卡"
+    : mode === "overtime"
+      ? "申请加班补卡"
+      : "申请补卡";
+
+  return (
+    <Screen header={<PageHeader title={title} />}>
+      {projectError ? (
+        <StateView
+          kind="error"
+          title="项目没读到"
+          sub={projectError}
+          onRetry={() => setProjectRevision((value) => value + 1)}
+        />
+      ) : projects === null ? (
+        <StateView title="正在读取项目…" />
+      ) : projects.length === 0 ? (
+        <StateView
+          kind="empty"
+          title="还没有加入项目"
+          sub="请联系管理员分配项目。"
+          retryLabel="重新读取"
+          onRetry={() => setProjectRevision((value) => value + 1)}
+        />
+      ) : (
+        <>
+          <View className="submit-makeup__form">
+            <Sheet>
               <Picker
                 mode="selector"
                 range={projects.map((row) => row.projectName)}
@@ -283,28 +332,24 @@ export default function SubmitMakeup(): JSX.Element {
                   setProjectId(selected.projectId);
                 }}
               >
-                <View
-                  className="worker-makeup-form__field"
-                  data-makeup-field="project"
-                >
-                  <View className="worker-makeup-form__label">项目</View>
-                  <View className="worker-makeup-form__value-row">
-                    <View>{selectedProject?.projectName ?? "选择项目"}</View>
-                    {!taskId && (
-                      <View className="worker-makeup-form__change">选择</View>
-                    )}
-                  </View>
-                  {selectedProject?.teamName ? (
-                    <View className="worker-makeup-form__hint">
-                      {selectedProject.teamName}
-                    </View>
-                  ) : null}
-                </View>
+                <PickRow
+                  label="项目"
+                  value={selectedProject?.projectName}
+                  placeholder="选择项目"
+                  chevron={!taskId}
+                />
               </Picker>
+              {selectedProject?.teamName ? (
+                <FormRow label="班组">
+                  <View className="submit-makeup__value">
+                    {selectedProject.teamName}
+                  </View>
+                </FormRow>
+              ) : null}
               <Picker
                 mode="date"
                 value={date}
-                end={chinaToday()}
+                end={today}
                 disabled={locked || taskMode}
                 onChange={(event) => {
                   if (busyRef.current || event.detail.value === date) return;
@@ -314,34 +359,17 @@ export default function SubmitMakeup(): JSX.Element {
                   setDate(event.detail.value);
                 }}
               >
-                <View
-                  className="worker-makeup-form__field"
-                  data-makeup-field="date"
-                >
-                  <View className="worker-makeup-form__label">日期</View>
-                  <View className="worker-makeup-form__value-row">
-                    <View>{date}</View>
-                    {!taskMode && (
-                      <View className="worker-makeup-form__change">选择</View>
-                    )}
-                  </View>
-                </View>
-              </Picker>
-              {planError ? (
-                <StateView
-                  title="当天排班读取失败"
-                  sub={planError}
-                  onRetry={() => setPlanRevision((value) => value + 1)}
+                <PickRow
+                  label="日期"
+                  value={
+                    date.slice(0, 4) === today.slice(0, 4)
+                      ? dayLabel(date)
+                      : fullDateLabel(date)
+                  }
+                  chevron={!taskMode}
                 />
-              ) : currentPlan === null ? (
-                <StateView title="正在读取当天排班…" />
-              ) : !currentPlan.isWorkday || currentPlan.points.length === 0 ? (
-                <Notice>
-                  {taskId
-                    ? "该任务不属于已开工、未完工状态，不能补完工。"
-                    : "当天没有安排可补卡的时点，请确认项目和日期。"}
-                </Notice>
-              ) : (
+              </Picker>
+              {canPick ? (
                 <>
                   <Picker
                     mode="selector"
@@ -356,192 +384,119 @@ export default function SubmitMakeup(): JSX.Element {
                       if (selected) selectPoint(selected.code);
                     }}
                   >
-                    <View
-                      className="worker-makeup-form__field"
-                      data-makeup-field="point"
-                    >
-                      <View className="worker-makeup-form__label">时点</View>
-                      <View className="worker-makeup-form__value-row">
-                        <View>
-                          {selectedPoint
-                            ? `${selectedPoint.label}（计划 ${selectedPoint.time}）`
-                            : "选择时点"}
-                        </View>
-                        <View className="worker-makeup-form__change">选择</View>
-                      </View>
-                      <View className="worker-makeup-form__hint">
-                        按当天实际安排选择。
-                      </View>
-                    </View>
+                    <PickRow
+                      label="补哪张卡"
+                      value={
+                        selectedPoint
+                          ? `${selectedPoint.label}（计划 ${selectedPoint.time}）`
+                          : null
+                      }
+                      placeholder="选择要补的卡"
+                      chevron
+                    />
                   </Picker>
                   <Picker
                     mode="time"
                     value={time}
-                    end={date === chinaToday() ? formatChinaHm(new Date().toISOString()) : undefined}
+                    end={
+                      date === today
+                        ? formatChinaHm(new Date().toISOString())
+                        : undefined
+                    }
                     disabled={locked}
                     onChange={(event) => {
                       if (!busyRef.current) setTime(event.detail.value);
                     }}
                   >
-                    <View
-                      className="worker-makeup-form__field"
-                      data-makeup-field="time"
+                    <FormRow
+                      label={taskId ? "实际完工时间" : "实际时间"}
+                      required
+                      chevron
                     >
-                      <View className="worker-makeup-form__label">
-                        {taskId ? "实际完工时间" : "实际时间"}
-                      </View>
-                      <View className="worker-makeup-form__value-row">
-                        <View>{time}</View>
-                        <View className="worker-makeup-form__change">选择</View>
-                      </View>
-                    </View>
+                      <Text className="num submit-makeup__time">{time}</Text>
+                    </FormRow>
                   </Picker>
                 </>
-              )}
-              <View className="worker-makeup-form__reason">
-                <View className="worker-makeup-form__label">申请原因</View>
-                <Textarea
-                  className="worker-makeup-form__textarea"
-                  value={reason}
-                  disabled={locked}
-                  maxlength={500}
-                  placeholder="请描述漏打卡的实际情况。"
-                  onInput={(event) => {
-                    if (!busyRef.current) setReason(event.detail.value);
-                  }}
-                />
-                <View className="worker-makeup-form__count">
-                  {reason.length}/500
-                </View>
-              </View>
-              {error && error !== planError && error !== projectError ? (
-                <Notice tone="error">{error}</Notice>
-              ) : null}
-              {submitted ? (
-                <>
-                  <Notice>申请已提交，待审批。</Notice>
-                  <Button
-                    loading={busy}
-                    onClick={() => {
-                      void returnToMakeups();
-                    }}
-                  >
-                    查看我的补卡
-                  </Button>
-                </>
               ) : (
-                <Button
-                  loading={busy}
-                  disabled={!workerCanSubmit}
-                  onClick={() => {
-                    void submit();
-                  }}
-                >
-                  提交申请
-                </Button>
+                <PickRow
+                  label="补哪张卡"
+                  placeholder={
+                    planError
+                      ? "当天排班没读到"
+                      : currentPlan === null
+                        ? "正在读取当天排班…"
+                        : "当天没有可补的卡"
+                  }
+                  error={planError !== null}
+                />
               )}
+              <FormArea
+                label="申请原因"
+                required
+                value={reason}
+                disabled={locked}
+                maxLength={500}
+                placeholder={
+                  taskId ? "说明没打完工卡的实际情况" : "说明漏打卡的实际情况"
+                }
+                onInput={(value) => {
+                  if (!busyRef.current) setReason(value);
+                }}
+              />
+            </Sheet>
+          </View>
+          {planError ? (
+            <>
+              <Notice tone="error">
+                当天排班没读到
+                <View className="ui-notice__sub">{planError}</View>
+              </Notice>
+              <Button
+                variant="outline"
+                onClick={() => setPlanRevision((value) => value + 1)}
+              >
+                重新读取排班
+              </Button>
             </>
-          )}
-        </View>
-      </FlowScreen>
-    );
-  }
-  return (
-    <Screen>
-      <PageHeader title="发起补卡" />
-      <Notice>
-        {taskId
-          ? "实际完工须晚于开工，间隔不超过 24 小时。审批后计工。"
-          : "按实际出勤填写，班组长审批。"}
-      </Notice>
-      {projects === null && error === null ? (
-        <StateView title="加载中…" />
-      ) : null}
-      {projects?.length === 0 ? (
-        <StateView title="还没有加入项目" sub="请先联系管理员分配项目。" />
-      ) : null}
-      {(projects ?? [])
-        .filter(
-          (project) => !taskId || project.projectId === requestedProjectId,
-        )
-        .map((project) => (
-          <ListItem
-            key={project.projectId}
-            primary={project.projectName}
-            secondary={project.teamName ?? "未分配班组"}
-            chip={projectId === project.projectId ? "已选择" : undefined}
-            onClick={() => {
-              if (!busy) setProjectId(project.projectId);
-            }}
-          />
-        ))}
-      {projectId ? (
-        <View>
-          {plan && !plan.isWorkday ? (
-            <Notice>
+          ) : currentPlan !== null && !canPick ? (
+            <Notice tone="warning">
               {taskId
-                ? "该任务不属于已开工、未完工状态，不能补完工。"
-                : "当天没有安排打卡，不能申请补卡。"}
+                ? "这个任务不是已开工、还没完工的状态，不能补完工卡。"
+                : mode === "overtime"
+                  ? "今天没有已进场、还没退场的加班，不能补加班卡。"
+                  : "这一天没有安排可以补的卡，换个项目或日期看看。"}
             </Notice>
           ) : null}
-          <Section title="补卡时段">
-            <Segmented
-              options={(plan?.points ?? []).map((row) => ({
-                label: row.label,
-                value: row.code,
-              }))}
-              value={point}
-              onChange={selectPoint}
-            />
-          </Section>
-          <View className="form-card">
-            <Picker
-              disabled={busy ? true : undefined}
-              mode="date"
-              value={date}
-              end={chinaToday()}
-              onChange={(event) => {
-                setDate(event.detail.value);
-              }}
-            >
-              <ListItem primary="补卡日期" secondary={date} />
-            </Picker>
-            <Picker
-              disabled={busy ? true : undefined}
-              mode="time"
-              value={time}
-              onChange={(event) => {
-                setTime(event.detail.value);
-              }}
-            >
-              <ListItem primary="实际打卡时间" secondary={time} />
-            </Picker>
-          </View>
-          <Section title="补卡原因" sub="填写缺卡原因">
-            <Textarea
-              className="reason-textarea"
-              value={reason}
-              disabled={busy ? true : undefined}
-              maxlength={500}
-              placeholder="如：现场搬运材料，未及时打卡。"
-              onInput={(event) => {
-                setReason(event.detail.value);
+          <Notice>
+            {taskId
+              ? "实际完工时间要晚于开工，间隔不超过 24 小时。审批通过后计工。"
+              : "提交后由班组长审批，通过后考勤会重新计算。"}
+          </Notice>
+          {error && error !== planError && error !== projectError ? (
+            <Notice tone="error">{error}</Notice>
+          ) : submitted ? (
+            <Notice tone="success">申请已提交，等待审批。</Notice>
+          ) : null}
+          {submitted ? (
+            <BottomBar
+              primary="查看我的补卡"
+              busy={busy}
+              onPrimary={() => {
+                void returnToMakeups();
               }}
             />
-            <View className="text-count">{reason.length} / 500</View>
-          </Section>
-          <Button
-            loading={busy}
-            disabled={!plan?.isWorkday || !point || reason.trim().length === 0}
-            onClick={() => {
-              void submit();
-            }}
-          >
-            提交补卡申请
-          </Button>
-        </View>
-      ) : null}
-      {error ? <Notice tone="error">{error}</Notice> : null}
+          ) : (
+            <BottomBar
+              primary={busy ? "提交中" : "提交申请"}
+              busy={busy}
+              disabled={!workerCanSubmit}
+              onPrimary={() => {
+                void submit();
+              }}
+            />
+          )}
+        </>
+      )}
     </Screen>
   );
 }
