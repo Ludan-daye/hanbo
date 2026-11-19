@@ -1,11 +1,36 @@
-.makeup-quick-reasons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8rpx;
+// 补卡审批。公共样式在 components/ui/kit.scss，这里只有这一页独有的几样。
+
+// 卡片里要完整读的正文：申请原因、驳回的审批意见。
+.team-makeups__text {
   margin-top: 16rpx;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-.makeup-quick-reasons .ui-btn--text {
-  background: var(--surface-sunk);
-  border-radius: var(--radius-pill);
-  font-size: 24rpx;
+// 快捷意见
+.team-makeups__quick {
+  margin-top: 28rpx;
+}
+// 卡片里的审批意见输入框（公共的表单行是给白条用的，放不进卡片）
+.team-makeups__input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 104rpx;
+  margin-top: 20rpx;
+  padding: 0 32rpx;
+  border-radius: 26rpx;
+  background: var(--well);
+  font-size: 34rpx;
+}
+.team-makeups__placeholder {
+  color: var(--ph);
+}
+// 驳回是红字：危险操作不用实心按钮
+.team-makeups__reject {
+  flex-shrink: 0;
+}
+.ui-screen--sign .team-makeups__reject .ui-btn--text {
+  color: var(--bad);
+}
+.ui-screen--sign .team-makeups__reject .ui-btn--text[disabled] {
+  color: var(--ph);
 }

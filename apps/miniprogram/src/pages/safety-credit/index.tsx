@@ -1,27 +1,25 @@
-import { Image, Picker, View } from "@tarojs/components";
+import { Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import type { SafetyCreditBoard, SafetySeverity } from "@construction/domain";
 import {
-  Button,
-  Field,
-  ListItem,
+  BottomBar,
+  Card,
+  CardMeta,
   Notice,
   PageHeader,
+  Row,
   Screen,
-  Section,
-  Segmented,
+  SectionTitle,
+  Sheet,
+  SignLine,
+  SkeletonRows,
   StateView,
 } from "../../components/ui/index";
 import {
   SafetyPolicySummary,
   SafetyViolationCard,
 } from "../../components/safety-credit-cards";
-import {
-  WorkDate,
-  WorkNotes,
-  WorkTime,
-} from "../../components/team-work-fields";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { useManagedTeamId } from "../../hooks/use-management-scope";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
@@ -33,9 +31,12 @@ import {
 import { uploadImage, type UploadResult } from "../../services/uploads";
 import { chinaToday } from "../../services/time";
 import { errorMessage, isUserCancel } from "../../services/error-messages";
+import { creditHeadline, creditSub } from "./credit-view";
+import { MAX_EVIDENCE, ViolationForm } from "./views/form";
 
 import "./index.scss";
 
+type Doing = "upload" | "submit";
 export default function TeamSafetyCredit(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
@@ -43,8 +44,9 @@ export default function TeamSafetyCredit(): JSX.Element {
   const { revision, refresh } = usePageRefresh();
   const [board, setBoard] = useState<SafetyCreditBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<boolean>(false);
-  const [creating, setCreating] = useState<boolean>(false);
+  const [doing, setDoing] = useState<Doing | null>(null);
+  /** 同一个页面路径里的两个视图：列表和“登记违规”表单。 */
+  const [view, setView] = useState<"list" | "form">("list");
   const [memberId, setMemberId] = useState<string>("");
   const [category, setCategory] = useState<string>("");
   const [severity, setSeverity] = useState<SafetySeverity>("GENERAL");
@@ -57,9 +59,11 @@ export default function TeamSafetyCredit(): JSX.Element {
     readonly (UploadResult & { readonly preview: string })[]
   >([]);
   const [workerSearch, setWorkerSearch] = useState<string>("");
+  const busy: boolean = doing !== null;
   const pickableWorkers = (board?.workers ?? []).filter(
     (row) =>
-      workerSearch.trim().length === 0 || row.name.includes(workerSearch.trim()),
+      workerSearch.trim().length === 0 ||
+      row.name.includes(workerSearch.trim()),
   );
   useEffect(() => {
     if (teamId === null) return;
@@ -70,17 +74,23 @@ export default function TeamSafetyCredit(): JSX.Element {
         if (active) setBoard(value);
       },
       (cause: unknown) => {
-        if (active)
-          setError(errorMessage(cause, "安全信用读取失败"));
+        if (active) setError(errorMessage(cause, "安全信用读取失败"));
       },
     );
     return () => {
       active = false;
     };
   }, [teamId, revision]);
-  const perform = async (action: () => Promise<void>): Promise<void> => {
+  // 换了视图就回到顶上：同一个页面里切换，滚动位置不会自己复位。
+  useEffect(() => {
+    void Taro.pageScrollTo({ scrollTop: 0, duration: 0 });
+  }, [view]);
+  const perform = async (
+    kind: Doing,
+    action: () => Promise<void>,
+  ): Promise<void> => {
     if (busy) return;
-    setBusy(true);
+    setDoing(kind);
     setError(null);
     try {
       await action();
@@ -90,226 +100,193 @@ export default function TeamSafetyCredit(): JSX.Element {
       setError(message);
       await Taro.showToast({ icon: "none", title: message });
     } finally {
-      setBusy(false);
+      setDoing(null);
     }
   };
   if (teamId === null)
     return (
-      <Screen>
-        <PageHeader title="安全信用" />
-        <StateView title="请先选择班组" />
+      <Screen header={<PageHeader title="安全信用" />}>
+        <StateView kind="empty" title="请先选择班组" />
       </Screen>
     );
-  return (
-    <Screen>
-      <PageHeader title="安全信用" />
-      {error && board !== null && <Notice tone="error">{error}</Notice>}
-      <Button
-        variant="outline"
-        disabled={board === null}
-        onClick={() => setCreating(!creating)}
+
+  const complete: boolean =
+    Boolean(memberId) &&
+    Boolean(category.trim()) &&
+    Boolean(description.trim()) &&
+    evidence.length > 0;
+  const addPhotos = (): Promise<void> =>
+    perform("upload", async () => {
+      const photos = await Taro.chooseImage({
+        count: MAX_EVIDENCE - evidence.length,
+        sourceType: ["camera", "album"],
+        sizeType: ["compressed"],
+      });
+      const results = await Promise.allSettled(
+        photos.tempFilePaths.map(async (path) => ({
+          ...(await uploadImage(path)),
+          preview: path,
+        })),
+      );
+      const uploaded = results.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
+      );
+      const failed = results.find(
+        (result): result is PromiseRejectedResult =>
+          result.status === "rejected",
+      );
+      setEvidence((current) => [...current, ...uploaded]);
+      if (failed !== undefined)
+        throw new Error(
+          `${results.length - uploaded.length} 张照片上传失败：${errorMessage(failed.reason, "请重试")}`,
+        );
+    });
+  const submit = (): Promise<void> =>
+    perform("submit", async () => {
+      if (!complete) throw new Error("请选择人员并填写类别、说明和凭证照片");
+      await recordSafetyViolation(teamId, {
+        memberId,
+        category,
+        severity,
+        occurredAt: new Date(`${date}T${time}:00+08:00`).toISOString(),
+        description,
+        evidence: evidence.map((row) => ({
+          objectKey: row.objectKey,
+          hash: row.hash,
+        })),
+      });
+      setView("list");
+      setCategory("");
+      setDescription("");
+      setEvidence([]);
+      refresh();
+      await Taro.showToast({ icon: "success", title: "已提交审核" });
+    });
+
+  if (view === "form" && board !== null)
+    return (
+      <Screen
+        header={
+          <PageHeader
+            title="登记违规"
+            onBack={() => {
+              if (busy) return;
+              setError(null);
+              setView("list");
+            }}
+          />
+        }
       >
-        {creating ? "收起登记" : "登记违规"}
-      </Button>
-      {creating && board !== null && (
-        <Section title="违规登记">
-          {board.workers.length > 10 && (
-            <Field
-              value={workerSearch}
-              placeholder="搜索姓名后再选择"
-              onInput={setWorkerSearch}
-            />
+        <ViolationForm
+          search={board.workers.length > 10 ? workerSearch : null}
+          people={pickableWorkers.map((row) => row.name)}
+          personIndex={Math.max(
+            0,
+            pickableWorkers.findIndex((row) => row.memberId === memberId),
           )}
-          <Picker
-            mode="selector"
-            range={pickableWorkers.map((row) => row.name)}
-            value={Math.max(
-              0,
-              pickableWorkers.findIndex((row) => row.memberId === memberId),
-            )}
-            onChange={(event) =>
-              setMemberId(
-                pickableWorkers[Number(event.detail.value)]?.memberId ?? "",
-              )
-            }
-          >
-            <ListItem
-              primary="人员"
-              chip={
-                board?.workers.find((row) => row.memberId === memberId)?.name ??
-                "选择人员"
-              }
-            />
-          </Picker>
-          <Field
-            label="违规类别"
-            value={category}
-            onInput={setCategory}
-            placeholder="未佩戴安全帽"
-            maxLength={40}
-          />
-          <Segmented
-            options={[
-              { label: "一般", value: "GENERAL" },
-              { label: "严重", value: "SERIOUS" },
-              { label: "重大", value: "MAJOR" },
-            ]}
-            value={severity}
-            onChange={(value: SafetySeverity) => setSeverity(value)}
-          />
-          <WorkDate value={date} onChange={setDate} />
-          <WorkTime label="发生时间" value={time} onChange={setTime} />
-          <WorkNotes
-            label="情况说明"
-            value={description}
-            onChange={setDescription}
-          />
-          <Button
-            variant="outline"
-            disabled={evidence.length >= 5}
-            loading={busy}
-            onClick={() => {
-              void perform(async () => {
-                const photos = await Taro.chooseImage({
-                  count: 5 - evidence.length,
-                  sourceType: ["camera", "album"],
-                  sizeType: ["compressed"],
-                });
-                const results = await Promise.allSettled(
-                  photos.tempFilePaths.map(async (path) => ({
-                    ...(await uploadImage(path)),
-                    preview: path,
-                  })),
-                );
-                const uploaded = results.flatMap((result) =>
-                  result.status === "fulfilled" ? [result.value] : [],
-                );
-                const failed = results.find(
-                  (result): result is PromiseRejectedResult =>
-                    result.status === "rejected",
-                );
-                setEvidence((current) => [...current, ...uploaded]);
-                if (failed !== undefined)
-                  throw new Error(
-                    `${results.length - uploaded.length} 张照片上传失败：${errorMessage(failed.reason, "请重试")}`,
-                  );
-              });
-            }}
-          >
-            添加凭证照片 · {evidence.length}/5
-          </Button>
-          {evidence.length > 0 && (
-            <View className="safety-evidence">
-              {evidence.map((photo, index) => (
-                <View key={photo.objectKey} className="safety-evidence__item">
-                  <Image
-                    className="safety-evidence__image"
-                    src={photo.preview}
-                    mode="aspectFill"
-                    onClick={() => {
-                      void Taro.previewImage({
-                        current: photo.preview,
-                        urls: evidence.map((row) => row.preview),
-                      });
-                    }}
-                  />
-                  <Button
-                    variant="text"
-                    disabled={busy}
-                    onClick={() =>
-                      setEvidence(
-                        evidence.filter(
-                          (row) => row.objectKey !== photo.objectKey,
-                        ),
-                      )
-                    }
-                  >
-                    移除第 {index + 1} 张
-                  </Button>
-                </View>
-              ))}
-            </View>
-          )}
-          <Button
-            loading={busy}
-            disabled={
-              busy ||
-              !memberId ||
-              !category.trim() ||
-              !description.trim() ||
-              evidence.length === 0
-            }
-            onClick={() => {
-              void perform(async () => {
-                if (
-                  !memberId ||
-                  !category.trim() ||
-                  !description.trim() ||
-                  evidence.length === 0
-                )
-                  throw new Error("请选择人员并填写类别、说明和凭证照片");
-                await recordSafetyViolation(teamId, {
-                  memberId,
-                  category,
-                  severity,
-                  occurredAt: new Date(
-                    `${date}T${time}:00+08:00`,
-                  ).toISOString(),
-                  description,
-                  evidence: evidence.map((row) => ({
-                    objectKey: row.objectKey,
-                    hash: row.hash,
-                  })),
-                });
-                setCreating(false);
-                setCategory("");
-                setDescription("");
-                setEvidence([]);
-                refresh();
-                await Taro.showToast({ icon: "success", title: "已提交审核" });
-              });
-            }}
-          >
-            提交审核
-          </Button>
-        </Section>
-      )}
-      {board === null ? (
+          personName={
+            board.workers.find((row) => row.memberId === memberId)?.name ?? null
+          }
+          category={category}
+          severity={severity}
+          date={date}
+          time={time}
+          description={description}
+          photos={evidence}
+          error={error}
+          busy={busy}
+          uploading={doing === "upload"}
+          submitting={doing === "submit"}
+          complete={complete}
+          onSearch={setWorkerSearch}
+          onPerson={(index) =>
+            setMemberId(pickableWorkers[index]?.memberId ?? "")
+          }
+          onCategory={setCategory}
+          onSeverity={setSeverity}
+          onDate={setDate}
+          onTime={setTime}
+          onDescription={setDescription}
+          onAddPhoto={() => {
+            void addPhotos();
+          }}
+          onRemovePhoto={(objectKey) =>
+            setEvidence(evidence.filter((row) => row.objectKey !== objectKey))
+          }
+          onSubmit={() => {
+            void submit();
+          }}
+        />
+      </Screen>
+    );
+
+  const headline = board === null ? null : creditHeadline(board);
+  return (
+    <Screen header={<PageHeader title="安全信用" />}>
+      {board === null || headline === null ? (
         error ? (
-          <StateView title="安全信用读取失败" sub={error} onRetry={refresh} />
+          <StateView
+            kind="error"
+            title="安全信用没读到"
+            sub={error}
+            onRetry={refresh}
+          />
         ) : (
-          <StateView title="正在读取安全信用…" />
+          <>
+            <View className="sk safety-credit__sk-sign" />
+            <SkeletonRows rows={3} gap />
+          </>
         )
       ) : (
         <>
-          <SafetyPolicySummary policies={board.policies} />
-          <Section title="违规次数排行">
-            {board.workers.length === 0 ? (
-              <StateView title="暂无班组工人" />
-            ) : (
-              board.workers.map((row) => (
-                <ListItem
+          <SignLine title={headline.title} sub={headline.sub} />
+          {error ? <Notice tone="error">{error}</Notice> : null}
+          <SectionTitle>违规次数排行</SectionTitle>
+          {board.workers.length === 0 ? (
+            <Notice>本班还没有在场的工人。</Notice>
+          ) : (
+            <Sheet>
+              {board.workers.map((row) => (
+                <Row
                   key={row.memberId}
-                  primary={`${row.rank}. ${row.name}`}
-                  secondary={`累计 ${row.confirmedViolationCount} 次 · 恢复 ${row.recoveryPoints} 分`}
-                  chip={`${row.score} 分`}
-                />
-              ))
-            )}
-          </Section>
-          {board.violations.map((row) => (
-            <Section
-              key={row.id}
-              title={
-                board.workers.find((person) => person.workerId === row.workerId)
-                  ?.name ?? "历史人员"
-              }
-            >
+                  title={row.name}
+                  avatar={row.name.slice(0, 1)}
+                  sub={creditSub(row)}
+                >
+                  <View>
+                    <Text className="num safety-credit__score">
+                      {row.score}
+                    </Text>
+                    分
+                  </View>
+                </Row>
+              ))}
+            </Sheet>
+          )}
+          <SafetyPolicySummary policies={board.policies} />
+          {board.violations.length > 0 ? (
+            <SectionTitle>违规记录</SectionTitle>
+          ) : null}
+          {board.violations.map((row, index) => (
+            <Card key={row.id} gap={index > 0}>
+              <CardMeta>
+                {board.workers.find(
+                  (person) => person.workerId === row.workerId,
+                )?.name ?? "历史人员"}
+              </CardMeta>
               <SafetyViolationCard row={row} />
-            </Section>
+            </Card>
           ))}
         </>
       )}
+      <BottomBar
+        primary="登记违规"
+        disabled={board === null}
+        onPrimary={() => {
+          setError(null);
+          setView("form");
+        }}
+      />
     </Screen>
   );
 }

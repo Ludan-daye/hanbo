@@ -1,18 +1,25 @@
-import { Picker, View } from "@tarojs/components";
+import { Input, Picker, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 
 import {
   Button,
-  Field,
-  ListItem,
+  Card,
+  CardActions,
+  CardMeta,
+  CardTitle,
+  Chips,
+  FormRow,
   Notice,
   PageHeader,
+  Row,
   Screen,
+  SectionTitle,
   Segmented,
+  Sheet,
+  Stamp,
   StateView,
-  Subtitle,
 } from "../../components/ui/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 
@@ -22,21 +29,21 @@ import {
   fetchReviewedMakeups,
   type InboxMakeup,
   rejectMakeup,
-  type PendingMakeup,
 } from "../../services/makeups";
 
 import { workTimestamp } from "../../components/team-work-fields";
 import { formatChinaHm } from "../../services/time";
 import { errorMessage } from "../../services/error-messages";
+import {
+  ALL_SCOPES,
+  arrangePending,
+  makeupDay,
+  pointName,
+  scopeLabel,
+} from "./makeup-view";
 
 import "./index.scss";
 
-const POINT_LABEL: Readonly<Record<PendingMakeup["pointCode"], string>> = {
-  SEGMENT_1_END: "上午下班",
-  SEGMENT_1_START: "上午上班",
-  SEGMENT_2_END: "下午下班",
-  SEGMENT_2_START: "下午上班",
-};
 type ReviewAction = (
   id: string,
   body: { readonly approvalReason: string },
@@ -46,7 +53,63 @@ const QUICK_REASONS: readonly string[] = [
   "已核实出勤",
   "与现场记录不符",
 ];
-const ALL_SCOPES = "全部范围";
+const QUICK_OPTIONS = QUICK_REASONS.map((reason) => ({
+  value: reason,
+  label: reason,
+}));
+const personName = (item: InboxMakeup): string =>
+  item.displayName ?? "待完善姓名";
+
+/** 补的是哪天的哪张卡、补到几点。 */
+const RequestLine = ({ item }: { readonly item: InboxMakeup }): JSX.Element => (
+  <CardMeta>
+    {makeupDay(item.attendanceDate)} {pointName(item)}，补卡时间{" "}
+    <Text className="num">{formatChinaHm(item.requestedOccurredAt)}</Text>
+  </CardMeta>
+);
+
+/** 处理过的申请：通过的落章存档，驳回的把原因留在卡片上。 */
+const ReviewedCard = ({
+  item,
+}: {
+  readonly item: InboxMakeup;
+}): JSX.Element => {
+  const approved = item.status === "APPROVED";
+  const opinion = `审批意见：${item.approvalReason ?? "没有填写"}`;
+  return (
+    <Card gap stamped={approved}>
+      <CardTitle
+        status={approved ? undefined : { kind: "bad", text: "已驳回" }}
+      >
+        {personName(item)}
+      </CardTitle>
+      <RequestLine item={item} />
+      <CardMeta>{scopeLabel(item)}</CardMeta>
+      <CardMeta>申请原因：{item.reason}</CardMeta>
+      {approved ? (
+        <CardMeta>{opinion}</CardMeta>
+      ) : (
+        <View className="team-makeups__text">{opinion}</View>
+      )}
+      <CardMeta>
+        {item.approvedAt === null
+          ? "处理时间没有记录"
+          : `${workTimestamp(item.approvedAt)} 处理`}
+      </CardMeta>
+      {approved ? (
+        <Stamp
+          text="已通过"
+          sub={
+            item.approvedAt === null
+              ? undefined
+              : workTimestamp(item.approvedAt).slice(0, 5)
+          }
+        />
+      ) : null}
+    </Card>
+  );
+};
+
 export default function TeamMakeups(): JSX.Element {
   useSessionGuard();
 
@@ -63,6 +126,8 @@ export default function TeamMakeups(): JSX.Element {
     requestedTeamName === null ? ALL_SCOPES : null,
   );
   const [error, setError] = useState<string | null>(null);
+  /** 出错的是“加载更多”：原因写在那个按钮旁边，而不是展开的那条申请下面。 */
+  const [pageFailed, setPageFailed] = useState<boolean>(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -80,8 +145,7 @@ export default function TeamMakeups(): JSX.Element {
         }
       },
       (cause) => {
-        if (!cancelled)
-          setError(errorMessage(cause, "无法读取审批列表"));
+        if (!cancelled) setError(errorMessage(cause, "无法读取审批列表"));
       },
     );
     return () => {
@@ -105,7 +169,7 @@ export default function TeamMakeups(): JSX.Element {
       title,
       content: `审批意见：${approvalReason}`,
       confirmText: isReject ? "确认驳回" : "确认通过",
-      confirmColor: isReject ? "#c33845" : "#0066d6",
+      confirmColor: isReject ? "#D7261E" : "#000000",
     });
     if (!confirmation.confirm) return;
     setBusy(id);
@@ -116,14 +180,13 @@ export default function TeamMakeups(): JSX.Element {
       setOpenId(null);
       await Taro.showToast({ icon: "success", title: "已处理" });
     } catch (cause) {
+      setPageFailed(false);
       setError(errorMessage(cause, "审批未完成，请重试"));
     } finally {
       setBusy(null);
     }
   };
-  const label = (item: InboxMakeup): string =>
-    `${item.projectName} · ${item.teamName ?? "项目直属"}`;
-  const scopes = [ALL_SCOPES, ...new Set((items ?? []).map(label))];
+  const scopes = [ALL_SCOPES, ...new Set((items ?? []).map(scopeLabel))];
   const requestedItem: InboxMakeup | undefined =
     requestedTeamName === null
       ? undefined
@@ -134,13 +197,13 @@ export default function TeamMakeups(): JSX.Element {
             item.teamName === requestedTeamName,
         );
   const requestedScope: string | null =
-    requestedItem === undefined ? null : label(requestedItem);
+    requestedItem === undefined ? null : scopeLabel(requestedItem);
   const activeScope: string =
     scope !== null && scopes.includes(scope)
       ? scope
       : (requestedScope ?? ALL_SCOPES);
   const visibleItems: readonly InboxMakeup[] = (items ?? []).filter(
-    (item) => activeScope === ALL_SCOPES || label(item) === activeScope,
+    (item) => activeScope === ALL_SCOPES || scopeLabel(item) === activeScope,
   );
   const loadMore = async (): Promise<void> => {
     if (nextCursor === null || busy !== null) return;
@@ -153,191 +216,177 @@ export default function TeamMakeups(): JSX.Element {
       setItems((rows) => [...(rows ?? []), ...page.items]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
+      setPageFailed(true);
       setError(errorMessage(cause, "读取下一页失败"));
     } finally {
       setBusy(null);
     }
   };
+  // 待审批的一次只展开一条，其余收成一行：屏上始终只有一个黑按钮。
+  const { before, open, after } = arrangePending(
+    visibleItems.filter((item) => item.status === "PENDING"),
+    openId,
+  );
+  const reviewed = visibleItems.filter((item) => item.status !== "PENDING");
+  const openReason: string = open === null ? "" : (reasons[open.id] ?? "");
+  const errorAtCard: boolean = error !== null && open !== null && !pageFailed;
+  const writeReason = (id: string, value: string): void => {
+    setReasons((previous) => ({ ...previous, [id]: value }));
+  };
+  const collapsed = (item: InboxMakeup): JSX.Element => (
+    <Row
+      key={item.id}
+      hazard
+      title={personName(item)}
+      sub={`${makeupDay(item.attendanceDate)} ${pointName(item)}，${formatChinaHm(item.requestedOccurredAt)}`}
+      status={{ kind: "warn", text: "待审批" }}
+      onClick={() => {
+        if (busy === null) setOpenId(item.id);
+      }}
+    />
+  );
   return (
-    <Screen>
-      <PageHeader title="补卡审批" />
-      <View>
-        <Segmented
-          options={[
-            { label: "待审批", value: "PENDING" },
-            { label: "我已处理", value: "REVIEWED" },
-          ]}
-          value={tab}
-          onChange={(value: "PENDING" | "REVIEWED") => {
-            if (busy === null) setTab(value);
-          }}
-        />
+    <Screen header={<PageHeader title="补卡审批" />}>
+      <Segmented
+        options={[
+          {
+            label:
+              tab === "PENDING" && items !== null && items.length > 0
+                ? `待审批 ${items.length}${nextCursor !== null ? "+" : ""}`
+                : "待审批",
+            value: "PENDING",
+          },
+          { label: "我已处理", value: "REVIEWED" },
+        ]}
+        value={tab}
+        onChange={(value: "PENDING" | "REVIEWED") => {
+          if (busy === null) setTab(value);
+        }}
+      />
+      {scopes.length > 2 ? (
         <Picker
           mode="selector"
           range={scopes}
           value={scopes.indexOf(activeScope)}
           onChange={(event) => setScope(scopes[Number(event.detail.value)])}
         >
-          <ListItem
-            primary={activeScope}
-            secondary="按项目／班组筛选已加载的申请"
-            chip="选择"
-          />
+          <Sheet gap>
+            <FormRow label="范围" value={activeScope} chevron />
+          </Sheet>
         </Picker>
-        <Notice>
-          {tab === "PENDING"
-            ? "核实出勤后审批，结果同步考勤。"
-            : "本人审批记录"}
-        </Notice>
-        <View className="report-section-title">
-          {tab === "PENDING" ? "待处理申请" : "已处理记录"} ·{" "}
-          {visibleItems.length}
-          {activeScope === ALL_SCOPES ? "" : ` / ${items?.length ?? 0}`} 条
-        </View>
-        {items === null && error === null ? (
-          <StateView title="正在读取审批列表…" />
-        ) : null}
-        {items === null && error ? (
-          <StateView title="审批列表读取失败" sub={error} onRetry={refresh} />
-        ) : null}
-        {items !== null && error ? <Notice tone="error">{error}</Notice> : null}
-        {items?.length === 0 && nextCursor === null ? (
-          <StateView
-            title={tab === "PENDING" ? "全部处理完毕" : "暂无处理记录"}
-            sub={
-              tab === "PENDING"
-                ? "目前没有待审批的补卡申请。"
-                : "处理补卡后，可在这里查看结果。"
-            }
-          />
-        ) : null}
-        {items?.length === 0 && nextCursor !== null ? (
-          <StateView title="当前页无记录" sub="请继续加载后续申请。" />
-        ) : null}
-        {items !== null && items.length > 0 && visibleItems.length === 0 ? (
-          <StateView
-            title="该范围暂无记录"
-            sub="切换到“全部范围”查看其它项目或班组。"
-          />
-        ) : null}
-        {visibleItems.map((item) => {
-            const name = item.displayName ?? "待完善姓名";
-            return (
-              <View key={item.id} className="form-card">
-                <ListItem
-                  primary={name}
-                  secondary={`${item.attendanceDate} · ${item.pointLabel ?? POINT_LABEL[item.pointCode] ?? item.pointCode} · ${formatChinaHm(item.requestedOccurredAt)}`}
-                  chip={
-                    {
-                      PENDING: "待审批",
-                      APPROVED: "已通过",
-                      REJECTED: "已驳回",
-                    }[item.status]
-                  }
+      ) : null}
+      {items === null && error === null ? (
+        <StateView kind="loading" title="正在读取审批列表…" />
+      ) : null}
+      {items === null && error ? (
+        <StateView
+          kind="error"
+          title="审批列表没读到"
+          sub={error}
+          onRetry={refresh}
+        />
+      ) : null}
+      {items?.length === 0 && nextCursor === null ? (
+        <StateView
+          kind="empty"
+          title={tab === "PENDING" ? "都处理完了" : "还没有处理过的申请"}
+          sub={
+            tab === "PENDING"
+              ? "现在没有等你审批的补卡申请。"
+              : "你审批过的补卡申请会留在这里。"
+          }
+        />
+      ) : null}
+      {items?.length === 0 && nextCursor !== null ? (
+        <StateView kind="empty" title="这一页没有申请" sub="继续加载后面的。" />
+      ) : null}
+      {items !== null && items.length > 0 && visibleItems.length === 0 ? (
+        <StateView
+          kind="empty"
+          title="这个范围没有申请"
+          sub="把范围换成“全部范围”，看其他项目或班组的。"
+        />
+      ) : null}
+      {activeScope !== ALL_SCOPES && visibleItems.length > 0 ? (
+        <SectionTitle>{`${activeScope}，${visibleItems.length} 条`}</SectionTitle>
+      ) : null}
+      {before.length > 0 ? <Sheet gap>{before.map(collapsed)}</Sheet> : null}
+      {open !== null ? (
+        <View key={open.id} className="m-fade">
+          <Card gap>
+            <CardTitle status={{ kind: "warn", text: "待审批" }}>
+              {personName(open)}
+            </CardTitle>
+            <RequestLine item={open} />
+            <CardMeta>{scopeLabel(open)}</CardMeta>
+            <View className="team-makeups__text">{open.reason}</View>
+            <View className="team-makeups__quick">
+              <Chips
+                onSheet
+                options={QUICK_OPTIONS}
+                selected={[openReason]}
+                onToggle={(reason) => {
+                  if (busy !== null) return;
+                  writeReason(open.id, openReason === reason ? "" : reason);
+                }}
+              />
+            </View>
+            <Input
+              className="team-makeups__input"
+              value={openReason}
+              placeholder="写审批意见，驳回必须写原因"
+              placeholderClass="team-makeups__placeholder"
+              maxlength={140}
+              onInput={(event) => writeReason(open.id, event.detail.value)}
+            />
+            <CardActions>
+              <Button
+                loading={busy === open.id}
+                disabled={busy !== null}
+                onClick={() => {
+                  void review(open.id, approveMakeup, "通过补卡");
+                }}
+              >
+                {busy === open.id ? "处理中…" : "通过"}
+              </Button>
+              <View className="team-makeups__reject">
+                <Button
+                  variant="text"
+                  disabled={busy !== null || openReason.trim().length === 0}
                   onClick={() => {
-                    if (busy === null)
-                      setOpenId(openId === item.id ? null : item.id);
+                    void review(open.id, rejectMakeup, "驳回补卡");
                   }}
-                />
-                <Subtitle>{label(item)}</Subtitle>
-                <Subtitle>申请原因：{item.reason}</Subtitle>
-                {item.status !== "PENDING" ? (
-                  <>
-                    <Subtitle>审批意见：{item.approvalReason}</Subtitle>
-                    <Subtitle>
-                      处理时间：
-                      {item.approvedAt === null
-                        ? "未记录"
-                        : workTimestamp(item.approvedAt)}
-                    </Subtitle>
-                  </>
-                ) : openId === item.id ? (
-                  <View>
-                    <View className="makeup-quick-reasons">
-                      {QUICK_REASONS.map((reason) => (
-                        <Button
-                          key={reason}
-                          variant="text"
-                          disabled={busy !== null}
-                          onClick={() => {
-                            setReasons((previous) => ({
-                              ...previous,
-                              [item.id]: reason,
-                            }));
-                          }}
-                        >
-                          {reason}
-                        </Button>
-                      ))}
-                    </View>
-                    <Field
-                      value={reasons[item.id] ?? ""}
-                      placeholder="审批意见（通过可留空，驳回必填）"
-                      onInput={(value) => {
-                        setReasons((previous) => ({
-                          ...previous,
-                          [item.id]: value,
-                        }));
-                      }}
-                    />
-                    <View className="action-row">
-                      <Button
-                        loading={busy === item.id}
-                        disabled={busy !== null}
-                        onClick={() => {
-                          void review(
-                            item.id,
-                            approveMakeup,
-                            "通过补卡",
-                          );
-                        }}
-                      >
-                        通过申请
-                      </Button>
-                      <Button
-                        variant="danger"
-                        disabled={
-                          busy !== null ||
-                          (reasons[item.id] ?? "").trim().length === 0
-                        }
-                        onClick={() => {
-                          void review(
-                            item.id,
-                            rejectMakeup,
-                            "驳回补卡",
-                          );
-                        }}
-                      >
-                        驳回申请
-                      </Button>
-                    </View>
-                  </View>
-                ) : (
-                  <Button
-                    variant="outline"
-                    disabled={busy !== null}
-                    onClick={() => {
-                      setOpenId(item.id);
-                    }}
-                  >
-                    查看并审批
-                  </Button>
-                )}
+                >
+                  驳回
+                </Button>
               </View>
-            );
-        })}
-        {nextCursor !== null ? (
-          <Button
-            variant="outline"
-            loading={busy === "page"}
-            onClick={() => {
-              void loadMore();
-            }}
-          >
-            加载更多
-          </Button>
-        ) : null}
-      </View>
+            </CardActions>
+          </Card>
+          {errorAtCard ? <Notice tone="error">{error}</Notice> : null}
+        </View>
+      ) : null}
+      {after.length > 0 ? <Sheet gap>{after.map(collapsed)}</Sheet> : null}
+      {reviewed.map((item) => (
+        <ReviewedCard key={item.id} item={item} />
+      ))}
+      {items !== null && error !== null && !errorAtCard ? (
+        <Notice tone="error">{error}</Notice>
+      ) : null}
+      {nextCursor !== null ? (
+        <Button
+          variant="outline"
+          wide
+          loading={busy === "page"}
+          onClick={() => {
+            void loadMore();
+          }}
+        >
+          {busy === "page" ? "加载中…" : "加载更多"}
+        </Button>
+      ) : null}
+      {open !== null ? (
+        <Notice>通过后考勤会重新计算。不能审批自己的申请。</Notice>
+      ) : null}
     </Screen>
   );
 }

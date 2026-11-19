@@ -1,0 +1,61 @@
+// 班组日报。公共样式在 components/ui/kit.scss，这里只有这一页独有的两样。
+
+// 读取中：和小标牌一样高的灰块，数据到了页面不跳。
+.sk.team-log__sk-sign {
+  height: 180rpx;
+  margin-top: 20rpx;
+  border-radius: 42rpx;
+}
+
+// 人员出勤的一行：和公共的列表行一个样子，只是名字下面的分项比一行长，允许折行。
+.team-log__person {
+  display: flex;
+  align-items: center;
+  gap: 26rpx;
+  min-height: 152rpx;
+  padding: 22rpx 40rpx;
+  border-bottom: 2rpx solid var(--hair);
+}
+.team-log__person:last-child {
+  border-bottom: 0;
+}
+.team-log__avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 90rpx;
+  height: 90rpx;
+  border-radius: 50%;
+  background: var(--page);
+  font-size: 34rpx;
+  font-weight: 700;
+}
+.team-log__who {
+  flex: 1;
+  min-width: 0;
+}
+.team-log__name {
+  overflow: hidden;
+  font-size: 36rpx;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-log__sub {
+  font-size: 30rpx;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.team-log__right {
+  display: flex;
+  flex-shrink: 0;
+  align-items: baseline;
+  font-size: 34rpx;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.team-log__hours {
+  margin-right: 8rpx;
+  font-size: 44rpx;
+}

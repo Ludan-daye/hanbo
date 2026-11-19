@@ -1,0 +1,29 @@
+// 打卡安排。公共样式在 components/ui/kit.scss，这里只放公共组件里没有的。
+
+// 包着选择器的表单行：行在选择器里永远是“最后一个”，自己不画分隔线，
+// 分隔线画在外面这一层上。
+.schedules-pick {
+  border-bottom: 2rpx solid var(--hair);
+}
+.schedules-pick:last-child {
+  border-bottom: 0;
+}
+
+// 工作日：名称在上，七个格子在下，独占一行
+.schedules-days {
+  padding: 32rpx 40rpx;
+  border-bottom: 2rpx solid var(--hair);
+}
+.schedules-days__label {
+  margin-bottom: 20rpx;
+  font-size: 36rpx;
+  font-weight: 600;
+}
+
+// 表单行右边的长名称：单行省略，不把左边的字挤掉
+.schedules-value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

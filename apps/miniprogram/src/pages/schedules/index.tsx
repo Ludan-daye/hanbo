@@ -7,15 +7,22 @@ import {
   type ScheduledAttendancePoint,
 } from "@construction/domain/attendance.js";
 import {
+  BottomBar,
   Button,
-  Field,
+  FormInput,
+  FormRow,
+  Links,
   Notice,
-  Section,
-  ListItem,
   PageHeader,
+  Row,
   Screen,
+  SectionTitle,
+  Sheet,
+  SkeletonRows,
   StateView,
+  Weekdays,
 } from "../../components/ui/index";
+import { WorkTime, workDateLabel } from "../../components/team-work-fields";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import {
@@ -29,17 +36,15 @@ import {
 } from "../../services/attendance-plans";
 import { chinaToday } from "../../services/time";
 import { errorMessage } from "../../services/error-messages";
+import { graceLabel, pointRule, POINT_KINDS } from "./plan-view";
+
+import "./index.scss";
 
 const tomorrow = (): string =>
   new Date(Date.parse(`${chinaToday()}T00:00:00Z`) + 86400_000)
     .toISOString()
     .slice(0, 10);
-const KINDS = [
-  { value: "START", label: "上班" },
-  { value: "END", label: "下班" },
-  { value: "CHECKPOINT", label: "中途签到" },
-] as const;
-const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
+const DANGER = "#D7261E";
 
 export default function Schedules(): JSX.Element {
   useSessionGuard();
@@ -67,6 +72,9 @@ export default function Schedules(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
+  const [saving, setSaving] = useState<boolean>(false);
+  // 正在改哪一张卡：有值时显示这张卡的要求，页头返回键回到打卡安排。
+  const [editingCode, setEditingCode] = useState<string | null>(null);
   const operation = useRef<boolean>(false);
   const requestedTeamApplied = useRef<boolean>(false);
   useEffect(() => {
@@ -84,14 +92,14 @@ export default function Schedules(): JSX.Element {
         requestedTeamApplied.current = true;
         const teamIndex = requestedTeam
           ? available.findIndex(
-              (row) => row.scopeType === "TEAM" && row.scopeId === requestedTeam,
+              (row) =>
+                row.scopeType === "TEAM" && row.scopeId === requestedTeam,
             )
           : -1;
         if (teamIndex >= 0) setScopeIndex(teamIndex);
       },
       (cause: unknown) => {
-        if (!cancelled)
-          setLoadError(errorMessage(cause, "无法读取排班对象"));
+        if (!cancelled) setLoadError(errorMessage(cause, "无法读取排班对象"));
       },
     );
     return () => {
@@ -106,6 +114,7 @@ export default function Schedules(): JSX.Element {
     setLoadError(null);
     setSaved(null);
     setDirty(false);
+    setEditingCode(null);
     void fetchPlanConfiguration(scope).then(
       (config) => {
         if (cancelled) return;
@@ -123,14 +132,17 @@ export default function Schedules(): JSX.Element {
         setWorkdays(config.workdays);
       },
       (cause: unknown) => {
-        if (!cancelled)
-          setLoadError(errorMessage(cause, "无法读取排班"));
+        if (!cancelled) setLoadError(errorMessage(cause, "无法读取排班"));
       },
     );
     return () => {
       cancelled = true;
     };
   }, [scope, revision]);
+  // 换了视图就回到顶上：同一个页面里切换，滚动位置不会自己复位。
+  useEffect(() => {
+    void Taro.pageScrollTo({ scrollTop: 0, duration: 0 });
+  }, [editingCode]);
   const touch = (): void => {
     setSaved(null);
     setDirty(true);
@@ -148,10 +160,10 @@ export default function Schedules(): JSX.Element {
     if (index === scopeIndex) return;
     if (dirty) {
       const confirmation = await Taro.showModal({
-        title: "放弃未保存的修改",
-        content: "切换安排对象后，当前未保存的打卡安排将丢失。",
-        confirmText: "放弃并切换",
-        confirmColor: "#c33845",
+        title: "放弃没保存的修改",
+        content: "换一个安排对象后，这里没保存的打卡安排就没有了。",
+        confirmText: "放弃修改",
+        confirmColor: DANGER,
       });
       if (!confirmation.confirm) return;
     }
@@ -165,7 +177,7 @@ export default function Schedules(): JSX.Element {
       Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
     const middle = Math.floor((minutes(before.time) + minutes(last.time)) / 2);
     if (middle <= minutes(before.time)) {
-      setError("请先调整打卡时间，为新打卡点留出时间。");
+      setError("最后两张卡挨得太近。先把时间调开，再添加。");
       return;
     }
     const point: ScheduledAttendancePoint = {
@@ -176,6 +188,7 @@ export default function Schedules(): JSX.Element {
       graceMins: 0,
     };
     setPoints([...points.slice(0, -1), point, last]);
+    setError(null);
     touch();
   };
   const input = (): PlanInput => ({
@@ -202,16 +215,19 @@ export default function Schedules(): JSX.Element {
       startsOn < tomorrow() ||
       (endsOn !== null && endsOn < startsOn)
     ) {
-      setError("填写名称、工作日及日期，最早次日生效。");
+      setError(
+        "请填好名称、工作日和日期。最早明天生效，截止日期不能早于生效日期。",
+      );
       return;
     }
     operation.current = true;
     setBusy(true);
+    setSaving(true);
     try {
       setConfiguration(await savePlanConfiguration(scope, input()));
       setDirty(false);
       setSaved(
-        `已保存：从 ${startsOn} 起每天 ${points.length} 次，只对授权范围内的下级生效。`,
+        `已保存。从 ${workDateLabel(startsOn)} 起每天 ${points.length} 张卡，只对你有权安排的人生效。`,
       );
       await Taro.showToast({ icon: "success", title: "已保存" });
     } catch (cause: unknown) {
@@ -219,6 +235,7 @@ export default function Schedules(): JSX.Element {
     } finally {
       operation.current = false;
       setBusy(false);
+      setSaving(false);
     }
   };
   const inherit = async (): Promise<void> => {
@@ -235,8 +252,9 @@ export default function Schedules(): JSX.Element {
     setSaved(null);
     try {
       const confirmation = await Taro.showModal({
-        title: "恢复上级排班",
-        content: `从 ${startsOn} 起继承上级规则，历史排班保留。`,
+        title: "恢复继承上级",
+        content: `从 ${workDateLabel(startsOn)} 起跟着上级的安排走，以前的安排记录保留。`,
+        confirmText: "恢复继承",
       });
       if (!confirmation.confirm) return;
       setConfiguration(
@@ -249,7 +267,7 @@ export default function Schedules(): JSX.Element {
         }),
       );
       setDirty(false);
-      setSaved(`已设置从 ${startsOn} 起继承上级排班。`);
+      setSaved(`已设置。从 ${workDateLabel(startsOn)} 起跟着上级的安排走。`);
     } catch (cause: unknown) {
       setError(errorMessage(cause, "操作失败，请重试"));
     } finally {
@@ -257,134 +275,168 @@ export default function Schedules(): JSX.Element {
       setBusy(false);
     }
   };
+
+  const editingIndex: number =
+    configuration === null
+      ? -1
+      : points.findIndex((point) => point.code === editingCode);
+  const editing: ScheduledAttendancePoint | null =
+    editingIndex >= 0 ? (points[editingIndex] ?? null) : null;
+  if (editing !== null)
+    return (
+      <Screen
+        header={
+          <PageHeader
+            title={`第 ${editingIndex + 1} 张卡`}
+            onBack={() => setEditingCode(null)}
+          />
+        }
+      >
+        <Sheet gap>
+          <FormInput
+            label="名称"
+            value={editing.label}
+            placeholder="例如：上班"
+            disabled={busy}
+            onInput={(label) => updatePoint(editing.code, { label })}
+          />
+          <View className="schedules-pick">
+            <Picker
+              mode="selector"
+              disabled={busy}
+              range={POINT_KINDS.map((kind) => kind.label)}
+              value={POINT_KINDS.findIndex(
+                (kind) => kind.value === editing.kind,
+              )}
+              onChange={(event) => {
+                const kind = POINT_KINDS[Number(event.detail.value)];
+                if (kind) updatePoint(editing.code, { kind: kind.value });
+              }}
+            >
+              <FormRow
+                label="类型"
+                value={
+                  POINT_KINDS.find((kind) => kind.value === editing.kind)?.label
+                }
+                chevron
+              />
+            </Picker>
+          </View>
+          <View className="schedules-pick">
+            <WorkTime
+              label="打卡时间"
+              value={editing.time}
+              onChange={(time) => updatePoint(editing.code, { time })}
+            />
+          </View>
+          <FormInput
+            label={`${graceLabel(editing.kind)}（分钟）`}
+            value={String(editing.graceMins)}
+            type="number"
+            disabled={busy}
+            onInput={(value) =>
+              updatePoint(editing.code, {
+                graceMins: value === "" ? 0 : Number(value),
+              })
+            }
+          />
+        </Sheet>
+        <Notice>
+          上班和下班要成对，中途签到不算工时。改完回到打卡安排，点“保存”才生效。
+        </Notice>
+        <BottomBar primary="改好了" onPrimary={() => setEditingCode(null)}>
+          {points.length > 2 ? (
+            <Button
+              variant="danger"
+              disabled={busy}
+              onClick={() => {
+                setPoints(points.filter((row) => row.code !== editing.code));
+                touch();
+                setEditingCode(null);
+              }}
+            >
+              删除这张卡
+            </Button>
+          ) : null}
+        </BottomBar>
+      </Screen>
+    );
+
+  const inheriting: boolean =
+    configuration !== null &&
+    (configuration.inherit ||
+      (configuration.id === null && scope?.scopeType !== "PROJECT"));
   return (
-    <Screen>
-      <PageHeader title="打卡安排" />
-      <Notice>
-        <View>默认上、下班各一次，上级可调整下级安排。</View>
-        <View>优先级：个人 ＞ 班组 ＞ 项目。最早次日生效。</View>
-      </Notice>
-      {loadError ? (
-        <StateView title="打卡安排读取失败" sub={loadError} onRetry={refresh} />
-      ) : null}
-      {scopes === null && !loadError ? (
-        <StateView title="正在读取安排对象…" />
-      ) : null}
+    <Screen header={<PageHeader title="打卡安排" />}>
+      {scopes === null && !loadError ? <SkeletonRows rows={3} gap /> : null}
       {scopes?.length === 0 ? (
-        <StateView title="暂无可设置的下级" sub="自己的打卡要求由上级安排。" />
+        <StateView
+          kind="empty"
+          title="没有可以安排的对象"
+          sub="你自己的打卡要求由上级安排。"
+        />
       ) : null}
       {scope ? (
-        <Picker
-          mode="selector"
-          disabled={busy}
-          range={(scopes ?? []).map((row) => row.label)}
-          value={scopeIndex}
-          onChange={(event) => {
-            void switchScope(Number(event.detail.value));
-          }}
-        >
-          <ListItem
-            primary="安排对象"
-            secondary={scope.label}
-            chip={(scopes?.length ?? 0) > 1 ? "切换" : "当前"}
-          />
-        </Picker>
+        <>
+          <Sheet gap>
+            <Picker
+              mode="selector"
+              disabled={busy}
+              range={(scopes ?? []).map((row) => row.label)}
+              value={scopeIndex}
+              onChange={(event) => {
+                void switchScope(Number(event.detail.value));
+              }}
+            >
+              <FormRow label="给谁排" chevron={(scopes?.length ?? 0) > 1}>
+                <View className="schedules-value">{scope.label}</View>
+              </FormRow>
+            </Picker>
+          </Sheet>
+          <Notice>
+            最早明天生效。个人的安排优先于班组的，班组的优先于项目的。
+          </Notice>
+        </>
+      ) : null}
+      {loadError ? (
+        <StateView
+          kind="error"
+          title="打卡安排没读到"
+          sub={loadError}
+          onRetry={refresh}
+        />
       ) : null}
       {scope && configuration === null && !loadError ? (
-        <StateView title="正在读取打卡安排…" />
+        <SkeletonRows rows={3} gap />
       ) : null}
       {configuration ? (
-        <View>
-          {configuration.inherit ||
-          (configuration.id === null && scope?.scopeType !== "PROJECT") ? (
-            <Notice>当前继承上级，保存后启用专属安排。</Notice>
+        <>
+          {inheriting ? (
+            <Notice>现在跟着上级的安排走。保存以后，这里用自己的安排。</Notice>
           ) : null}
-          <Section
-            title={`每天 ${points.length} 次打卡`}
-            sub="上班和下班成对设置；中途签到不增加工时。"
+          <SectionTitle
+            action="添加"
+            onAction={() => {
+              if (!busy) addPoint();
+            }}
           >
-            <Field
-              placeholder=""
-              label="安排名称"
-              value={name}
-              onInput={(value) => {
-                setName(value);
-                touch();
-              }}
-              disabled={busy}
-            />
-            {points.map((point, index) => (
-              <View className="form-card" key={point.code}>
-                <Field
-                  placeholder=""
-                  label={`第 ${index + 1} 次 · 名称`}
-                  value={point.label}
-                  disabled={busy}
-                  onInput={(label) => updatePoint(point.code, { label })}
-                />
-                <Picker
-                  mode="selector"
-                  disabled={busy}
-                  range={KINDS.map((kind) => kind.label)}
-                  value={KINDS.findIndex((kind) => kind.value === point.kind)}
-                  onChange={(event) => {
-                    const kind = KINDS[Number(event.detail.value)];
-                    if (kind) updatePoint(point.code, { kind: kind.value });
-                  }}
-                >
-                  <ListItem
-                    primary="类型"
-                    secondary={
-                      KINDS.find((kind) => kind.value === point.kind)?.label
-                    }
-                    chip="选择"
-                  />
-                </Picker>
-                <Picker
-                  mode="time"
-                  disabled={busy}
-                  value={point.time}
-                  onChange={(event) =>
-                    updatePoint(point.code, { time: event.detail.value })
-                  }
-                >
-                  <ListItem
-                    primary="打卡时间"
-                    secondary={point.time}
-                    chip="选择"
-                  />
-                </Picker>
-                <Field
-                  placeholder=""
-                  label={
-                    point.kind === "END" ? "早退宽限 / 分钟" : "迟到宽限 / 分钟"
-                  }
-                  value={String(point.graceMins)}
-                  type="number"
-                  disabled={busy}
-                  onInput={(value) =>
-                    updatePoint(point.code, {
-                      graceMins: value === "" ? 0 : Number(value),
-                    })
-                  }
-                />
-                <Button
-                  variant="outline"
-                  disabled={busy || points.length <= 2}
-                  onClick={() => {
-                    setPoints(points.filter((row) => row.code !== point.code));
-                    touch();
-                  }}
-                >
-                  移除本次打卡
-                </Button>
-              </View>
+            {`每天 ${points.length} 张卡`}
+          </SectionTitle>
+          <Sheet>
+            {points.map((point) => (
+              <Row
+                key={point.code}
+                title={point.label}
+                titleNum={point.time}
+                sub={pointRule(point)}
+                chevron
+                onClick={busy ? undefined : () => setEditingCode(point.code)}
+              />
             ))}
-            <Button variant="outline" disabled={busy} onClick={addPoint}>
-              添加打卡点
-            </Button>
+          </Sheet>
+          <Links>
             <Button
-              variant="outline"
+              variant="text"
               disabled={busy}
               onClick={() => {
                 setPoints(defaultAttendancePoints);
@@ -392,94 +444,108 @@ export default function Schedules(): JSX.Element {
                 touch();
               }}
             >
-              使用每天两次
+              {`恢复默认（${defaultAttendancePoints.map((point) => `${point.label} ${point.time}`).join("，")}）`}
             </Button>
-          </Section>
-          <Section title="生效日期和工作日">
-            <Picker
-              mode="date"
+          </Links>
+          <Sheet gap>
+            <FormInput
+              label="安排名称"
+              value={name}
+              placeholder="例如：每日两次"
               disabled={busy}
-              start={tomorrow()}
-              value={startsOn}
-              onChange={(event) => {
-                setStartsOn(event.detail.value);
+              onInput={(value) => {
+                setName(value);
                 touch();
               }}
-            >
-              <ListItem primary="生效日期" secondary={startsOn} chip="选择" />
-            </Picker>
-            {endsOn === null ? (
-              <Button
-                variant="outline"
+            />
+            <View className="schedules-days">
+              <View className="schedules-days__label">工作日</View>
+              <Weekdays
+                selected={workdays}
                 disabled={busy}
-                onClick={() => {
-                  setEndsOn(startsOn);
+                onToggle={(day) => {
+                  setWorkdays(
+                    workdays.includes(day)
+                      ? workdays.filter((value) => value !== day)
+                      : [...workdays, day].sort(),
+                  );
+                  touch();
+                }}
+              />
+            </View>
+            <View className="schedules-pick">
+              <Picker
+                mode="date"
+                disabled={busy}
+                start={tomorrow()}
+                value={startsOn}
+                onChange={(event) => {
+                  setStartsOn(event.detail.value);
                   touch();
                 }}
               >
-                设置截止日期
-              </Button>
-            ) : (
-              <View>
-                <Picker
-                  mode="date"
-                  disabled={busy}
-                  start={startsOn}
-                  value={endsOn}
-                  onChange={(event) => {
-                    setEndsOn(event.detail.value);
-                    touch();
-                  }}
-                >
-                  <ListItem primary="截止日期" secondary={endsOn} />
-                </Picker>
-                <Button
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => {
-                    setEndsOn(null);
-                    touch();
-                  }}
-                >
-                  长期有效
-                </Button>
-              </View>
-            )}
-            <View className="weekday-grid">
-              {weekdays.map((label, index) => (
-                <View
-                  key={label}
-                  className={`ui-segmented__item ${workdays.includes(index + 1) ? "ui-segmented__item--active" : ""}`}
-                  onClick={() => {
-                    if (busy) return;
-                    setWorkdays(
-                      workdays.includes(index + 1)
-                        ? workdays.filter((day) => day !== index + 1)
-                        : [...workdays, index + 1].sort(),
-                    );
-                    touch();
-                  }}
-                >
-                  周{label}
-                </View>
-              ))}
+                <FormRow
+                  label="生效日期"
+                  value={workDateLabel(startsOn)}
+                  chevron
+                />
+              </Picker>
             </View>
-          </Section>
+            <View className="schedules-pick">
+              <Picker
+                mode="date"
+                disabled={busy}
+                start={startsOn}
+                value={endsOn ?? startsOn}
+                onChange={(event) => {
+                  setEndsOn(event.detail.value);
+                  touch();
+                }}
+              >
+                <FormRow
+                  label="截止日期"
+                  value={endsOn === null ? "长期有效" : workDateLabel(endsOn)}
+                  chevron
+                />
+              </Picker>
+            </View>
+          </Sheet>
+          {endsOn !== null ? (
+            <Links>
+              <Button
+                variant="text"
+                disabled={busy}
+                onClick={() => {
+                  setEndsOn(null);
+                  touch();
+                }}
+              >
+                改回长期有效
+              </Button>
+            </Links>
+          ) : null}
           {error ? <Notice tone="error">{error}</Notice> : null}
           {saved ? <Notice tone="success">{saved}</Notice> : null}
-          <Button loading={busy} onClick={() => void save()}>
-            保存打卡安排
-          </Button>
-          {scope?.scopeType !== "PROJECT" && configuration.id !== null ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => void inherit()}
-            >
-              恢复继承上级排班
-            </Button>
-          ) : null}
-        </View>
+          <BottomBar
+            primary={saving ? "保存中…" : "保存"}
+            busy={busy}
+            onPrimary={() => {
+              void save();
+            }}
+          >
+            {scope?.scopeType !== "PROJECT" && configuration.id !== null ? (
+              <Button
+                variant="text"
+                disabled={busy}
+                onClick={() => {
+                  void inherit();
+                }}
+              >
+                恢复继承上级
+              </Button>
+            ) : null}
+          </BottomBar>
+        </>
       ) : null}
     </Screen>
   );

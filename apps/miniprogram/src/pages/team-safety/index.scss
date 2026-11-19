@@ -1,0 +1,31 @@
+// 班组安全。公共样式在 components/ui/kit.scss，这里只有这一页独有的几样。
+
+// 交底标题最长 80 字，要能折行（卡片标题组件只显示一行）。
+.team-safety__title {
+  font-size: 42rpx;
+  font-weight: 800;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+// 卡片里要完整读的正文：交底内容、隐患说明。
+.team-safety__text {
+  margin-top: 16rpx;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+// 展开的隐患：行标题只有一行，说明的全文放在它下面。
+.team-safety__detail {
+  padding: 24rpx 40rpx 28rpx 64rpx;
+  border-bottom: 2rpx solid var(--hair);
+  font-size: 34rpx;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+// 包着选择器的表单行：行在选择器里是最后一个子元素，自己不画分隔线，由外面这层来画。
+.team-safety__pick {
+  border-bottom: 2rpx solid var(--hair);
+}
+.team-safety__pick:last-child {
+  border-bottom: 0;
+}

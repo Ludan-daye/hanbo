@@ -1,22 +1,29 @@
 import { useState } from "react";
-import {
-  Checkbox,
-  CheckboxGroup,
-  Label,
-  Picker,
-  View,
-} from "@tarojs/components";
 import type { TeamTaskWorker } from "@construction/domain";
-import {
-  Button,
-  Field,
-  ListItem,
-  Section,
-  StateView,
-  Subtitle,
-} from "./ui/index";
-import "./task-worker-picker.scss";
 
+import {
+  filterWorkers,
+  toggleAllWorkers,
+  toggleWorker,
+  workerTrades,
+} from "../pages/team-work/task-view";
+import {
+  Check,
+  Chips,
+  Row,
+  SearchField,
+  SectionTitle,
+  Sheet,
+  SkeletonRows,
+  StateView,
+} from "./ui/index";
+
+const ALL_TRADES = "__all__";
+
+/**
+ * 选人：搜索、按工种筛、勾选。勾选是即时生效的；
+ * “确定”按钮由用它的视图放在底部操作条里，上面写着已经选了几个人。
+ */
 export const TaskWorkerPicker = ({
   workers,
   selectedIds,
@@ -26,130 +33,89 @@ export const TaskWorkerPicker = ({
 }: {
   readonly workers: readonly TeamTaskWorker[] | null;
   readonly selectedIds: readonly string[];
+  /** 已经在这项安排里的人：照样列出来，但不能再选。 */
   readonly assignedIds: readonly string[];
   readonly disabled: boolean;
   readonly onChange: (ids: readonly string[]) => void;
 }): JSX.Element => {
   const [search, setSearch] = useState<string>("");
   const [trade, setTrade] = useState<string>("");
-  const trades: readonly string[] = [
-    ...new Set(workers?.map((worker) => worker.workType) ?? []),
-  ];
-  const keyword: string = search.trim().toLowerCase();
-  const visible: readonly TeamTaskWorker[] =
-    workers?.filter(
-      (worker) =>
-        (trade === "" || worker.workType === trade) &&
-        `${worker.name} ${worker.workType} ${worker.phoneMasked}`
-          .toLowerCase()
-          .includes(keyword),
-    ) ?? [];
+  if (workers === null) return <SkeletonRows rows={4} gap />;
+  const trades = workerTrades(workers);
+  const visible = filterWorkers(workers, search, trade);
+  const all = toggleAllWorkers(selectedIds, visible, assignedIds);
+  const filtering = search.trim() !== "" || trade !== "";
   return (
-    <Section title={`班组人员 · 已选 ${selectedIds.length} 人`}>
-      {workers === null ? (
-        <StateView title="正在读取人员…" />
+    <>
+      <SearchField
+        value={search}
+        placeholder="搜索姓名、工种或手机尾号"
+        onInput={setSearch}
+      />
+      {trades.length > 1 ? (
+        <Chips
+          options={[
+            { value: ALL_TRADES, label: "全部工种" },
+            ...trades.map((name) => ({ value: name, label: name })),
+          ]}
+          selected={[trade === "" ? ALL_TRADES : trade]}
+          onToggle={(value) => setTrade(value === ALL_TRADES ? "" : value)}
+        />
+      ) : null}
+      <SectionTitle
+        action={
+          all === null || disabled
+            ? undefined
+            : all.allSelected
+              ? "取消全选"
+              : "全选"
+        }
+        onAction={() => {
+          if (all !== null && !disabled) onChange(all.next);
+        }}
+      >
+        {workers[0]
+          ? `${workers[0].teamName}，在场 ${workers.length} 人`
+          : "本班人员"}
+      </SectionTitle>
+      {visible.length === 0 ? (
+        <StateView
+          kind="empty"
+          title={filtering ? "没有找到这样的人" : "班组里还没有人"}
+          sub={
+            filtering
+              ? "换个关键字，或者看全部工种。"
+              : "可以邀请临时工，或者请管理员把人加进班组。"
+          }
+        />
       ) : (
-        <>
-          {workers[0] && (
-            <Subtitle>
-              {workers[0].projectName} · {workers[0].teamName}
-            </Subtitle>
-          )}
-          <Field
-            value={search}
-            onInput={setSearch}
-            placeholder="搜索姓名、工种或手机尾号"
-            disabled={disabled}
-          />
-          <Picker
-            mode="selector"
-            range={["全部工种", ...trades]}
-            onChange={(event) =>
-              setTrade(
-                Number(event.detail.value) === 0
-                  ? ""
-                  : trades[Number(event.detail.value) - 1],
-              )
-            }
-          >
-            <ListItem primary="工种筛选" chip={trade || "全部工种"} />
-          </Picker>
-          {visible.some((worker) => !assignedIds.includes(worker.memberId)) && (
-            <Button
-              variant="outline"
-              disabled={disabled}
-              onClick={() => {
-                const ids: readonly string[] = visible
-                  .filter((worker) => !assignedIds.includes(worker.memberId))
-                  .map((worker) => worker.memberId);
-                onChange(
-                  ids.every((id) => selectedIds.includes(id))
-                    ? selectedIds.filter((id) => !ids.includes(id))
-                    : [...new Set([...selectedIds, ...ids])],
-                );
-              }}
-            >
-              {visible
-                .filter((worker) => !assignedIds.includes(worker.memberId))
-                .every((worker) => selectedIds.includes(worker.memberId))
-                ? "取消全选"
-                : "全选"}
-            </Button>
-          )}
-          {visible.length === 0 ? (
-            <StateView
-              title={keyword || trade ? "无匹配人员" : "暂无班组人员"}
-              sub={
-                keyword || trade
-                  ? undefined
-                  : "可邀请临时工，或联系管理员添加人员。"
-              }
-            />
-          ) : (
-            <CheckboxGroup
-              onChange={(event) => {
-                if (disabled) return;
-                const visibleIds: readonly string[] = visible.map(
-                  (worker) => worker.memberId,
-                );
-                onChange([
-                  ...selectedIds.filter((id) => !visibleIds.includes(id)),
-                  ...event.detail.value.filter(
-                    (id) => !assignedIds.includes(id),
-                  ),
-                ]);
-              }}
-            >
-              {visible.map((worker) => {
-                const assigned: boolean = assignedIds.includes(worker.memberId);
-                const selected: boolean = selectedIds.includes(worker.memberId);
-                return (
-                  <Label
-                    key={worker.memberId}
-                    className={`task-worker-option${selected ? " task-worker-option--selected" : ""}`}
-                  >
-                    <Checkbox
-                      value={worker.memberId}
-                      checked={selected || assigned}
-                      disabled={disabled || assigned}
-                      color="#111820"
-                    />
-                    <View className="task-worker-option__person">
-                      <View>{worker.name}</View>
-                      <View className="task-worker-option__detail">
-                        {worker.workType} · {worker.phoneMasked}
-                      </View>
-                    </View>
-                    <View className="task-worker-option__status">
-                      {assigned ? "已在任务中" : selected ? "已选择" : ""}
-                    </View>
-                  </Label>
-                );
-              })}
-            </CheckboxGroup>
-          )}
-        </>
+        <Sheet>
+          {visible.map((worker) => {
+            const assigned = assignedIds.includes(worker.memberId);
+            return (
+              <Row
+                key={worker.memberId}
+                title={worker.name}
+                sub={[worker.workType, worker.phoneMasked]
+                  .filter(Boolean)
+                  .join(" ")}
+                avatar={worker.name.slice(0, 1)}
+                value={assigned ? "已在安排里" : undefined}
+                mute
+                onClick={
+                  assigned || disabled
+                    ? undefined
+                    : () => onChange(toggleWorker(selectedIds, worker.memberId))
+                }
+              >
+                {assigned ? null : (
+                  <Check checked={selectedIds.includes(worker.memberId)} />
+                )}
+              </Row>
+            );
+          })}
+        </Sheet>
       )}
-    </Section>
+    </>
   );
 };

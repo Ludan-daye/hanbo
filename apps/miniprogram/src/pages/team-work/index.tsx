@@ -11,22 +11,18 @@ import type {
   TeamTaskTemplate,
 } from "@construction/domain";
 import {
+  BottomBar,
   Button,
-  Field,
-  ListItem,
+  FormRow,
+  FormSwitch,
   Notice,
   PageHeader,
   Screen,
-  Section,
+  Sheet,
+  SkeletonRows,
   StateView,
-  Subtitle,
 } from "../../components/ui/index";
-import {
-  TaskDetails,
-  taskStatusLabel,
-  WorkDate,
-  workTimestamp,
-} from "../../components/team-work-fields";
+import { workTimestamp } from "../../components/team-work-fields";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { useManagedTeamId } from "../../hooks/use-management-scope";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
@@ -55,6 +51,35 @@ import {
 } from "../../services/team-task-draft";
 import { chinaToday } from "../../services/time";
 import { errorMessage } from "../../services/error-messages";
+import { peopleSummary, taskPeople } from "./task-view";
+import { DetailView } from "./views/detail";
+import { InviteView } from "./views/invite";
+import { ListView } from "./views/list";
+
+import "./index.scss";
+
+/**
+ * 同一个页面里的几个视图：列表、套用历史、新建、选人，
+ * 以及点开一项安排之后的详情、修改、加人、邀请临时工。
+ * 页头的返回键回到上一个视图。
+ */
+type View =
+  | { readonly name: "list" | "history" | "new" | "pick" }
+  | {
+      readonly name: "detail" | "edit" | "add" | "invite";
+      readonly taskId: string;
+      /** 重新读取时安排还没回来，页头先用这个名字。 */
+      readonly title: string;
+    };
+type TaskView = Extract<View, { readonly taskId: string }>;
+const LIST: View = { name: "list" };
+const taskView = (
+  name: TaskView["name"],
+  task: { readonly id: string; readonly title: string },
+): View => ({ name, taskId: task.id, title: task.title });
+/** 正在做哪件事：只用来把那个按钮的字换成“…中”。 */
+type Working = "publish" | "save" | "add" | "invite" | "complete" | null;
+const DANGER = "#D7261E";
 
 export default function TeamWork(): JSX.Element {
   useSessionGuard();
@@ -63,6 +88,8 @@ export default function TeamWork(): JSX.Element {
   const { revision, refresh } = usePageRefresh();
   const [date, setDate] = useState<string>(chinaToday());
   const [tasks, setTasks] = useState<readonly TeamTask[] | null>(null);
+  // 每次重新读取 tasks 都先清空。详情这几个视图用上一次读到的顶着，不闪成骨架。
+  const [knownTasks, setKnownTasks] = useState<readonly TeamTask[]>([]);
   const [members, setMembers] = useState<readonly TeamTaskWorker[] | null>(
     null,
   );
@@ -72,22 +99,20 @@ export default function TeamWork(): JSX.Element {
     readonly message: string;
   } | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
+  const [working, setWorking] = useState<Working>(null);
   const [defaults, setDefaults] = useState<TeamTaskDefaults | null>(null);
   const [draft, setDraft] = useState<TeamTaskDetails | null>(null);
   const [draftKey, setDraftKey] = useState<number>(0);
   const [timeNotice, setTimeNotice] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
-  const [showTemplates, setShowTemplates] = useState<boolean>(false);
-  const [picking, setPicking] = useState<boolean>(false);
   const [inviteAfterSave, setInviteAfterSave] = useState<boolean>(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [moreTaskId, setMoreTaskId] = useState<string | null>(null);
-  const [creating, setCreating] = useState<boolean>(false);
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [view, setView] = useState<View>(LIST);
+  // 新建是从哪个视图进来的（列表、套用历史、某项安排的详情）：返回时回到那里。
+  const [draftFrom, setDraftFrom] = useState<View>(LIST);
   const [selected, setSelected] = useState<readonly string[]>([]);
-  const [addingTaskId, setAddingTaskId] = useState<string | null>(null);
   const [addedMemberIds, setAddedMemberIds] = useState<readonly string[]>([]);
-  const [taskId, setTaskId] = useState<string | null>(null);
+  // invites 里放的是哪一项安排的邀请记录
+  const [invitesTaskId, setInvitesTaskId] = useState<string | null>(null);
   const [realName, setRealName] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
   const [invites, setInvites] = useState<readonly TaskInvitation[]>([]);
@@ -107,6 +132,7 @@ export default function TeamWork(): JSX.Element {
       ([rows, people, taskDefaults]) => {
         if (active) {
           setTasks(rows);
+          setKnownTasks(rows);
           setMembers(people);
           setDefaults(taskDefaults);
           setSelected((current) =>
@@ -117,8 +143,7 @@ export default function TeamWork(): JSX.Element {
         }
       },
       (cause: unknown) => {
-        if (active)
-          setError(errorMessage(cause, "读取工作安排失败"));
+        if (active) setError(errorMessage(cause, "读取工作安排失败"));
       },
     );
     return () => {
@@ -126,18 +151,30 @@ export default function TeamWork(): JSX.Element {
     };
   }, [teamId, date, revision]);
   const resetView = (): void => {
-    setCreating(false);
-    setEditingTaskId(null);
-    setAddingTaskId(null);
+    setView(LIST);
     setAddedMemberIds([]);
-    setTaskId(null);
+    setInvitesTaskId(null);
     setIssued(null);
     setSelected([]);
-    setExpandedId(null);
-    setMoreTaskId(null);
-    setShowTemplates(false);
+    setTaskError(null);
   };
   useEffect(resetView, [teamId]);
+  // 换了视图就回到顶上：同一个页面里切换，滚动位置不会自己复位。
+  useEffect(() => {
+    void Taro.pageScrollTo({ scrollTop: 0, duration: 0 });
+  }, [view.name]);
+  const byId = (task: TeamTask): boolean =>
+    "taskId" in view && task.id === view.taskId;
+  const openTask: TeamTask | null =
+    "taskId" in view
+      ? (tasks?.find(byId) ?? knownTasks.find(byId) ?? null)
+      : null;
+  // 点开的那项安排在重新读取之后不在这一天了：回到列表。
+  const gone: boolean = "taskId" in view && tasks !== null && openTask === null;
+  useEffect(() => {
+    if (gone) setView(LIST);
+  }, [gone]);
+
   const workTypes: readonly string[] = [
     ...new Set(
       [
@@ -146,7 +183,13 @@ export default function TeamWork(): JSX.Element {
       ].filter(Boolean),
     ),
   ];
-  const applyTemplate = (template: TeamTaskTemplate): void => {
+  /** 换视图。上一个视图里没办成的事的提示不带过去；没读到数据的提示要留着。 */
+  const show = (next: View): void => {
+    setTaskError(null);
+    if (tasks !== null) setError(null);
+    setView(next);
+  };
+  const applyTemplate = (template: TeamTaskTemplate, from: View): void => {
     if (members === null || busy) return;
     const copied = reuseTaskTemplate(template, date, members);
     setDraft(copied.details);
@@ -155,21 +198,23 @@ export default function TeamWork(): JSX.Element {
     setTimeNotice(null);
     setCopyNotice(
       copied.omittedCount > 0
-        ? `${copied.omittedCount} 人未带入（临时工或已离场），请重新选择或邀请。`
+        ? `${copied.omittedCount} 人没带过来（临时工或已离场），请重新选人或邀请。`
         : null,
     );
-    setShowTemplates(false);
-    setCreating(true);
-    setPicking(false);
     setInviteAfterSave(false);
+    setDraftFrom(from);
+    show({ name: "new" });
   };
   const perform = async (
     action: () => Promise<void>,
     forTaskId: string | null = null,
+    label: Working = null,
   ): Promise<void> => {
     if (busy) return;
     setBusy(true);
-    setError(null);
+    setWorking(label);
+    // 数据没读到的提示（带重试）要留着，只清掉上一次操作留下的。
+    if (tasks !== null) setError(null);
     setTaskError(null);
     try {
       await action();
@@ -180,556 +225,458 @@ export default function TeamWork(): JSX.Element {
       await Taro.showToast({ icon: "none", title: message });
     } finally {
       setBusy(false);
+      setWorking(null);
     }
   };
   const changeTaskStatus = (
     task: TeamTask,
     status: "COMPLETED" | "CANCELLED",
   ): Promise<void> =>
-    perform(async () => {
-      const result = await Taro.showModal({
-        title: status === "COMPLETED" ? "确认任务完成" : "取消任务",
-        content: "未使用邀请码将失效，考勤记录保留。",
-      });
-      if (!result.confirm) return;
-      await closeTeamTask(task.teamId, task.id, status);
-      setMoreTaskId(null);
-      setTaskId(null);
-      setIssued(null);
-      setEditingTaskId(null);
-      setAddingTaskId(null);
-      refresh();
-    });
+    perform(
+      async () => {
+        const result = await Taro.showModal(
+          status === "COMPLETED"
+            ? {
+                title: "确认任务完成",
+                content: "没用过的邀请码会失效，考勤记录保留。",
+                confirmText: "确认完成",
+              }
+            : {
+                title: "取消任务",
+                content: "没用过的邀请码会失效，考勤记录保留。",
+                confirmText: "取消任务",
+                cancelText: "不取消",
+                confirmColor: DANGER,
+              },
+        );
+        if (!result.confirm) return;
+        await closeTeamTask(task.teamId, task.id, status);
+        setInvitesTaskId(null);
+        setIssued(null);
+        setAddedMemberIds([]);
+        refresh();
+      },
+      task.id,
+      status === "COMPLETED" ? "complete" : null,
+    );
   if (teamId === null)
     return (
-      <Screen>
-        <PageHeader title="工作安排" />
-        <StateView title="请先选择负责的班组" />
+      <Screen header={<PageHeader title="工作安排" />}>
+        <StateView kind="empty" title="请先选择负责的班组" />
       </Screen>
     );
+
+  const today: string = chinaToday();
+  const shown: View = gone ? LIST : view;
+  /** 从修改、加人、邀请回到详情。完整的邀请码离开那一页就不再显示。 */
+  const backToDetail = (task: {
+    readonly id: string;
+    readonly title: string;
+  }): void => {
+    setAddedMemberIds([]);
+    setIssued(null);
+    show(taskView("detail", task));
+  };
+  const back: (() => void) | undefined =
+    shown.name === "list"
+      ? undefined
+      : shown.name === "pick"
+        ? () => show({ name: "new" })
+        : shown.name === "new"
+          ? () => show(draftFrom)
+          : "taskId" in shown && shown.name !== "detail"
+            ? () => backToDetail({ id: shown.taskId, title: shown.title })
+            : () => show(LIST);
+  const title: string =
+    shown.name === "list"
+      ? "工作安排"
+      : shown.name === "history"
+        ? "套用历史"
+        : shown.name === "new"
+          ? "新建安排"
+          : shown.name === "pick"
+            ? "选择人员"
+            : shown.name === "detail"
+              ? (openTask?.title ?? shown.title)
+              : shown.name === "edit"
+                ? "修改安排"
+                : shown.name === "add"
+                  ? "添加本班人员"
+                  : "邀请临时工";
+  // 重新读取期间先不让操作，免得对着旧数据再点一次。
+  const locked: boolean = busy || tasks === null;
+  const loadError: string | null = tasks === null ? error : null;
+  const actionError: string | null = tasks !== null ? error : null;
+  const taskProblem: string | null =
+    openTask !== null && taskError?.taskId === openTask.id
+      ? taskError.message
+      : actionError;
+  const selectedNames: string = peopleSummary(
+    members
+      ?.filter((person) => selected.includes(person.memberId))
+      .map((person) => person.name) ?? [],
+  );
+
+  const startNew = (): void => {
+    if (defaults === null) return;
+    void perform(async () => {
+      setDraft(newTaskDetails(date, defaults));
+      setSelected([]);
+      setDraftKey((value) => value + 1);
+      setCopyNotice(null);
+      setInviteAfterSave(false);
+      setTimeNotice(
+        defaults.isWorkday ? null : "这天是休息日，请确认安排的时间。",
+      );
+      setDraftFrom(LIST);
+      show({ name: "new" });
+    });
+  };
+  const publish = (details: TeamTaskDetails): Promise<void> =>
+    perform(
+      async () => {
+        const saved = await createTeamTask(teamId, {
+          ...details,
+          memberIds: selected,
+        });
+        const savedDate: string = taskChinaParts(saved.startsAt)[0];
+        setSelected([]);
+        setKnownTasks((rows) => [
+          ...rows.filter((row) => row.id !== saved.id),
+          saved,
+        ]);
+        if (inviteAfterSave) {
+          setInvitesTaskId(saved.id);
+          setIssued(null);
+          setInvites([]);
+          setRealName("");
+          setPhone("");
+          show(taskView("invite", saved));
+        } else show(taskView("detail", saved));
+        if (savedDate === date) refresh();
+        else setDate(savedDate);
+        await Taro.showToast({ title: "安排已发布", icon: "success" });
+      },
+      null,
+      "publish",
+    );
+  const saveEdit = (task: TeamTask, details: TeamTaskDetails): Promise<void> =>
+    perform(
+      async () => {
+        const result = await Taro.showModal({
+          title: "保存修改",
+          content: "已经在安排里的人会看到新的内容，没用过的邀请码会作废。",
+          confirmText: "保存",
+        });
+        if (!result.confirm) return;
+        await updateTeamTask(teamId, task.id, details);
+        setInvitesTaskId(null);
+        show(taskView("detail", { id: task.id, title: details.title }));
+        refresh();
+      },
+      task.id,
+      "save",
+    );
+  const removeMember = (
+    task: TeamTask,
+    person: { readonly memberId: string; readonly name: string },
+  ): void => {
+    void perform(async () => {
+      const result = await Taro.showModal({
+        title: `撤下 ${person.name}`,
+        content: "只取消这一次安排，档案和项目身份都保留。",
+        confirmText: "撤下",
+        confirmColor: DANGER,
+      });
+      if (!result.confirm) return;
+      await removeTeamTaskMember(teamId, task.id, person.memberId);
+      refresh();
+    }, task.id);
+  };
+  const confirmExit = (
+    task: TeamTask,
+    person: { readonly memberId: string; readonly name: string },
+  ): void => {
+    void perform(async () => {
+      const result = await Taro.showModal({
+        title: `确认 ${person.name} 退场`,
+        content: "退出本项目，档案保留。还没干完的任务要先结束。",
+        confirmText: "确认退场",
+        confirmColor: DANGER,
+      });
+      if (!result.confirm) return;
+      await confirmTaskExit(teamId, task.id, person.memberId);
+      refresh();
+    }, task.id);
+  };
+  const addMembers = (task: TeamTask): void => {
+    void perform(
+      async () => {
+        await addTeamTaskMembers(teamId, task.id, addedMemberIds);
+        setAddedMemberIds([]);
+        show(taskView("detail", task));
+        refresh();
+        await Taro.showToast({ title: "人员已安排", icon: "success" });
+      },
+      task.id,
+      "add",
+    );
+  };
+  const openInvite = (task: TeamTask): void => {
+    void perform(async () => {
+      setInvites(await fetchTaskInvitations(teamId, task.id));
+      if (invitesTaskId !== task.id) {
+        setRealName("");
+        setPhone("");
+      }
+      setInvitesTaskId(task.id);
+      setIssued(null);
+      show(taskView("invite", task));
+    }, task.id);
+  };
+  const createInvitation = (task: TeamTask): void => {
+    void perform(
+      async () => {
+        if (!realName.trim() || !/^1[3-9]\d{9}$/.test(phone))
+          throw new Error("请填写真实姓名和有效手机号。");
+        const result = await createTaskInvitation(teamId, task.id, {
+          realName: realName.trim(),
+          phone,
+        });
+        setIssued(result);
+        setRealName("");
+        setPhone("");
+        setInvites(await fetchTaskInvitations(teamId, task.id));
+      },
+      task.id,
+      "invite",
+    );
+  };
+  const copyInvitation = (task: TeamTask): void => {
+    if (issued === null) return;
+    void perform(async () => {
+      await Taro.setClipboardData({
+        data: `${task.projectName}，${task.teamName}\n${task.title}\n临时工邀请码：${issued.code}\n有效至 ${workTimestamp(issued.expiresAt)}\n请微信登录后输入邀请码，完成资料和底照登记。`,
+      });
+    }, task.id);
+  };
+  const revokeInvitation = (task: TeamTask, invite: TaskInvitation): void => {
+    void perform(async () => {
+      const result = await Taro.showModal({
+        title: `作废 ${invite.name} 的邀请码`,
+        content: "作废后这个邀请码马上失效，要用得重新生成。",
+        confirmText: "作废",
+        confirmColor: DANGER,
+      });
+      if (!result.confirm) return;
+      await revokeTaskInvitation(teamId, task.id, invite.id);
+      setInvites(await fetchTaskInvitations(teamId, task.id));
+      if (issued?.id === invite.id) setIssued(null);
+    }, task.id);
+  };
+
   return (
-    <Screen>
-      <PageHeader title="工作安排" />
-      <WorkDate
-        value={date}
-        onChange={(value) => {
-          resetView();
-          setDate(value);
-        }}
-      />
-      {error && <Notice tone="error">{error}</Notice>}
-      <Button
-        disabled={busy || defaults === null || members === null}
-        onClick={() => {
-          if (creating) {
-            setCreating(false);
-            return;
-          }
-          if (defaults === null) return;
-          void perform(async () => {
-            setDraft(newTaskDetails(date, defaults));
-            setSelected([]);
-            setPicking(false);
-            setDraftKey((value) => value + 1);
-            setCopyNotice(null);
-            setInviteAfterSave(false);
-            setTimeNotice(
-              defaults.isWorkday ? null : "休息日，请确认安排时间。",
-            );
-            setShowTemplates(false);
-            setCreating(true);
-          });
-        }}
-      >
-        {creating ? "收起" : "＋ 新建安排"}
-      </Button>
-      <Button
-        variant="outline"
-        disabled={busy || members === null}
-        onClick={() => {
-          setShowTemplates(!showTemplates);
-        }}
-      >
-        套用模板
-      </Button>
-      {showTemplates && (
+    <Screen header={<PageHeader title={title} onBack={back} />}>
+      {shown.name === "list" ? (
+        <ListView
+          date={date}
+          today={today}
+          tasks={tasks}
+          loadError={loadError}
+          problem={actionError}
+          canCreate={!busy && defaults !== null && members !== null}
+          canReuse={!busy && members !== null}
+          onDate={(value) => {
+            resetView();
+            setDate(value);
+          }}
+          onRetry={refresh}
+          onOpen={(task) => show(taskView("detail", task))}
+          onCreate={startNew}
+          onHistory={() => show({ name: "history" })}
+        />
+      ) : null}
+      {shown.name === "history" ? (
         <TeamTaskTemplates
           teamId={teamId}
           disabled={busy}
-          onSelect={applyTemplate}
-          onClose={() => setShowTemplates(false)}
+          onSelect={(template) => applyTemplate(template, { name: "history" })}
         />
-      )}
-      {creating && draft && !showTemplates && (
-        <Section title="新建安排">
-          {copyNotice && <Notice>{copyNotice}</Notice>}
-          <TeamTaskForm
-            key={draftKey}
-            initialValue={draft}
-            busy={busy || members === null}
-            submitLabel={inviteAfterSave ? "发布并邀请临时工" : "发布安排"}
-            timeNotice={timeNotice}
-            workTypes={workTypes}
-            onSave={(details) =>
-              perform(async () => {
-                const saved = await createTeamTask(teamId, {
-                  ...details,
-                  memberIds: selected,
-                });
-                const savedDate: string = taskChinaParts(saved.startsAt)[0];
-                setCreating(false);
-                setSelected([]);
-                setExpandedId(saved.id);
-                setMoreTaskId(null);
-                if (inviteAfterSave) {
-                  setTaskId(saved.id);
-                  setIssued(null);
-                  setInvites([]);
-                  setRealName("");
-                  setPhone("");
-                }
-                if (savedDate === date) refresh();
-                else setDate(savedDate);
-                await Taro.showToast({ title: "安排已发布", icon: "success" });
-              })
-            }
-          >
-            <ListItem
-              primary="安排人员"
-              secondary={
-                selected.length > 0
-                  ? members
-                      ?.filter((person) => selected.includes(person.memberId))
-                      .map((person) => person.name)
-                      .join("、")
-                  : undefined
-              }
-              chip={selected.length > 0 ? `已选 ${selected.length} 人` : "选择"}
-              onClick={() => setPicking(!picking)}
+      ) : null}
+      {shown.name === "new" && copyNotice !== null ? (
+        <Notice tone="warning">{copyNotice}</Notice>
+      ) : null}
+      {/* 去选人时表单不卸载，只是不显示：回来时填过的内容都还在。 */}
+      {(shown.name === "new" || shown.name === "pick") && draft !== null ? (
+        <TeamTaskForm
+          key={draftKey}
+          hidden={shown.name === "pick"}
+          initialValue={draft}
+          busy={busy || members === null}
+          submitLabel={
+            working === "publish"
+              ? "发布中…"
+              : inviteAfterSave
+                ? "发布并邀请临时工"
+                : "发布安排"
+          }
+          timeNotice={timeNotice}
+          workTypes={workTypes}
+          problem={actionError}
+          people={
+            <FormRow
+              label="安排人员"
+              placeholder="请选择"
+              chevron
+              onClick={() => show({ name: "pick" })}
+            >
+              {selected.length > 0 ? (
+                <View className="team-work-value">
+                  {selectedNames || `已选 ${selected.length} 人`}
+                </View>
+              ) : undefined}
+            </FormRow>
+          }
+          onSave={publish}
+        >
+          <Sheet gap>
+            <FormSwitch
+              label="发布后邀请临时工"
+              checked={inviteAfterSave}
+              disabled={busy}
+              onChange={setInviteAfterSave}
             />
-            {picking && (
-              <>
-                <TaskWorkerPicker
-                  workers={members}
-                  selectedIds={selected}
-                  assignedIds={[]}
-                  disabled={busy}
-                  onChange={setSelected}
-                />
-                <Button
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => {
-                    setInviteAfterSave(true);
-                    setPicking(false);
-                  }}
-                >
-                  邀请临时工
-                </Button>
-                <Button variant="outline" onClick={() => setPicking(false)}>
-                  确定 · {selected.length} 人
-                </Button>
-              </>
-            )}
-            {inviteAfterSave && (
-              <ListItem
-                primary="临时工邀请"
-                chip="取消邀请"
-                onClick={() => setInviteAfterSave(false)}
-              />
-            )}
-          </TeamTaskForm>
-        </Section>
-      )}
-      {!creating &&
-        !showTemplates &&
-        (tasks === null ? (
-          <StateView
-            title={error ? "工作安排加载失败" : "正在读取工作安排…"}
-            onRetry={refresh}
+          </Sheet>
+        </TeamTaskForm>
+      ) : null}
+      {shown.name === "pick" ? (
+        <>
+          <TaskWorkerPicker
+            workers={members}
+            selectedIds={selected}
+            assignedIds={[]}
+            disabled={busy}
+            onChange={setSelected}
           />
-        ) : tasks.length === 0 ? (
-          <StateView title="暂无工作安排" />
-        ) : (
-          tasks.map((task) => (
-            <View key={task.id} className="ui-section">
-              <ListItem
-                primary={task.title}
-                secondary={`${workTimestamp(task.startsAt)} — ${workTimestamp(task.endsAt)} · ${task.assignments.length} 人`}
-                chip={taskStatusLabel(task.status)}
-                onClick={() =>
-                  setExpandedId(expandedId === task.id ? null : task.id)
-                }
-              />
-              {expandedId === task.id && (
-                <>
-                  <TaskDetails task={task} />
-                  {taskError?.taskId === task.id && (
-                    <Notice tone="error">{taskError.message}</Notice>
-                  )}
-                  <Button
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() =>
-                      applyTemplate({
-                        ...task,
-                        memberIds: task.assignments
-                          .filter(
-                            (person) =>
-                              person.source === "ASSIGNED" &&
-                              !person.taskAttendanceOnly,
-                          )
-                          .map((person) => person.memberId),
-                        previousMemberCount: task.assignments.length,
-                      })
-                    }
-                  >
-                    套用此安排
-                  </Button>
-                  {task.status === "OPEN" && (
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        setMoreTaskId(moreTaskId === task.id ? null : task.id)
-                      }
-                    >
-                      {moreTaskId === task.id ? "收起操作" : "更多操作"}
-                    </Button>
-                  )}
-                  {moreTaskId === task.id &&
-                    task.status === "OPEN" &&
-                    !task.assignments.some((person) => person.startedAt) && (
-                      <Button
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() =>
-                          setEditingTaskId(
-                            editingTaskId === task.id ? null : task.id,
-                          )
-                        }
-                      >
-                        {editingTaskId === task.id
-                          ? "收起修改"
-                          : "修改工作安排"}
-                      </Button>
-                    )}
-                  {editingTaskId === task.id && (
-                    <TeamTaskForm
-                      initialValue={task}
-                      submitLabel="保存修改"
-                      timeNotice={null}
-                      workTypes={workTypes}
-                      busy={busy}
-                      onSave={(details) =>
-                        perform(async () => {
-                          const result = await Taro.showModal({
-                            title: "保存修改",
-                            content:
-                              "更新已加入人员的安排，作废未使用邀请码。",
-                          });
-                          if (!result.confirm) return;
-                          await updateTeamTask(teamId, task.id, details);
-                          setEditingTaskId(null);
-                          refresh();
-                        }, task.id)
-                      }
-                    />
-                  )}
-                  {moreTaskId === task.id &&
-                    task.status === "OPEN" &&
-                    task.assignments
-                      .filter((person) => !person.startedAt)
-                      .map((person) => (
-                        <ListItem
-                          key={`remove:${person.memberId}`}
-                          primary={person.name}
-                          secondary="尚未开工"
-                          chip="撤下人员"
-                          onClick={() => {
-                            void perform(async () => {
-                              const result = await Taro.showModal({
-                                title: `撤下 ${person.name}`,
-                                confirmColor: "#c33845",
-                                content:
-                                  "取消本次安排，保留档案和项目身份。",
-                              });
-                              if (!result.confirm) return;
-                              await removeTeamTaskMember(
-                                teamId,
-                                task.id,
-                                person.memberId,
-                              );
-                              refresh();
-                            }, task.id);
-                          }}
-                        />
-                      ))}
-
-                  <Subtitle>
-                    已安排：
-                    {task.assignments
-                      .map(
-                        (assignment) =>
-                          `${assignment.name}${assignment.source === "TEMPORARY_INVITE" ? "（临时）" : ""}`,
-                      )
-                      .join("、") || "暂无人员"}
-                  </Subtitle>
-                  {task.status === "OPEN" && (
-                    <>
-                      <Button
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => {
-                          setAddingTaskId(
-                            addingTaskId === task.id ? null : task.id,
-                          );
-                          setAddedMemberIds([]);
-                        }}
-                      >
-                        {addingTaskId === task.id
-                          ? "收起人员选择"
-                          : "选择本班人员"}
-                      </Button>
-                      {addingTaskId === task.id && (
-                        <>
-                          <TaskWorkerPicker
-                            workers={members}
-                            selectedIds={addedMemberIds}
-                            assignedIds={task.assignments.map(
-                              (person) => person.memberId,
-                            )}
-                            disabled={busy}
-                            onChange={setAddedMemberIds}
-                          />
-                          <Button
-                            loading={busy}
-                            disabled={addedMemberIds.length === 0}
-                            onClick={() => {
-                              void perform(async () => {
-                                await addTeamTaskMembers(
-                                  teamId,
-                                  task.id,
-                                  addedMemberIds,
-                                );
-                                setAddingTaskId(null);
-                                setAddedMemberIds([]);
-                                refresh();
-                                await Taro.showToast({
-                                  title: "人员已安排",
-                                  icon: "success",
-                                });
-                              }, task.id);
-                            }}
-                          >
-                            确认安排 {addedMemberIds.length} 人
-                          </Button>
-                        </>
-                      )}
-                    </>
-                  )}
-                  {task.assignments
-                    .filter((person) => person.taskAttendanceOnly)
-                    .map((person) => (
-                      <ListItem
-                        key={person.memberId}
-                        primary={person.name}
-                        secondary={
-                          person.finishedAt
-                            ? `实际用工 ${person.workedMinutes ?? 0} 分钟`
-                            : person.startedAt
-                              ? "已开工，等待完工打卡"
-                              : "尚未开工"
-                        }
-                        chip={
-                          person.exitConfirmedAt
-                            ? "已退场"
-                            : person.finishedAt
-                              ? "确认退场"
-                              : "计时用工"
-                        }
-                        onClick={
-                          !person.finishedAt || person.exitConfirmedAt
-                            ? undefined
-                            : () => {
-                                void perform(async () => {
-                                  const result = await Taro.showModal({
-                                    title: `确认 ${person.name} 退场`,
-                                    content:
-                                      "退出本项目，保留档案；未完成任务须先结束。",
-                                    confirmColor: "#c33845",
-                                  });
-                                  if (result.confirm) {
-                                    await confirmTaskExit(
-                                      teamId,
-                                      task.id,
-                                      person.memberId,
-                                    );
-                                    refresh();
-                                  }
-                                }, task.id);
-                              }
-                        }
-                      />
-                    ))}
-                  {task.status === "OPEN" && (
-                    <>
-                      <Button
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => {
-                          void perform(async () => {
-                            setInvites(
-                              await fetchTaskInvitations(teamId, task.id),
-                            );
-                            setTaskId(task.id);
-                            setIssued(null);
-                          }, task.id);
-                        }}
-                      >
-                        邀请临时工 / 管理邀请码
-                      </Button>
-                      {moreTaskId === task.id && (
-                        <>
-                          <Button
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() => {
-                              void changeTaskStatus(task, "COMPLETED");
-                            }}
-                          >
-                            确认已完成
-                          </Button>
-                          <Button
-                            variant="danger"
-                            disabled={busy}
-                            onClick={() => {
-                              void changeTaskStatus(task, "CANCELLED");
-                            }}
-                          >
-                            取消任务
-                          </Button>
-                        </>
-                      )}
-                    </>
-                  )}
-                  {taskId === task.id && (
-                    <>
-                      <Field
-                        label="临时工真实姓名"
-                        value={realName}
-                        onInput={setRealName}
-                        placeholder="与本人登记姓名一致"
-                      />
-                      <Field
-                        label="手机号"
-                        value={phone}
-                        onInput={setPhone}
-                        type="number"
-                        maxLength={11}
-                        placeholder="11 位手机号"
-                      />
-                      <Button
-                        loading={busy}
-                        disabled={
-                          busy ||
-                          realName.trim().length === 0 ||
-                          phone.length !== 11
-                        }
-                        onClick={() => {
-                          void perform(async () => {
-                            if (
-                              !realName.trim() ||
-                              !/^1[3-9]\d{9}$/.test(phone)
-                            )
-                              throw new Error("请填写真实姓名和有效手机号。");
-                            const result = await createTaskInvitation(
-                              teamId,
-                              task.id,
-                              { realName: realName.trim(), phone },
-                            );
-                            setIssued(result);
-                            setRealName("");
-                            setPhone("");
-                            setInvites(
-                              await fetchTaskInvitations(teamId, task.id),
-                            );
-                          }, task.id);
-                        }}
-                      >
-                        生成六位邀请码
-                      </Button>
-                      {issued && (
-                        <Section
-                          title="邀请码已生成"
-                          sub={`有效至 ${workTimestamp(issued.expiresAt)}，仅供 ${issued.name} 本人使用`}
-                        >
-                          <ListItem
-                            primary={issued.code}
-                            chip="复制"
-                            onClick={() => {
-                              void perform(async () => {
-                                await Taro.setClipboardData({
-                                  data: `${task.projectName} · ${task.teamName}\n${task.title}\n临时工邀请码：${issued.code}\n有效至 ${workTimestamp(issued.expiresAt)}\n请微信登录后输入邀请码，完成资料和底照登记。`,
-                                });
-                              });
-                            }}
-                          />
-                          <Subtitle>
-                            离开后不显示完整邀请码，请及时复制。
-                          </Subtitle>
-                        </Section>
-                      )}
-                      {invites.map((invite) => (
-                        <ListItem
-                          key={invite.id}
-                          primary={`${invite.name} · ${invite.phoneMasked}`}
-                          secondary={`有效至 ${workTimestamp(invite.expiresAt)}`}
-                          chip={
-                            {
-                              PENDING: "作废邀请",
-                              ACCEPTED: "已加入",
-                              EXPIRED: "已过期",
-                              REVOKED: "已作废",
-                            }[invite.status]
-                          }
-                          onClick={
-                            invite.status !== "PENDING"
-                              ? undefined
-                              : () => {
-                                  void perform(async () => {
-                                    const result = await Taro.showModal({
-                                      title: `作废 ${invite.name} 的邀请码`,
-                                      content:
-                                        "作废后该邀请码立即失效，需重新生成。",
-                                      confirmColor: "#c33845",
-                                    });
-                                    if (!result.confirm) return;
-                                    await revokeTaskInvitation(
-                                      teamId,
-                                      task.id,
-                                      invite.id,
-                                    );
-                                    setInvites(
-                                      await fetchTaskInvitations(
-                                        teamId,
-                                        task.id,
-                                      ),
-                                    );
-                                    if (issued?.id === invite.id)
-                                      setIssued(null);
-                                  }, task.id);
-                                }
-                          }
-                        />
-                      ))}
-                    </>
-                  )}
-                </>
-              )}
-            </View>
-          ))
-        ))}
+          <BottomBar
+            primary={`确定，已选 ${selected.length} 人`}
+            onPrimary={() => show({ name: "new" })}
+          />
+        </>
+      ) : null}
+      {"taskId" in shown && openTask === null ? (
+        <>
+          <View className="team-work-sk sk" />
+          <SkeletonRows rows={3} gap />
+        </>
+      ) : null}
+      {shown.name === "detail" && openTask !== null ? (
+        <DetailView
+          task={openTask}
+          people={taskPeople(openTask, members)}
+          today={today}
+          busy={locked}
+          completing={working === "complete"}
+          validInvites={
+            invitesTaskId === openTask.id
+              ? invites.filter((invite) => invite.status === "PENDING").length
+              : null
+          }
+          problem={taskProblem}
+          onRemove={(person) => removeMember(openTask, person)}
+          onExit={(person) => confirmExit(openTask, person)}
+          onAdd={() => {
+            setAddedMemberIds([]);
+            show(taskView("add", openTask));
+          }}
+          onInvite={() => openInvite(openTask)}
+          onReuse={() =>
+            applyTemplate(
+              {
+                ...openTask,
+                memberIds: openTask.assignments
+                  .filter(
+                    (person) =>
+                      person.source === "ASSIGNED" &&
+                      !person.taskAttendanceOnly,
+                  )
+                  .map((person) => person.memberId),
+                previousMemberCount: openTask.assignments.length,
+              },
+              taskView("detail", openTask),
+            )
+          }
+          onEdit={() => show(taskView("edit", openTask))}
+          onComplete={() => {
+            void changeTaskStatus(openTask, "COMPLETED");
+          }}
+          onCancel={() => {
+            void changeTaskStatus(openTask, "CANCELLED");
+          }}
+        />
+      ) : null}
+      {shown.name === "edit" && openTask !== null ? (
+        <TeamTaskForm
+          key={`edit:${openTask.id}`}
+          initialValue={openTask}
+          submitLabel={working === "save" ? "保存中…" : "保存修改"}
+          timeNotice={null}
+          workTypes={workTypes}
+          busy={locked}
+          problem={taskProblem}
+          onSave={(details) => saveEdit(openTask, details)}
+        />
+      ) : null}
+      {shown.name === "add" && openTask !== null ? (
+        <>
+          <TaskWorkerPicker
+            workers={members}
+            selectedIds={addedMemberIds}
+            assignedIds={openTask.assignments.map((person) => person.memberId)}
+            disabled={locked}
+            onChange={setAddedMemberIds}
+          />
+          {taskProblem !== null ? (
+            <Notice tone="error">{taskProblem}</Notice>
+          ) : null}
+          <BottomBar
+            primary={
+              working === "add"
+                ? "添加中…"
+                : addedMemberIds.length === 0
+                  ? "先选人"
+                  : `添加 ${addedMemberIds.length} 人`
+            }
+            busy={locked}
+            disabled={addedMemberIds.length === 0}
+            onPrimary={() => addMembers(openTask)}
+          />
+        </>
+      ) : null}
+      {shown.name === "invite" && openTask !== null ? (
+        <InviteView
+          realName={realName}
+          phone={phone}
+          issued={issued}
+          invites={invitesTaskId === openTask.id ? invites : []}
+          busy={busy}
+          creating={working === "invite"}
+          problem={taskProblem}
+          onRealName={setRealName}
+          onPhone={setPhone}
+          onCreate={() => createInvitation(openTask)}
+          onCopy={() => copyInvitation(openTask)}
+          onRevoke={(invite) => revokeInvitation(openTask, invite)}
+        />
+      ) : null}
+      {shown.name !== "list" && loadError !== null ? (
+        <>
+          <Notice tone="error">{loadError}</Notice>
+          <Button variant="outline" onClick={refresh}>
+            重新读取
+          </Button>
+        </>
+      ) : null}
     </Screen>
   );
 }

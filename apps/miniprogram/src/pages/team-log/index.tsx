@@ -1,16 +1,23 @@
+import { Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import type { TeamDailySummary } from "@construction/domain";
 import {
+  BottomBar,
   Button,
-  ListItem,
+  Card,
   Notice,
+  Numbers,
   PageHeader,
+  Row,
   Screen,
-  Section,
+  SectionTitle,
+  Segmented,
+  Sheet,
+  SignLine,
+  SkeletonRows,
   StateView,
-  StatCards,
-  Subtitle,
+  Status,
 } from "../../components/ui/index";
 import {
   TaskDetails,
@@ -28,7 +35,18 @@ import {
 } from "../../services/team-work";
 import { chinaToday } from "../../services/time";
 import { errorMessage } from "../../services/error-messages";
+import {
+  hoursNumber,
+  logHeadline,
+  peopleByException,
+  personSub,
+  reportText,
+} from "./log-view";
 
+import "./index.scss";
+
+type Viewing = "live" | "saved";
+type Doing = "save" | "copy";
 export default function TeamLog(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
@@ -37,10 +55,10 @@ export default function TeamLog(): JSX.Element {
   const [date, setDate] = useState<string>(chinaToday());
   const [data, setData] = useState<TeamDailySummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<boolean>(false);
+  const [doing, setDoing] = useState<Doing | null>(null);
   const [saved, setSaved] = useState<TeamDailySummary | null>(null);
-  const [viewing, setViewing] = useState<"live" | "saved">("live");
-  const hours = (minutes: number): string => `${(minutes / 60).toFixed(1)} 小时`;
+  const [viewing, setViewing] = useState<Viewing>("live");
+  const busy: boolean = doing !== null;
   useEffect(() => {
     if (teamId === null) return;
     let active: boolean = true;
@@ -59,17 +77,19 @@ export default function TeamLog(): JSX.Element {
         }
       },
       (cause: unknown) => {
-        if (active)
-          setError(errorMessage(cause, "日报生成失败"));
+        if (active) setError(errorMessage(cause, "日报生成失败"));
       },
     );
     return () => {
       active = false;
     };
   }, [teamId, date, revision]);
-  const perform = async (action: () => Promise<void>): Promise<void> => {
+  const perform = async (
+    kind: Doing,
+    action: () => Promise<void>,
+  ): Promise<void> => {
     if (busy) return;
-    setBusy(true);
+    setDoing(kind);
     setError(null);
     try {
       await action();
@@ -78,161 +98,201 @@ export default function TeamLog(): JSX.Element {
       setError(message);
       await Taro.showToast({ icon: "none", title: message });
     } finally {
-      setBusy(false);
+      setDoing(null);
     }
   };
   const shown: TeamDailySummary | null =
     viewing === "saved" && saved !== null ? saved : data;
   if (teamId === null)
     return (
-      <Screen>
-        <PageHeader title="班组日报" />
-        <StateView title="请先选择负责的班组" />
+      <Screen header={<PageHeader title="班组日报" />}>
+        <StateView kind="empty" title="请先选择负责的班组" />
       </Screen>
     );
+  if (shown === null || data === null)
+    return (
+      <Screen header={<PageHeader title="班组日报" />}>
+        <WorkDate value={date} onChange={setDate} />
+        {error ? (
+          <StateView
+            kind="error"
+            title="日报没汇总出来"
+            sub={error}
+            onRetry={refresh}
+          />
+        ) : (
+          <>
+            <View className="sk team-log__sk-sign" />
+            <SkeletonRows rows={3} gap />
+          </>
+        )}
+      </Screen>
+    );
+
+  const headline = logHeadline(shown);
+  const tasks = shown.tasks.filter((task) => task.status !== "CANCELLED");
+  const cancelled = shown.tasks.filter((task) => task.status === "CANCELLED");
   return (
-    <Screen>
-      <PageHeader title="班组日报" />
-      <Subtitle>任务、考勤及安全汇总</Subtitle>
+    <Screen header={<PageHeader title="班组日报" />}>
       <WorkDate value={date} onChange={setDate} />
-      {error && <Notice tone="error">{error}</Notice>}
-      {shown === null || data === null ? (
-        <StateView
-          title={error ? "日报生成失败" : "正在汇总…"}
-          kind={error ? "error" : "loading"}
-          onRetry={refresh}
+      {saved !== null ? (
+        <Segmented
+          options={[
+            { label: "最新汇总", value: "live" },
+            { label: "已保存的", value: "saved" },
+          ]}
+          value={viewing}
+          onChange={(value: Viewing) => {
+            if (busy || value === viewing) return;
+            // 回到实时汇总时重新读取，避免把刚保存的快照当作最新数据。
+            if (value === "live") refresh();
+            else setViewing("saved");
+          }}
         />
+      ) : null}
+      <SignLine title={headline.title} sub={headline.sub} />
+      <Notice>
+        {shown.projectName}，{shown.teamName}，
+        {workTimestamp(shown.generatedAt)}{" "}
+        {viewing === "saved" ? "保存" : "汇总"}
+        {saved !== null && viewing === "live"
+          ? `。上次保存 ${workTimestamp(saved.generatedAt)}`
+          : ""}
+      </Notice>
+      <Numbers
+        gap
+        items={[
+          { label: "正常工时", value: hoursNumber(shown.normalMinutes) },
+          { label: "加班工时", value: hoursNumber(shown.overtimeMinutes) },
+          { label: "未分类", value: hoursNumber(shown.unclassifiedMinutes) },
+        ]}
+      />
+      {shown.snapshotVersion === 1 ? (
+        <Notice>这是旧版日报，工时没有分类，可以重新汇总。</Notice>
+      ) : null}
+      <Sheet gap>
+        <Row
+          title="安全交底"
+          value={`${shown.briefingCount} 条，已确认 ${shown.acknowledgementCount} 人次`}
+          mute
+        />
+        <Row
+          title="隐患"
+          sub={
+            shown.openIssueCount > 0 && shown.resolvedIssueCount > 0
+              ? `已整改 ${shown.resolvedIssueCount} 条`
+              : undefined
+          }
+          status={
+            shown.openIssueCount > 0
+              ? { kind: "warn", text: `${shown.openIssueCount} 条待整改` }
+              : shown.resolvedIssueCount > 0
+                ? { kind: "ok", text: `已整改 ${shown.resolvedIssueCount} 条` }
+                : undefined
+          }
+          value={
+            shown.openIssueCount + shown.resolvedIssueCount === 0
+              ? "没有"
+              : undefined
+          }
+          mute
+        />
+        <Row
+          title="已确认违规"
+          value={
+            shown.confirmedViolationCount === null
+              ? "旧版日报没有记录"
+              : `${shown.confirmedViolationCount} 次`
+          }
+          mute
+        />
+        <Row
+          title="临时用工"
+          sub="加入当天有效任务的人"
+          value={`${shown.temporaryWorkerCount} 人`}
+          mute
+        />
+      </Sheet>
+      <SectionTitle>人员出勤</SectionTitle>
+      {shown.people.length === 0 ? (
+        <Notice>这一天没有考勤汇总记录。</Notice>
       ) : (
-        <>
-          {saved !== null && (
-            <Section
-              title={viewing === "saved" ? "已保存的日报" : "当前实时汇总"}
-              sub={`最近保存：${workTimestamp(saved.generatedAt)}`}
-            >
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => {
-                  // 回到实时汇总时重新读取，避免把刚保存的快照当作最新数据。
-                  if (viewing === "saved") refresh();
-                  else setViewing("saved");
-                }}
-              >
-                {viewing === "saved" ? "查看最新汇总" : "查看已保存内容"}
-              </Button>
-            </Section>
-          )}
-          <Section
-            title={shown.teamName}
-            sub={`${shown.projectName} · 更新于 ${workTimestamp(shown.generatedAt)}`}
-          >
-            <StatCards
-              items={[
-                {
-                  label: "任务完成",
-                  value:
-                    shown.taskCount - shown.cancelledTaskCount === 0
-                      ? "暂无任务"
-                      : `${shown.completedTaskCount}/${shown.taskCount - shown.cancelledTaskCount}`,
-                },
-                { label: "实际出勤", value: `${shown.actualAttendedDays} 人` },
-                { label: "正常工时", value: hours(shown.normalMinutes) },
-                { label: "加班工时", value: hours(shown.overtimeMinutes) },
-                { label: "未分类", value: hours(shown.unclassifiedMinutes) },
-                { label: "实际工时", value: hours(shown.workedMinutes) },
-              ]}
-            />
-            <ListItem
-              primary="临时用工"
-              secondary={`${shown.temporaryWorkerCount} 人加入当天有效任务`}
-            />
-            <ListItem
-              primary="考勤待核查"
-              secondary={`缺卡 ${shown.missingPunchCount} 人次`}
-            />
-            <ListItem
-              primary="安全情况"
-              secondary={`交底 ${shown.briefingCount} 条 · 确认 ${shown.acknowledgementCount} 人次 · 待整改 ${shown.openIssueCount} 条 · 已整改 ${shown.resolvedIssueCount} 条`}
-            />
-            <ListItem
-              primary="已确认违规"
-              secondary={
-                shown.confirmedViolationCount === null
-                  ? "旧版日报未记录"
-                  : `${shown.confirmedViolationCount} 次`
-              }
-            />
-            {shown.snapshotVersion === 1 && (
-              <Notice>旧版日报工时未分类，可重新汇总。</Notice>
-            )}
-          </Section>
-          <Section title="人员出勤">
-            {shown.people.length === 0 ? (
-              <Subtitle>当天无考勤汇总记录。</Subtitle>
-            ) : (
-              shown.people.map((person, index) => (
-                <ListItem
-                  key={`${person.name}-${index}`}
-                  primary={person.name}
-                  secondary={`正常 ${hours(person.normalMinutes)} · 加班 ${hours(person.overtimeMinutes)} · 未分类 ${hours(person.unclassifiedMinutes)}${person.safetyCreditScore === null ? "" : ` · 信用 ${person.safetyCreditScore}`} · ${person.flags.join(" / ") || "无异常"}`}
-                  chip={hours(person.workedMinutes)}
-                  tone={person.flags.length > 0 ? "danger" : undefined}
-                />
-              ))
-            )}
-          </Section>
-          {shown.tasks.filter((task) => task.status !== "CANCELLED").length >
-            0 && (
-            <Section title="工作任务">
-              {shown.tasks
-                .filter((task) => task.status !== "CANCELLED")
-                .map((task) => (
-                  <TaskDetails key={task.id} task={task} />
-                ))}
-            </Section>
-          )}
-          {shown.tasks.some((task) => task.status === "CANCELLED") && (
-            <Section title="已取消任务">
-              {shown.tasks
-                .filter((task) => task.status === "CANCELLED")
-                .map((task) => (
-                  <TaskDetails key={task.id} task={task} />
-                ))}
-            </Section>
-          )}
-          <Button
-            loading={busy}
-            onClick={() => {
-              void perform(async () => {
-                const result = await saveTeamDailySummary(teamId, date);
-                setData(result);
-                setSaved(result);
-                setViewing("saved");
-                await Taro.showToast({ icon: "success", title: "日报已保存" });
-              });
-            }}
-          >
-            {saved ? "重新汇总并保存日报" : "保存当前日报"}
-          </Button>
-          {saved !== null && viewing === "saved" && (
-            <Notice tone="success">汇总已保存，补卡或整改后可重新生成。</Notice>
-          )}
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() => {
-              void perform(async () => {
-                await Taro.setClipboardData({
-                  data: `${shown.workDate} ${shown.projectName} / ${shown.teamName}\n任务完成 ${shown.completedTaskCount}/${shown.taskCount - shown.cancelledTaskCount}，取消 ${shown.cancelledTaskCount}\n出勤 ${shown.actualAttendedDays} 人，实际 ${hours(shown.workedMinutes)}，缺卡 ${shown.missingPunchCount} 人次\n正常 ${hours(shown.normalMinutes)}，加班 ${hours(shown.overtimeMinutes)}，未分类 ${hours(shown.unclassifiedMinutes)}\n临时任务参与 ${shown.temporaryWorkerCount} 人\n交底 ${shown.briefingCount} 条，确认 ${shown.acknowledgementCount} 人次，待整改 ${shown.openIssueCount} 条\n${shown.tasks.filter((task) => task.status !== "CANCELLED").map((task) => `• ${task.title}：${task.assignments.map((person) => person.name).join("、") || "待安排"}`).join("\n")}`,
-                });
-                await Taro.showToast({ icon: "success", title: "已复制" });
-              });
-            }}
-          >
-            复制汇报内容
-          </Button>
-        </>
+        <Sheet>
+          {peopleByException(shown.people).map((person, index) => (
+            <View key={`${person.name}-${index}`} className="team-log__person">
+              <View className="team-log__avatar">
+                {person.name.slice(0, 1)}
+              </View>
+              <View className="team-log__who">
+                <View className="team-log__name">{person.name}</View>
+                <View className="team-log__sub">{personSub(person)}</View>
+              </View>
+              <View className="team-log__right">
+                {person.flags.length > 0 ? (
+                  <Status kind="bad">{person.flags.join("、")}</Status>
+                ) : (
+                  <>
+                    <Text className="num team-log__hours">
+                      {hoursNumber(person.workedMinutes)}
+                    </Text>
+                    小时
+                  </>
+                )}
+              </View>
+            </View>
+          ))}
+        </Sheet>
       )}
+      {tasks.length > 0 ? <SectionTitle>工作任务</SectionTitle> : null}
+      {tasks.map((task, index) => (
+        <Card key={task.id} gap={index > 0}>
+          <TaskDetails task={task} />
+        </Card>
+      ))}
+      {cancelled.length > 0 ? <SectionTitle>已取消的任务</SectionTitle> : null}
+      {cancelled.map((task, index) => (
+        <Card key={task.id} gap={index > 0}>
+          <TaskDetails task={task} />
+        </Card>
+      ))}
+      {saved !== null && viewing === "saved" ? (
+        <Notice>
+          这是保存下来的日报。补卡或整改之后，可以重新汇总再保存。
+        </Notice>
+      ) : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      <BottomBar
+        primary={
+          doing === "save"
+            ? "保存中…"
+            : saved !== null
+              ? "重新汇总并保存"
+              : "保存日报"
+        }
+        busy={busy}
+        onPrimary={() => {
+          void perform("save", async () => {
+            const result = await saveTeamDailySummary(teamId, date);
+            setData(result);
+            setSaved(result);
+            setViewing("saved");
+            await Taro.showToast({ icon: "success", title: "日报已保存" });
+          });
+        }}
+      >
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => {
+            void perform("copy", async () => {
+              await Taro.setClipboardData({ data: reportText(shown) });
+              await Taro.showToast({ icon: "success", title: "已复制" });
+            });
+          }}
+        >
+          复制
+        </Button>
+      </BottomBar>
     </Screen>
   );
 }

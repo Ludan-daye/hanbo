@@ -1,0 +1,52 @@
+// 工作安排：五个视图共用的几样。公共样式在 components/ui/kit.scss，
+// 这里只放公共组件里没有的。components/team-task-form 也用这里的类。
+
+// 行里或底部操作条里的文字操作（撤下、确认退场、作废、取消任务）。
+// 公共的文字按钮没有红色，放进一行里上边距也不对，所以单做。
+.team-work-action {
+  flex-shrink: 0;
+  padding: 24rpx 12rpx;
+  font-size: 34rpx;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 8rpx;
+  color: var(--k);
+}
+.team-work-action--danger {
+  color: var(--bad);
+}
+.team-work-action--off {
+  color: var(--ph);
+}
+
+// 表单行右边的长文字：单行省略，不把左边的名称挤掉
+.team-work-value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+// 包着选择器的表单行：行在选择器里永远是“最后一个”，自己不画分隔线，
+// 分隔线画在外面这一层上。
+.team-work-pick {
+  border-bottom: 2rpx solid var(--hair);
+}
+.team-work-pick:last-child {
+  border-bottom: 0;
+}
+
+// 安排详情里的备注：保留换行，长串字符也能折行
+.team-work-notes {
+  margin-top: 12rpx;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+// 读取中：和小标牌一样高的灰块
+.team-work-sk {
+  height: 180rpx;
+  margin-top: 20rpx;
+  border-radius: 42rpx;
+}
