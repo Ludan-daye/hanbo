@@ -4,18 +4,24 @@ import { useState } from "react";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 
 import {
+  BottomBar,
   Button,
-  Field,
+  Chips,
+  FormInput,
+  FormRow,
   Notice,
-  Section,
-  ListItem,
   PageHeader,
   Screen,
-  Segmented,
+  SectionTitle,
+  Sheet,
   StateView,
 } from "../../components/ui/index";
+import { dateLabel } from "../../components/member-role-editor/person-text";
 import { ProjectGeofence } from "../../components/project-geofence";
-import { ProjectManagerPicker } from "../../components/project-manager-picker";
+import {
+  ProjectManagerPicker,
+  managerSummary,
+} from "../../components/project-manager-picker";
 import {
   validateProjectLocation,
   type ProjectLocation,
@@ -29,6 +35,8 @@ import type {
 import { chinaToday } from "../../services/time";
 import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
+
+import "./index.scss";
 
 const STATUS_OPTIONS: ReadonlyArray<{ label: string; value: ProjectStatus }> = [
   { label: "筹备中", value: "PREPARING" },
@@ -49,12 +57,17 @@ export default function CreateProject(): JSX.Element {
   const [managers, setManagers] = useState<readonly ProjectManagerCandidate[]>(
     [],
   );
+  // 同一个页面里的两屏：表单，和选项目管理员。
+  const [view, setView] = useState<"form" | "managers">("form");
 
   if (companyId === null) {
     return (
-      <Screen>
-        <PageHeader title="新建项目" />
-        <StateView title="无公司" sub="当前账号没有公司管理员身份。" />
+      <Screen header={<PageHeader title="新建项目" />}>
+        <StateView
+          kind="empty"
+          title="没有公司管理权限"
+          sub="这个账号不是公司管理员，不能新建项目。"
+        />
       </Screen>
     );
   }
@@ -67,19 +80,17 @@ export default function CreateProject(): JSX.Element {
     }
     const trimmedName = name.trim();
     if (trimmedName.length === 0 || location === null) {
-      setError("请填写项目名称，并在地图上选择工地范围。");
+      setError("请填写项目名称，并在地图上选择工地位置。");
       return;
     }
     try {
       validateProjectLocation(location);
     } catch (cause: unknown) {
-      setError(
-        errorMessage(cause, "工地位置无效，请重新选择。"),
-      );
+      setError(errorMessage(cause, "工地位置无效，请重新选择。"));
       return;
     }
     if (endsOn !== null && endsOn < startsOn) {
-      setError("截止日期不能早于开工日期。");
+      setError("计划完工不能早于计划开工。");
       return;
     }
     setBusy(true);
@@ -99,110 +110,153 @@ export default function CreateProject(): JSX.Element {
         url: `/pages/company-projects/index?companyId=${companyId}`,
       });
     } catch (e) {
-      setError(errorMessage(e, "项目创建未完成，请稍后重试。"));
+      setError(errorMessage(e, "项目没建成，请稍后重试。"));
     } finally {
       setBusy(false);
     }
   };
 
+  // 四样齐了按钮才亮：名称、管理员、工地位置、地址。
+  const missing = [
+    name.trim().length === 0 ? "项目名称" : null,
+    managers.length === 0 ? "项目管理员" : null,
+    location === null
+      ? "工地位置"
+      : location.address.trim().length === 0
+        ? "详细地址"
+        : null,
+  ].filter((item): item is string => item !== null);
+  const picking = view === "managers";
+
   return (
-    <Screen>
-      <PageHeader title="新建项目" />
-      <Notice>
-        设置工地范围、项目管理员。
-      </Notice>
-      <Section title="基本信息">
-        <Field
-          value={name}
-          label="项目名称 *"
-          placeholder="请输入项目名称"
-          onInput={setName}
+    <Screen
+      header={
+        <PageHeader
+          title={picking ? "项目管理员" : "新建项目"}
+          onBack={picking ? () => setView("form") : undefined}
         />
-      </Section>
+      }
+    >
       <ProjectManagerPicker
         companyId={companyId}
         value={managers}
         onChange={setManagers}
         disabled={busy}
+        active={picking}
+        onDone={() => setView("form")}
       />
-      <Section title="工地位置与考勤范围">
-        <ProjectGeofence
-          value={location}
-          onChange={setLocation}
-          disabled={busy}
-        />
-        {location !== null ? (
-          <Field
-            value={location.address}
-            label="详细地址 *"
-            placeholder="可补充门牌、入口等信息"
-            onInput={(address) => setLocation({ ...location, address })}
-          />
-        ) : null}
-      </Section>
-      <Section title="项目状态与工期">
-        <Segmented
-          options={STATUS_OPTIONS}
-          value={status}
-          onChange={(v) => {
-            setStatus(v);
-          }}
-        />
-        <Picker
-          mode="date"
-          value={startsOn}
-          onChange={(e) =>
-            setStartsOn(String((e.detail as { value: string }).value))
-          }
-        >
-          <ListItem primary={`计划起始 · ${startsOn}`} secondary="点选日期" />
-        </Picker>
-        {endsOn === null ? (
-          <Button
-            variant="outline"
-            onClick={() => {
-              setEndsOn(chinaToday());
-            }}
-          >
-            添加截止日
-          </Button>
-        ) : (
-          <View>
-            <Picker
-              mode="date"
-              value={endsOn}
-              onChange={(e) =>
-                setEndsOn(String((e.detail as { value: string }).value))
-              }
+      {picking ? null : (
+        <>
+          <Sheet gap>
+            <FormInput
+              label="项目名称"
+              required
+              value={name}
+              placeholder="例如：滨江花园二期"
+              disabled={busy}
+              onInput={setName}
+            />
+            <FormRow
+              label="项目管理员"
+              required
+              placeholder="请选择"
+              chevron
+              onClick={busy ? undefined : () => setView("managers")}
             >
-              <ListItem primary={`计划截止 · ${endsOn}`} secondary="点选日期" />
-            </Picker>
+              {managers.length > 0 ? (
+                <View className="create-project__value">
+                  {managerSummary(managers)}
+                </View>
+              ) : undefined}
+            </FormRow>
+          </Sheet>
+          {managers.some((person) => !person.isBound) ? (
+            <Notice>
+              选的人里有还没绑定微信的，建好项目后用邀请码让他绑定。
+            </Notice>
+          ) : null}
+          <SectionTitle>工地位置和考勤范围</SectionTitle>
+          <ProjectGeofence
+            value={location}
+            onChange={setLocation}
+            disabled={busy}
+          />
+          <Sheet gap>
+            {location === null ? (
+              <FormRow label="详细地址" required placeholder="先选工地位置" />
+            ) : (
+              <FormInput
+                label="详细地址"
+                required
+                value={location.address}
+                placeholder="可以补充门牌、入口"
+                disabled={busy}
+                onInput={(address) => setLocation({ ...location, address })}
+              />
+            )}
+            <FormRow label="状态">
+              <Chips
+                onSheet
+                options={STATUS_OPTIONS}
+                selected={[status]}
+                onToggle={(value) => setStatus(value)}
+              />
+            </FormRow>
+            <View className="create-project__pick">
+              <Picker
+                mode="date"
+                value={startsOn}
+                disabled={busy}
+                onChange={(e) =>
+                  setStartsOn(String((e.detail as { value: string }).value))
+                }
+              >
+                <FormRow label="计划开工" value={dateLabel(startsOn)} chevron />
+              </Picker>
+            </View>
+            <View className="create-project__pick">
+              <Picker
+                mode="date"
+                value={endsOn ?? startsOn}
+                disabled={busy}
+                onChange={(e) =>
+                  setEndsOn(String((e.detail as { value: string }).value))
+                }
+              >
+                <FormRow
+                  label="计划完工"
+                  value={endsOn === null ? undefined : dateLabel(endsOn)}
+                  placeholder="可以以后再填"
+                  chevron
+                />
+              </Picker>
+            </View>
+          </Sheet>
+          {endsOn !== null ? (
             <Button
-              variant="outline"
+              variant="text"
               onClick={() => {
                 setEndsOn(null);
               }}
             >
-              移除截止日
+              先不填计划完工
             </Button>
-          </View>
-        )}
-      </Section>
-      <Button
-        loading={busy}
-        disabled={
-          name.trim().length === 0 ||
-          managers.length === 0 ||
-          location === null ||
-          location.address.trim().length === 0
-        }
-        onClick={() => {
-          void submit();
-        }}
-      >
-        {busy ? "提交中…" : "创建项目"}
-      </Button>
-      {error !== null ? <Notice tone="error">{error}</Notice> : null}
+          ) : null}
+          {error !== null ? (
+            <Notice tone="error">{error}</Notice>
+          ) : missing.length > 0 ? (
+            <Notice>{`还差${missing.join("、")}，填齐了才能创建。`}</Notice>
+          ) : null}
+          <BottomBar
+            primary={busy ? "创建中…" : "创建项目"}
+            busy={busy}
+            disabled={missing.length > 0}
+            onPrimary={() => {
+              void submit();
+            }}
+          />
+        </>
+      )}
     </Screen>
   );
 }

@@ -1,28 +1,36 @@
-import { Picker, Switch, View } from "@tarojs/components";
+import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
+import { MemberRoleEditor } from "../../components/member-role-editor";
 import {
-  Button,
-  Field,
-  ListItem,
+  ChipsRow,
+  DateRow,
+  SelectRow,
+} from "../../components/member-role-editor/form-rows";
+import {
+  BottomBar,
+  FormInput,
+  FormSwitch,
   Notice,
   PageHeader,
   Screen,
-  Section,
-  Segmented,
+  SectionTitle,
+  Sheet,
   StateView,
 } from "../../components/ui/index";
 import { useManagedProjectId } from "../../hooks/use-management-scope";
 import { useSessionGuard } from "../../hooks/use-session-guard";
-import { MemberRoleEditor } from "../../components/member-role-editor";
 import {
   memberRoleAssignments,
   memberRoleFields,
 } from "../../services/member-roles";
-import type { MemberRoleAssignment } from "../../services/management.types";
+import type {
+  MemberRoleAssignment,
+  MemberStatus,
+  ProjectTeam,
+} from "../../services/management.types";
 import { fetchProjectTeams } from "../../services/management";
-import type { ProjectTeam } from "../../services/management.types";
 import {
   createPerson,
   fetchPerson,
@@ -47,6 +55,17 @@ const emptyPerson = (enteredAt: string): PersonForm => ({
   expectedUpdatedAt: null,
   expectedProfileUpdatedAt: null,
 });
+
+const STATUS_OPTIONS: ReadonlyArray<{
+  readonly value: MemberStatus;
+  readonly label: string;
+}> = [
+  { value: "ACTIVE", label: "在场" },
+  { value: "SUSPENDED", label: "暂停" },
+  { value: "EXITED", label: "已退场" },
+];
+const PHONE = /^1\d{10}$/;
+
 export default function PersonFormPage(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
@@ -62,8 +81,11 @@ export default function PersonFormPage(): JSX.Element {
   const [teams, setTeams] = useState<readonly ProjectTeam[]>([]);
   const [loadFailed, setLoadFailed] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
+  const [attempt, setAttempt] = useState<number>(0);
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  // 点过保存、没通过检查之后，把有问题的行标出来。
+  const [checked, setChecked] = useState<boolean>(false);
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
@@ -118,9 +140,7 @@ export default function PersonFormPage(): JSX.Element {
       (failure: unknown) => {
         if (!cancelled) {
           setLoadFailed(true);
-          setError(
-            errorMessage(failure, "读取人员资料失败"),
-          );
+          setError(errorMessage(failure, "读取人员资料失败"));
           setLoading(false);
         }
       },
@@ -128,7 +148,13 @@ export default function PersonFormPage(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [projectId, memberId, initialTeamId]);
+  }, [projectId, memberId, initialTeamId, attempt]);
+  const reload = (): void => {
+    setLoadFailed(false);
+    setError(null);
+    setLoading(true);
+    setAttempt(attempt + 1);
+  };
   const submit = async (): Promise<void> => {
     if (!projectId || busy) return;
     let body: PersonForm;
@@ -151,13 +177,14 @@ export default function PersonFormPage(): JSX.Element {
       };
       if (
         !body.displayName ||
-        !/^1\d{10}$/.test(body.phone) ||
+        !PHONE.test(body.phone) ||
         !body.projectRoleLabel ||
         !body.workType
       )
-        throw new Error("请填写姓名、11 位手机号、工作种类和项目岗位。");
+        throw new Error("请填写姓名、11 位手机号、工种和本项目岗位。");
     } catch (failure: unknown) {
-      setError(errorMessage(failure, "请检查项目职级。"));
+      setChecked(true);
+      setError(errorMessage(failure, "请检查本项目的身份。"));
       return;
     }
     if (memberId && body.status !== "ACTIVE") {
@@ -181,161 +208,167 @@ export default function PersonFormPage(): JSX.Element {
       setBusy(false);
     }
   };
+
+  const header = <PageHeader title={memberId ? "成员资料" : "添加成员"} />;
+  if (!projectId)
+    return (
+      <Screen header={header}>
+        <StateView kind="empty" title="请从项目人员页面进入" />
+      </Screen>
+    );
+  if (loading)
+    return (
+      <Screen header={header}>
+        <StateView kind="loading" title="正在读取成员资料" />
+      </Screen>
+    );
+  if (loadFailed)
+    return (
+      <Screen header={header}>
+        <StateView
+          kind="error"
+          title="成员资料没读到"
+          sub={error ?? "请返回人员列表后重新进入。"}
+          onRetry={reload}
+        />
+      </Screen>
+    );
+
+  // 只是工人时，才需要填岗位、选考勤班组；班组长和管理员的班组由身份决定。
+  const onlyWorker = !roles.some((role) => role.roleCode !== "WORKER");
+  // 管理人员档案的岗位不由这里填。
+  const asksJob = onlyWorker && form.participantType !== "MANAGER";
+  const team = teams.find((row) => row.id === form.teamId);
   return (
-    <Screen>
-      <PageHeader title={memberId ? "成员资料" : "添加项目成员"} />
-      {!projectId ? (
-        <StateView title="请从项目人员页面进入" />
-      ) : loading ? (
-        <StateView title="加载中…" />
-      ) : loadFailed ? (
-        <StateView title="无法读取成员资料" sub="请返回人员列表后重新进入。" />
-      ) : (
-        <>
-          <Notice>建档后生成邀请码，由本人微信绑定。</Notice>
-          <Section title="基本资料">
-            <Field
-              label="姓名 *"
-              value={form.displayName}
-              placeholder="请输入成员姓名"
-              onInput={(displayName) => setForm({ ...form, displayName })}
-              maxLength={30}
-            />
-            <Field
-              label="手机号 *"
-              value={form.phone}
-              placeholder="请输入 11 位手机号"
-              type="number"
-              maxLength={11}
-              onInput={(phone) => setForm({ ...form, phone })}
-            />
-            <Field
-              label="工作种类 / 工种 *"
-              value={form.workType}
-              placeholder="例如：钢筋工、木工、电工、安全管理"
-              maxLength={40}
-              onInput={(workType) => {
-                setForm({ ...form, workType });
-                if (workerJob === form.workType) setWorkerJob(workType);
-              }}
-            />
-            {!roles.some((role) => role.roleCode !== "WORKER") ? (
-              <Field
-                label="本项目岗位 *"
-                value={workerJob}
-                placeholder="例如：钢筋工、木工"
-                onInput={setWorkerJob}
-              />
-            ) : null}
-          </Section>
-          <MemberRoleEditor
-            value={roles}
-            onChange={setRoles}
-            teams={teams}
-            disabled={busy}
+    <Screen header={header}>
+      <Sheet gap>
+        <FormInput
+          label="姓名"
+          required
+          value={form.displayName}
+          placeholder="请输入姓名"
+          maxLength={30}
+          error={checked && !form.displayName.trim()}
+          onInput={(displayName) => setForm({ ...form, displayName })}
+        />
+        <FormInput
+          label="手机号"
+          required
+          value={form.phone}
+          placeholder="11 位手机号"
+          type="number"
+          maxLength={11}
+          error={checked && !PHONE.test(form.phone.trim())}
+          onInput={(phone) => setForm({ ...form, phone })}
+        />
+        <FormInput
+          label="工种"
+          required
+          value={form.workType}
+          placeholder="例如：钢筋工、电工"
+          maxLength={40}
+          error={checked && !form.workType.trim()}
+          onInput={(workType) => {
+            setForm({ ...form, workType });
+            if (workerJob === form.workType) setWorkerJob(workType);
+          }}
+        />
+      </Sheet>
+
+      <SectionTitle>在本项目</SectionTitle>
+      <Sheet>
+        <MemberRoleEditor
+          value={roles}
+          onChange={setRoles}
+          teams={teams}
+          disabled={busy}
+          invalid={checked}
+        />
+        {asksJob ? (
+          <FormInput
+            label="本项目岗位"
+            required
+            value={workerJob}
+            placeholder="例如：钢筋工、木工"
+            error={checked && !workerJob.trim()}
+            onInput={setWorkerJob}
           />
-          <Section title="项目安排">
-            <Picker
-              mode="date"
-              value={formatChinaDate(form.enteredAt)}
-              end={chinaToday()}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  enteredAt: new Date(
-                    `${event.detail.value}T00:00:00+08:00`,
-                  ).toISOString(),
-                })
-              }
-            >
-              <ListItem
-                primary="进场日期"
-                secondary={formatChinaDate(form.enteredAt)}
-                chip="选择"
-              />
-            </Picker>
-            {form.status === "EXITED" && form.exitedAt !== null ? (
-              <Picker
-                mode="date"
-                value={formatChinaDate(form.exitedAt)}
-                start={formatChinaDate(form.enteredAt)}
-                end={chinaToday()}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    exitedAt: new Date(
-                      `${event.detail.value}T23:59:59+08:00`,
-                    ).toISOString(),
-                  })
-                }
-              >
-                <ListItem
-                  primary="退场日期"
-                  secondary={formatChinaDate(form.exitedAt)}
-                  chip="选择"
-                />
-              </Picker>
-            ) : null}
-            {!roles.some((role) => role.roleCode !== "WORKER") ? (
-              <Picker
-                mode="selector"
-                range={["暂不分配", ...teams.map((row) => row.name)]}
-                value={teams.findIndex((row) => row.id === form.teamId) + 1}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    teamId: teams[Number(event.detail.value) - 1]?.id ?? null,
-                  })
-                }
-              >
-                <ListItem
-                  primary="所属考勤班组"
-                  secondary={
-                    teams.find((row) => row.id === form.teamId)?.name ??
-                    "暂不分配"
-                  }
-                  chip="选择"
-                />
-              </Picker>
-            ) : null}
-            <View className="form-toggle">
-              <View>参与考勤</View>
-              <Switch
-                checked={form.requiresAttendance}
-                color="#246bfd"
-                onChange={(event) =>
-                  setForm({ ...form, requiresAttendance: event.detail.value })
-                }
-              />
-            </View>
-            <Segmented
-              options={[
-                { value: "ACTIVE", label: "在场" },
-                { value: "SUSPENDED", label: "暂停" },
-                { value: "EXITED", label: "已退场" },
-              ]}
-              value={form.status}
-              onChange={(status) =>
+        ) : null}
+        {onlyWorker ? (
+          <SelectRow
+            label="班组"
+            options={["暂不分配", ...teams.map((row) => row.name)]}
+            index={teams.findIndex((row) => row.id === form.teamId) + 1}
+            value={team?.name ?? ""}
+            placeholder="暂不分配"
+            onChange={(picked) =>
+              setForm({ ...form, teamId: teams[picked - 1]?.id ?? null })
+            }
+          />
+        ) : null}
+        <DateRow
+          label="进场日期"
+          value={formatChinaDate(form.enteredAt)}
+          end={chinaToday()}
+          onChange={(value) =>
+            setForm({
+              ...form,
+              enteredAt: new Date(`${value}T00:00:00+08:00`).toISOString(),
+            })
+          }
+        />
+        <FormSwitch
+          label="参与考勤"
+          checked={form.requiresAttendance}
+          onChange={(requiresAttendance) =>
+            setForm({ ...form, requiresAttendance })
+          }
+        />
+        {memberId ? (
+          <ChipsRow
+            label="状态"
+            options={STATUS_OPTIONS}
+            selected={[form.status]}
+            onToggle={(status) => {
+              if (status !== form.status)
                 setForm({
                   ...form,
                   status,
                   exitedAt:
                     status === "EXITED" ? new Date().toISOString() : null,
-                })
-              }
-            />
-          </Section>
-          <Button
-            loading={busy}
-            onClick={() => {
-              void submit();
+                });
             }}
-          >
-            保存人员资料
-          </Button>
-        </>
-      )}
+          />
+        ) : null}
+        {form.status === "EXITED" && form.exitedAt !== null ? (
+          <DateRow
+            label="退场日期"
+            value={formatChinaDate(form.exitedAt)}
+            start={formatChinaDate(form.enteredAt)}
+            end={chinaToday()}
+            onChange={(value) =>
+              setForm({
+                ...form,
+                exitedAt: new Date(`${value}T23:59:59+08:00`).toISOString(),
+              })
+            }
+          />
+        ) : null}
+      </Sheet>
+      <Notice>
+        <View>身份可以选几个。兼任共用一份档案，考勤和评分不重复统计。</View>
+        {memberId ? null : (
+          <View>建档后到“邀请绑定”生成邀请码，交给本人用微信绑定。</View>
+        )}
+      </Notice>
       {error ? <Notice tone="error">{error}</Notice> : null}
+      <BottomBar
+        primary={busy ? "保存中…" : "保存"}
+        busy={busy}
+        onPrimary={() => {
+          void submit();
+        }}
+      />
     </Screen>
   );
 }

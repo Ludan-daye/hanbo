@@ -1,0 +1,13 @@
+// 月度 Excel。公共样式在 components/ui/kit.scss，这里只有行里的“下载并打开”。
+
+// 行里的文字按钮：公共的文字按钮带上边距，放不进一行里。
+.monthly-export__link {
+  flex-shrink: 0;
+  font-size: 34rpx;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 8rpx;
+}
+.monthly-export__link--off {
+  color: var(--ph);
+}

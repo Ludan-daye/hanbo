@@ -1,20 +1,47 @@
+import { Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { View } from "@tarojs/components";
 import { useEffect, useState } from "react";
+
+import {
+  dayLabel,
+  personNumbers,
+  personSummary,
+  type ReportPeriod,
+  type ReportRow,
+} from "../pages/reports/view-model";
+import { displayProjectRole } from "../routing/features";
+import { errorMessage } from "../services/error-messages";
+import type {
+  ReportPersonDay,
+  ReportPersonDetail,
+} from "../services/management.types";
 import {
   fetchReportPerson,
   saveProjectEvaluation,
 } from "../services/report-details";
-import type { ReportPersonDetail } from "../services/management.types";
 import {
+  BottomBar,
   Button,
-  Field,
-  ListItem,
+  FormArea,
+  FormInput,
+  KV,
+  Links,
   Notice,
+  Numbers,
+  PRESS,
+  Row,
+  SectionTitle,
+  Sheet,
+  SignLine,
+  SkeletonRows,
   StateView,
-  Subtitle,
+  Status,
+  Timeline,
+  type StatusKind,
+  type TimelineItem,
 } from "./ui/index";
-import { errorMessage } from "../services/error-messages";
+
+import "../pages/reports/report.scss";
 
 type Props = {
   readonly projectId: string;
@@ -23,17 +50,112 @@ type Props = {
   readonly from: string;
   readonly to: string;
   readonly onChanged: () => void;
+  /** 报表里这个人的几行（几个班组），顶上的结论和数字从这里算。 */
+  readonly rows: readonly ReportRow[];
+  readonly period: ReportPeriod;
 };
+type DayRecord = ReportPersonDay["records"][number];
+
 const time = (iso: string): string =>
   new Date(Date.parse(iso) + 8 * 3600000)
     .toISOString()
     .slice(0, 16)
     .replace("T", " ");
+/** 这一天里的打卡只写几点几分；跨到别的日子（夜班）带上日期。 */
+const clock = (iso: string, date: string): string => {
+  const text = time(iso);
+  return text.startsWith(date) ? text.slice(11) : text.slice(5);
+};
+const hours = (minutes: number): string => (minutes / 60).toFixed(1);
 const makeupStatus: Readonly<Record<string, string>> = {
   PENDING: "待审批",
   APPROVED: "已通过",
   REJECTED: "已驳回",
 };
+const recordText = (record: DayRecord): string =>
+  record.source === "MAKEUP"
+    ? "批准补卡"
+    : record.isValid
+      ? "核验通过"
+      : "核验未通过";
+
+/** 一天收成一行时右边的状态：有问题说问题，没问题说工时。 */
+const dayStatus = (
+  day: ReportPersonDay,
+): { readonly kind: StatusKind; readonly text: string } => {
+  if (day.flags.length > 0) {
+    const all = day.flags.join("、");
+    return {
+      kind: "bad",
+      text: all.length <= 8 ? all : `${day.flags[0]}等 ${day.flags.length} 项`,
+    };
+  }
+  if (day.isPendingVerification) return { kind: "warn", text: "退场待补齐" };
+  if (day.workedMinutes > 0)
+    return { kind: "ok", text: `${hours(day.workedMinutes)} 小时` };
+  return { kind: "idle", text: day.isScheduled ? "没有记工" : "不排班" };
+};
+
+/** 这一天的时点：排班里的每个时点一行，排班以外的打卡跟在后面。 */
+const dayTimeline = (day: ReportPersonDay): ReadonlyArray<TimelineItem> => {
+  const missed = day.flags.some((flag) => flag === "缺卡" || flag === "缺勤");
+  return [
+    ...day.points.map((point): TimelineItem => {
+      const records = day.records.filter(
+        (record) => record.pointCode === point.code,
+      );
+      const last = records.at(-1);
+      return {
+        key: point.code,
+        state: records.some((record) => record.isValid) ? "done" : "todo",
+        title: `${point.label} ${point.time}`,
+        sub: [
+          ...(records.length === 1
+            ? [recordText(records[0])]
+            : records.map(
+                (record) =>
+                  `${clock(record.occurredAt, day.date)} ${recordText(record)}`,
+              )),
+          point.graceMins > 0 ? `宽限 ${point.graceMins} 分钟` : "",
+        ]
+          .filter(Boolean)
+          .join("，"),
+        right: last ? (
+          <Text className="rpt-day__time num">
+            {clock(last.occurredAt, day.date)}
+          </Text>
+        ) : (
+          <Text className={missed ? "rpt-day__none" : "rpt-day__wait"}>
+            没有记录
+          </Text>
+        ),
+      };
+    }),
+    ...day.records
+      .filter(
+        (record) =>
+          !day.points.some((point) => point.code === record.pointCode),
+      )
+      .map(
+        (record): TimelineItem => ({
+          key: record.id,
+          state: record.isValid ? "done" : "todo",
+          title: "排班以外的打卡",
+          sub: recordText(record),
+          right: (
+            <Text className="rpt-day__time num">
+              {clock(record.occurredAt, day.date)}
+            </Text>
+          ),
+        }),
+      ),
+  ];
+};
+
+/**
+ * 个人考勤明细：这段时间的结论、信用和评分、每天的记录。
+ * 放在报表页的“个人”视图里，页头和返回由报表页管。
+ */
 export const ReportPerson = ({
   projectId,
   memberId,
@@ -41,6 +163,8 @@ export const ReportPerson = ({
   from,
   to,
   onChanged,
+  rows,
+  period,
 }: Props): JSX.Element => {
   const [detail, setDetail] = useState<ReportPersonDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +176,7 @@ export const ReportPerson = ({
   const [comment, setComment] = useState<string>("");
   const [editing, setEditing] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
+  const [allStats, setAllStats] = useState<boolean>(false);
   useEffect(() => {
     let cancelled = false;
     setDetail(null);
@@ -68,10 +193,7 @@ export const ReportPerson = ({
         setComment(data.person.evaluation?.comment ?? "");
       })
       .catch((failure: unknown) => {
-        if (!cancelled)
-          setError(
-            errorMessage(failure, "人员明细加载失败。"),
-          );
+        if (!cancelled) setError(errorMessage(failure, "人员明细加载失败。"));
       });
     return () => {
       cancelled = true;
@@ -80,7 +202,7 @@ export const ReportPerson = ({
   const save = async (): Promise<void> => {
     if (detail === null || saving) return;
     if (!/^\d{1,3}$/.test(score) || Number(score) > 100) {
-      setError("请输入 0–100 的整数评分。");
+      setError("请输入 0 到 100 的整数评分。");
       return;
     }
     setSaving(true);
@@ -97,206 +219,303 @@ export const ReportPerson = ({
       setEditing(false);
       onChanged();
     } catch (failure: unknown) {
-      setError(
-        errorMessage(failure, "评分保存失败，请刷新后重试。"),
-      );
+      setError(errorMessage(failure, "评分保存失败，请刷新后重试。"));
     } finally {
       setSaving(false);
     }
   };
+  const reload = (): void => {
+    setEditing(false);
+    setRevision(revision + 1);
+  };
+  const openMap = (record: DayRecord, name: string): void => {
+    void Taro.openLocation({
+      latitude: Number(record.latitude),
+      longitude: Number(record.longitude),
+      name,
+      scale: 16,
+    }).catch((failure: unknown) => {
+      // 人已经滑到某一天里了，页面上方的提示看不到，再弹一下。
+      const message = errorMessage(failure, "地图打开失败");
+      setError(message);
+      void Taro.showToast({ icon: "none", title: message });
+    });
+  };
+
+  const first = rows[0];
+  const summary = personSummary(rows, period, from);
+  const numbers = personNumbers(rows);
+  const person = detail?.person ?? first;
+  const evaluation = detail?.person.evaluation ?? null;
+  const days =
+    detail === null
+      ? []
+      : [...detail.days].sort((a, b) => b.date.localeCompare(a.date));
   return (
-    <View className="report-person-detail">
-      {error ? (
-        <StateView
-          title="操作未完成"
-          sub={error}
-          onRetry={() => {
-            setEditing(false);
-            setRevision(revision + 1);
-          }}
-        />
-      ) : null}
-      {detail === null && !error ? <StateView title="加载人员明细…" /> : null}
-      {detail ? (
-        <View>
-          <Subtitle>
-            {detail.person.projectName} ·{" "}
-            {detail.person.workType ?? "工种未填写"} ·{" "}
-            {detail.person.phone.replace(/^(\d{3})\d+(\d{4})$/, "$1****$2")}
-          </Subtitle>
-          {detail.person.safetyCreditScore !== null && (
-            <ListItem
-              primary={`安全信用 · ${detail.person.safetyCreditScore} / 100`}
-              secondary={`跨公司累计 · 截止 ${detail.person.safetyCreditAsOf === null ? to : time(detail.person.safetyCreditAsOf)}`}
-            />
-          )}
-          <ListItem
-            primary={`项目评分 · ${detail.person.evaluation === null ? "未评分" : `${detail.person.evaluation.score} / 100`}`}
-            secondary={
-              detail.person.evaluation === null
-                ? "尚无管理人员评价"
-                : `${detail.person.evaluation.reviewerName} · ${time(detail.person.evaluation.reviewedAt)}`
-            }
+    <>
+      <SignLine title={summary.title} sub={summary.sub} />
+      <Notice>
+        {[
+          person.projectName,
+          person.workType ?? "工种没填",
+          displayProjectRole(person.projectRoleLabel),
+          person.projectKind === "REPAIR" ? "零星维修" : "常规施工",
+          person.isTemporary ? "临时用工" : "常规用工",
+          person.phone.replace(/^(\d{3})\d+(\d{4})$/, "$1****$2"),
+        ]
+          .filter((part, index, all) => all.indexOf(part) === index)
+          .join("，")}
+      </Notice>
+
+      {detail === null ? (
+        error ? (
+          <StateView
+            kind="error"
+            title="这个人的明细没读到"
+            sub={error}
+            onRetry={reload}
           />
-          {detail.person.evaluation?.comment ? (
-            <Notice>{detail.person.evaluation.comment}</Notice>
-          ) : null}
-          <Subtitle>项目评价独立于考勤，修改留痕。</Subtitle>
-          {detail.canEvaluate && !editing ? (
-            <Button variant="outline" onClick={() => setEditing(true)}>
-              {detail.person.evaluation === null
-                ? "添加项目评分"
-                : "修改项目评分"}
-            </Button>
+        ) : (
+          <View aria-label="正在读取人员明细">
+            <SkeletonRows rows={2} gap />
+            <SkeletonRows rows={3} gap />
+          </View>
+        )
+      ) : (
+        <>
+          <Sheet gap>
+            {detail.person.safetyCreditScore !== null ? (
+              <Row
+                title="安全信用"
+                sub={`截止 ${detail.person.safetyCreditAsOf === null ? to : time(detail.person.safetyCreditAsOf)}`}
+              >
+                <View>
+                  <Text className="num">{detail.person.safetyCreditScore}</Text>{" "}
+                  / 100
+                </View>
+              </Row>
+            ) : null}
+            <Row
+              title="项目评分"
+              sub={
+                evaluation === null
+                  ? "还没有管理人员评过"
+                  : `${evaluation.reviewerName}，${time(evaluation.reviewedAt).slice(0, 10)}`
+              }
+              value={evaluation === null ? "还没评" : undefined}
+              mute={evaluation === null}
+            >
+              {evaluation === null ? null : (
+                <View>
+                  <Text className="num">{evaluation.score}</Text> 分
+                </View>
+              )}
+              {detail.canEvaluate && !editing ? (
+                <View
+                  className="rpt-link ui-press"
+                  {...PRESS}
+                  onClick={() => setEditing(true)}
+                >
+                  {evaluation === null ? "去评分" : "修改"}
+                </View>
+              ) : null}
+            </Row>
+          </Sheet>
+          {evaluation?.comment && !editing ? (
+            <Notice>评价：{evaluation.comment}</Notice>
           ) : null}
           {editing ? (
-            <View>
-              <Field
-                label="项目评分（0–100）"
+            <Sheet gap>
+              <FormInput
+                label="项目评分"
+                required
+                type="number"
+                maxLength={3}
                 value={score}
+                placeholder="0 到 100"
+                disabled={saving}
                 onInput={setScore}
-                placeholder="例如 90"
               />
-              <Field
-                maxLength={1000}
+              <FormArea
                 label="评价说明"
                 value={comment}
-                onInput={setComment}
-                placeholder="工作表现、配合情况及改进建议"
-              />
-              <Button
+                placeholder="工作表现、配合情况、改进建议"
+                maxLength={1000}
                 disabled={saving}
-                onClick={() => {
-                  void save();
-                }}
-              >
-                {saving ? "保存中…" : "保存评分"}
-              </Button>
+                onInput={setComment}
+              />
+            </Sheet>
+          ) : null}
+          <Notice>
+            {detail.person.safetyCreditScore !== null
+              ? "安全信用是跨公司累计的。"
+              : ""}
+            项目评分和考勤分开算，每次修改都会留下记录。
+          </Notice>
+          {error ? (
+            <>
+              <Notice tone="error">{error}</Notice>
+              <Links>
+                <Button variant="text" disabled={saving} onClick={reload}>
+                  重新读取
+                </Button>
+              </Links>
+            </>
+          ) : null}
+
+          {rows.length > 1 ? (
+            <Sheet gap>
+              {rows.map((row) => (
+                <Row
+                  key={row.teamId ?? "direct"}
+                  title={row.teamName ?? "项目直属"}
+                  sub={`正常 ${hours(row.normalMinutes)}，加班 ${hours(row.overtimeMinutes)}，未分类 ${hours(row.unclassifiedMinutes)} 小时`}
+                  value={row.requiresAttendance ? undefined : "免考勤"}
+                  mute
+                />
+              ))}
+            </Sheet>
+          ) : first.requiresAttendance ? null : (
+            <Notice>免考勤的成员，不算应出勤。</Notice>
+          )}
+          <Numbers items={numbers.top} gap />
+          {allStats ? (
+            <View className="m-fade">
+              <Numbers items={numbers.rest} wrap gap />
+            </View>
+          ) : null}
+
+          <SectionTitle
+            action={allStats ? "收起统计" : "全部统计"}
+            onAction={() => setAllStats((value) => !value)}
+          >
+            {`每天，共 ${days.length} 天`}
+          </SectionTitle>
+          {days.length === 0 ? (
+            <Notice>这段时间没有记录。</Notice>
+          ) : (
+            <Sheet>
+              {days.map((day) => {
+                const open = openDate === day.date;
+                return [
+                  <Row
+                    key={day.date}
+                    title={dayLabel(day.date)}
+                    status={dayStatus(day)}
+                    chevron={!open}
+                    onClick={() => setOpenDate(open ? null : day.date)}
+                  />,
+                  open ? (
+                    <View key={`${day.date}-detail`} className="rpt-day m-fade">
+                      <Timeline items={dayTimeline(day)} />
+                      <View className="rpt-day__body">
+                        {day.isPendingVerification ? (
+                          <View className="rpt-day__warn">退场记录待补齐</View>
+                        ) : null}
+                        {!day.records.length && day.workedMinutes > 0 ? (
+                          <View className="rpt-day__sub">
+                            这天的工时是历史导入的，没有原始打卡记录。
+                          </View>
+                        ) : null}
+                        <KV label="排班" value={day.planName} />
+                        <KV
+                          label="班组"
+                          value={`${day.teamName ?? "项目直属"}，${day.isScheduled ? "应出勤" : "不排班"}`}
+                        />
+                        <KV
+                          label="工时"
+                          value={`正常 ${hours(day.normalMinutes)}，加班 ${hours(day.overtimeMinutes)}，未分类 ${hours(day.unclassifiedMinutes)}`}
+                        />
+                        {day.records.length > 0 ? (
+                          <View className="rpt-day__head">打卡位置</View>
+                        ) : null}
+                        {day.records.map((record) => {
+                          const located =
+                            record.latitude !== null &&
+                            record.longitude !== null;
+                          return (
+                            <View
+                              key={`location-${record.id}`}
+                              className={`rpt-day__item${located ? " ui-press" : ""}`}
+                              {...(located ? PRESS : {})}
+                              onClick={
+                                located
+                                  ? () => openMap(record, person.projectName)
+                                  : undefined
+                              }
+                            >
+                              <View className="rpt-day__text">
+                                <View>
+                                  {clock(record.occurredAt, day.date)}，
+                                  {record.isValid ? "有效" : "未通过"}
+                                </View>
+                                <View className="rpt-day__sub">
+                                  {located
+                                    ? `${record.latitude}, ${record.longitude}${record.locationAccuracyM === null ? "" : `，精度 ${record.locationAccuracyM} 米`}`
+                                    : "没有定位"}
+                                </View>
+                              </View>
+                              {located ? (
+                                <View className="rpt-link">看地图</View>
+                              ) : null}
+                            </View>
+                          );
+                        })}
+                        {day.makeups.length > 0 ? (
+                          <View className="rpt-day__head">补卡</View>
+                        ) : null}
+                        {day.makeups.map((makeup) => (
+                          <View key={makeup.id} className="rpt-day__item">
+                            <View className="rpt-day__text">
+                              <View>
+                                {makeup.pointLabel}，
+                                {clock(makeup.requestedOccurredAt, day.date)}
+                              </View>
+                              <View className="rpt-day__sub">
+                                申请原因：{makeup.reason}
+                              </View>
+                              {makeup.approverName ? (
+                                <View className="rpt-day__sub">
+                                  {makeup.approverName}
+                                  {makeup.approvedAt
+                                    ? ` ${time(makeup.approvedAt).slice(5)} `
+                                    : " "}
+                                  审批：
+                                  {makeup.approvalReason ?? "没有写意见"}
+                                </View>
+                              ) : null}
+                            </View>
+                            <Status>
+                              {makeupStatus[makeup.status] ?? "处理中"}
+                            </Status>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null,
+                ];
+              })}
+            </Sheet>
+          )}
+          {editing ? (
+            <BottomBar
+              primary={saving ? "保存中…" : "保存评分"}
+              busy={saving}
+              onPrimary={() => {
+                void save();
+              }}
+            >
               <Button
-                variant="outline"
+                variant="text"
                 disabled={saving}
                 onClick={() => setEditing(false)}
               >
                 取消
               </Button>
-            </View>
+            </BottomBar>
           ) : null}
-          <View className="report-section-title">
-            逐日记录 · {detail.days.length} 天
-          </View>
-          {detail.days.map((day) => (
-            <View key={day.date}>
-              <ListItem
-                primary={`${day.date} · ${(day.workedMinutes / 60).toFixed(1)}h`}
-                secondary={`${day.teamName ?? "项目直属"} · ${day.isScheduled ? "应出勤" : "非应勤"} · ${day.flags.join("、") || "暂无异常"}`}
-                chip={openDate === day.date ? "收起" : "展开"}
-                onClick={() =>
-                  setOpenDate(openDate === day.date ? null : day.date)
-                }
-              />
-              {openDate === day.date ? (
-                <View className="report-day-detail">
-                  <Subtitle>
-                    正常 {(day.normalMinutes / 60).toFixed(1)}h · 加班{" "}
-                    {(day.overtimeMinutes / 60).toFixed(1)}h · 未分类{" "}
-                    {(day.unclassifiedMinutes / 60).toFixed(1)}h
-                  </Subtitle>
-                  {day.isPendingVerification && <Notice>退场记录待补齐</Notice>}
-                  <Subtitle>排班：{day.planName}（北京时间）</Subtitle>
-                  {day.points.map((point) => (
-                    <View key={point.code}>
-                      <View className="report-point-label">
-                        {point.label} · 要求 {point.time} · 宽限{" "}
-                        {point.graceMins} 分钟
-                      </View>
-                      {day.records
-                        .filter((record) => record.pointCode === point.code)
-                        .map((record) => (
-                          <Subtitle key={record.id}>
-                            {time(record.occurredAt)} ·{" "}
-                            {record.source === "MAKEUP"
-                              ? "批准补卡"
-                              : record.isValid
-                                ? "核验通过"
-                                : "核验未通过"}
-                          </Subtitle>
-                        ))}
-                      {!day.records.some(
-                        (record) => record.pointCode === point.code,
-                      ) ? (
-                        <Subtitle>暂无打卡记录</Subtitle>
-                      ) : null}
-                    </View>
-                  ))}
-                  {day.records
-                    .filter(
-                      (record) =>
-                        !day.points.some(
-                          (point) => point.code === record.pointCode,
-                        ),
-                    )
-                    .map((record) => (
-                      <Subtitle key={record.id}>
-                        其他时点 {record.pointCode} · {time(record.occurredAt)}{" "}
-                        · {record.isValid ? "有效" : "未通过"}
-                      </Subtitle>
-                    ))}
-                  <View className="report-section-title">打卡位置</View>
-                  {day.records.map((record) => (
-                    <ListItem
-                      key={`location-${record.id}`}
-                      primary={time(record.occurredAt)}
-                      secondary={
-                        record.latitude === null || record.longitude === null
-                          ? "无定位证据"
-                          : `${record.latitude}, ${record.longitude}${record.locationAccuracyM === null ? "" : ` · 精度 ${record.locationAccuracyM}m`} · ${record.isValid ? "有效" : "未通过"}`
-                      }
-                      chip={
-                        record.latitude !== null && record.longitude !== null
-                          ? "地图"
-                          : undefined
-                      }
-                      onClick={
-                        record.latitude !== null && record.longitude !== null
-                          ? () => {
-                              void Taro.openLocation({
-                                latitude: Number(record.latitude),
-                                longitude: Number(record.longitude),
-                                name: detail.person.projectName,
-                                scale: 16,
-                              }).catch((failure: unknown) =>
-                                setError(
-                                  errorMessage(failure, "地图打开失败"),
-                                ),
-                              );
-                            }
-                          : undefined
-                      }
-                    />
-                  ))}
-                  {day.makeups.map((makeup) => (
-                    <Notice key={makeup.id}>
-                      {makeup.pointLabel}补卡 · {makeupStatus[makeup.status]} ·{" "}
-                      {time(makeup.requestedOccurredAt)}
-                      <View>申请原因：{makeup.reason}</View>
-                      {makeup.approverName ? (
-                        <View>
-                          审批：{makeup.approverName} ·{" "}
-                          {makeup.approvedAt ? time(makeup.approvedAt) : ""} ·{" "}
-                          {makeup.approvalReason ?? "无附加意见"}
-                        </View>
-                      ) : null}
-                    </Notice>
-                  ))}
-                  {!day.records.length && day.workedMinutes > 0 ? (
-                    <Notice>历史导入工时，无原始打卡明细。</Notice>
-                  ) : null}
-                </View>
-              ) : null}
-            </View>
-          ))}
-        </View>
-      ) : null}
-    </View>
+        </>
+      )}
+    </>
   );
 };

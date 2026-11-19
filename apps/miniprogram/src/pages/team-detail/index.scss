@@ -1,0 +1,10 @@
+// 班组资料。公共样式在 components/ui/kit.scss。
+
+// 负责人那一行右侧的“更换”：整行都能点，这里只是把它写成文字按钮的样子。
+.team-detail__link {
+  color: var(--k);
+  font-size: 34rpx;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 8rpx;
+}

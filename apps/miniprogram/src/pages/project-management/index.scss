@@ -1,0 +1,6 @@
+// 班组管理。公共样式在 components/ui/kit.scss。
+
+// 邀请那一行右侧的“撤销”：去掉按钮默认的上边距，和行里的字对齐。
+.ui-screen--sign .invitation-log .ui-row .ui-btn {
+  margin: 0;
+}

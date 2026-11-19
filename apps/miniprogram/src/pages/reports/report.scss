@@ -1,0 +1,84 @@
+// 班组考勤、考勤报表、公司报表共用。公共样式在 components/ui/kit.scss，这里只有报表独有的几样。
+
+// 周和月的切换条中间那行字，和按天切换的一样大。
+.rpt-date {
+  min-width: 320rpx;
+  font-size: 38rpx;
+  font-weight: 700;
+  line-height: 116rpx;
+  text-align: center;
+}
+
+// 点一下去选的表单行包在 Picker 里，成了 Picker 唯一的孩子，
+// 公共样式会把它当成最后一行去掉分隔线。分隔线改由这层补上。
+.rpt-pick {
+  border-bottom: 2rpx solid var(--hair);
+}
+.rpt-pick:last-child {
+  border-bottom: 0;
+}
+
+// 行里的文字按钮（“修改”“看地图”）：公共的文字按钮带上边距，放不进一行里。
+.rpt-link {
+  flex-shrink: 0;
+  color: var(--k);
+  font-size: 34rpx;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 8rpx;
+}
+
+// 个人明细里展开的一天：时间线下面是这一天的说明、打卡位置和补卡。
+.rpt-day {
+  border-bottom: 2rpx solid var(--hair);
+}
+.rpt-day:last-child {
+  border-bottom: 0;
+}
+.rpt-day__body {
+  padding: 0 40rpx 28rpx;
+  font-size: 32rpx;
+  line-height: 1.6;
+}
+.rpt-day__none {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--bad);
+}
+.rpt-day__wait {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--muted);
+}
+.rpt-day__time {
+  flex-shrink: 0;
+  font-size: 38rpx;
+}
+.rpt-day__head {
+  margin-top: 20rpx;
+  font-weight: 600;
+  color: var(--muted);
+}
+.rpt-day__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 26rpx;
+  padding: 12rpx 0;
+}
+.rpt-day__text {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+.rpt-day__sub {
+  font-weight: 400;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.rpt-day__warn {
+  margin-top: 12rpx;
+  padding-left: 20rpx;
+  border-left: 8rpx solid var(--warn);
+  font-weight: 600;
+}

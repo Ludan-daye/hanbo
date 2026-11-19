@@ -1,26 +1,29 @@
-import { memberRoleLabels } from "../../services/member-roles";
-import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
 import {
-  Field,
+  joinText,
+  personInitial,
+  personRoleText,
+} from "../../components/member-role-editor/person-text";
+import {
+  BottomBar,
   Button,
-  Subtitle,
-  ListItem,
+  Links,
   PageHeader,
+  Row,
   Screen,
+  SearchField,
+  SectionTitle,
   Segmented,
+  Sheet,
+  SkeletonRows,
   StateView,
 } from "../../components/ui/index";
 import { useManagedProjectId } from "../../hooks/use-management-scope";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
-import {
-  participantPermissionRole,
-  permissionLevel,
-  type ProjectPermissionRole,
-} from "../../routing/permissionLevels";
+import type { ProjectPermissionRole } from "../../routing/permissionLevels";
 import type {
   ManagedParticipant,
   ParticipantPage,
@@ -32,20 +35,42 @@ import { errorMessage } from "../../services/error-messages";
 type Filter = "ALL" | ProjectPermissionRole;
 const FILTER_OPTIONS = [
   { label: "全部", value: "ALL" as const },
-  { label: "一级", value: "WORKER" as const },
-  { label: "二级", value: "TEAM_LEADER" as const },
-  { label: "三级", value: "PROJECT_ADMIN" as const },
+  { label: "工人", value: "WORKER" as const },
+  { label: "班组长", value: "TEAM_LEADER" as const },
+  { label: "管理员", value: "PROJECT_ADMIN" as const },
 ];
 
-const participantDescription = (person: ManagedParticipant): string =>
-  [
-    ...new Set([
-      person.workType ?? "工种待补录",
-      memberRoleLabels(person),
-      person.teamName ?? "无班组",
-      person.phone,
-    ]),
-  ].join(" · ");
+const personName = (person: ManagedParticipant): string | null =>
+  person.nameStatus === "REQUIRES_UPDATE" ? null : person.displayName;
+
+/** 行右侧：退场、暂停的写状态，其余写身份（普通工人不写）。 */
+const PersonRow = ({
+  person,
+  onClick,
+}: {
+  readonly person: ManagedParticipant;
+  readonly onClick: () => void;
+}): JSX.Element => {
+  const name = personName(person);
+  const status =
+    person.status === "EXITED"
+      ? ({ kind: "idle", text: "已退场" } as const)
+      : person.status === "SUSPENDED"
+        ? ({ kind: "warn", text: "已暂停" } as const)
+        : undefined;
+  return (
+    <Row
+      title={name ?? "姓名待补录"}
+      avatar={personInitial(name)}
+      sub={joinText([person.workType ?? "工种待补录", person.teamName])}
+      value={status ? undefined : personRoleText(person) || undefined}
+      status={status}
+      mute
+      chevron
+      onClick={onClick}
+    />
+  );
+};
 
 export default function Participants(): JSX.Element {
   useSessionGuard();
@@ -86,8 +111,7 @@ export default function Participants(): JSX.Element {
         if (!cancelled) setResult(data);
       },
       (failure: unknown): void => {
-        if (!cancelled)
-          setError(errorMessage(failure, "读取人员失败"));
+        if (!cancelled) setError(errorMessage(failure, "读取人员失败"));
       },
     );
     return (): void => {
@@ -97,48 +121,24 @@ export default function Participants(): JSX.Element {
 
   if (projectId === null)
     return (
-      <Screen>
-        <PageHeader title="项目人员" />
-        <StateView title="请先选择项目" sub="当前账号需要项目管理权限。" />
+      <Screen header={<PageHeader title="项目人员" />}>
+        <StateView
+          kind="empty"
+          title="请先选择项目"
+          sub="当前账号需要项目管理权限。"
+        />
       </Screen>
     );
+
+  const scope = teamId ? `&teamId=${teamId}` : "";
+  const hasPrevious = result !== null && page > 1;
+  const hasNext = result !== null && page * result.pageSize < result.total;
+  const narrowed = search !== "" || filter !== "ALL";
   return (
-    <Screen>
-      <PageHeader title="项目人员" />
-      <View className="management-actions">
-        <Button
-          onClick={() => {
-            void Taro.navigateTo({
-              url: `/pages/person-form/index?projectId=${projectId}${teamId ? `&teamId=${teamId}` : ""}`,
-            });
-          }}
-        >
-          ＋ 添加成员
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => {
-            void Taro.navigateTo({
-              url: `/pages/person-reuse/index?projectId=${projectId}${teamId ? `&teamId=${teamId}` : ""}`,
-            });
-          }}
-        >
-          复用人员
-        </Button>
-      </View>
-      <View
-        className="management-link"
-        onClick={() => {
-          void Taro.navigateTo({
-            url: `/pages/face-review/index?projectId=${projectId}`,
-          });
-        }}
-      >
-        人脸档案审核 ›
-      </View>
-      <Field
+    <Screen header={<PageHeader title="项目人员" />}>
+      <SearchField
         value={searchInput}
-        placeholder="搜索姓名前缀、手机号、班组或工种"
+        placeholder="搜索姓名、手机号、班组或工种"
         onInput={setSearchInput}
       />
       <Segmented
@@ -149,60 +149,89 @@ export default function Participants(): JSX.Element {
           setPage(1);
         }}
       />
-      <Subtitle>
-        一级本人 · 二级班组 · 三级项目；兼任可跨职级。
-      </Subtitle>
-      {result === null && error === null ? <StateView title="加载中…" /> : null}
+      <SectionTitle
+        action="底照审核"
+        onAction={() => {
+          void Taro.navigateTo({
+            url: `/pages/face-review/index?projectId=${projectId}`,
+          });
+        }}
+      >
+        {result === null
+          ? teamId
+            ? "这个班组的成员"
+            : "成员"
+          : `${teamId ? "这个班组" : ""}共 ${result.total} 人${
+              hasPrevious || hasNext ? `，第 ${page} 页` : ""
+            }`}
+      </SectionTitle>
       {error !== null ? (
-        <StateView title="加载失败" sub={error} onRetry={refresh} />
+        <StateView
+          kind="error"
+          title="人员没读到"
+          sub={error}
+          onRetry={refresh}
+        />
+      ) : result === null ? (
+        <SkeletonRows rows={6} />
+      ) : result.items.length === 0 ? (
+        <StateView
+          kind="empty"
+          title={narrowed ? "没有符合条件的成员" : "还没有成员"}
+          sub={
+            narrowed
+              ? "换个关键词或筛选再试。"
+              : "点下面的“添加成员”建档，或从别的项目复用。"
+          }
+        />
+      ) : (
+        <Sheet>
+          {result.items.map((person) => (
+            <PersonRow
+              key={person.memberId}
+              person={person}
+              onClick={() => {
+                void Taro.navigateTo({
+                  url: `/pages/person-form/index?projectId=${projectId}&memberId=${person.memberId}`,
+                });
+              }}
+            />
+          ))}
+        </Sheet>
+      )}
+      {hasPrevious || hasNext ? (
+        <Links>
+          {hasPrevious ? (
+            <Button variant="text" onClick={() => setPage(page - 1)}>
+              上一页
+            </Button>
+          ) : null}
+          {hasNext ? (
+            <Button variant="text" onClick={() => setPage(page + 1)}>
+              下一页
+            </Button>
+          ) : null}
+        </Links>
       ) : null}
-      {result !== null ? (
-        <Subtitle>
-          共 {result.total} 名成员 · 第 {page} 页
-        </Subtitle>
-      ) : null}
-      {result !== null && result.items.length === 0 ? (
-        <StateView title="没有符合条件的成员" />
-      ) : null}
-      <View>
-        {result?.items.map((person) => (
-          <ListItem
-            key={person.memberId}
-            primary={
-              person.nameStatus === "REQUIRES_UPDATE"
-                ? "姓名待补录"
-                : (person.displayName ?? "姓名待补录")
-            }
-            secondary={participantDescription(person)}
-            chip={
-              person.status === "EXITED"
-                ? "已退场"
-                : person.status === "SUSPENDED"
-                  ? "已暂停"
-                  : (person.additionalRoles?.length ?? 0) > 0
-                    ? "兼任"
-                    : permissionLevel(
-                        participantPermissionRole(person),
-                      ).label.split(" · ")[0]
-            }
-            onClick={() => {
-              void Taro.navigateTo({
-                url: `/pages/person-form/index?projectId=${projectId}&memberId=${person.memberId}`,
-              });
-            }}
-          />
-        ))}
-      </View>
-      {result !== null && page > 1 ? (
-        <Button variant="outline" onClick={() => setPage(page - 1)}>
-          上一页
+      <BottomBar
+        primary="添加成员"
+        onPrimary={() => {
+          void Taro.navigateTo({
+            url: `/pages/person-form/index?projectId=${projectId}${scope}`,
+          });
+        }}
+      >
+        <Button
+          variant="outline"
+          onClick={() => {
+            void Taro.navigateTo({
+              url: `/pages/person-reuse/index?projectId=${projectId}${scope}`,
+            });
+          }}
+        >
+          复用人员
         </Button>
-      ) : null}
-      {result !== null && page * result.pageSize < result.total ? (
-        <Button variant="outline" onClick={() => setPage(page + 1)}>
-          下一页
-        </Button>
-      ) : null}
+      </BottomBar>
     </Screen>
   );
 }

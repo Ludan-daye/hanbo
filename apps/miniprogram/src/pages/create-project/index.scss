@@ -1,0 +1,18 @@
+// 新建项目。公共样式在 components/ui/kit.scss，这里只有这一页独有的两样。
+
+// 点一下去选的表单行包在 Picker 里，成了 Picker 唯一的孩子，
+// 公共样式会把它当成最后一行去掉分隔线。分隔线改由这层补上。
+.create-project__pick {
+  border-bottom: 2rpx solid var(--hair);
+}
+.create-project__pick:last-child {
+  border-bottom: 0;
+}
+
+// 表单行右侧的长文字：单行省略，不把左边的名称挤走。
+.create-project__value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

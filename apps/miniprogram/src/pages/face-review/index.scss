@@ -1,0 +1,27 @@
+// 底照审核。公共样式在 components/ui/kit.scss，这里只有大照片这一样。
+
+// 审核要看全脸，所以照片不裁剪，也比公共的照片位高。
+// 读取中、没读到时占同样的高度，照片出来时页面不跳。
+.face-review__photo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20rpx;
+  overflow: hidden;
+  height: 640rpx;
+  margin-top: 32rpx;
+  border-radius: var(--r-sheet);
+  background: #d9dcdf;
+  color: #5a6067;
+  font-size: 34rpx;
+  font-weight: 500;
+}
+.face-review__photo.sk {
+  border-radius: var(--r-sheet);
+}
+.face-review__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

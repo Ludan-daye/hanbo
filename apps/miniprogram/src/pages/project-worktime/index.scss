@@ -1,0 +1,10 @@
+// 工时规则。公共样式在 components/ui/kit.scss，这里只有一样。
+
+// 点一下去选的表单行包在 Picker 里，成了 Picker 唯一的孩子，
+// 公共样式会把它当成最后一行去掉分隔线。分隔线改由这层补上。
+.project-worktime__pick {
+  border-bottom: 2rpx solid var(--hair);
+}
+.project-worktime__pick:last-child {
+  border-bottom: 0;
+}

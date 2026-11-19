@@ -1,0 +1,33 @@
+// 成员表单里几种特别的行。公共样式在 components/ui/kit.scss。
+
+// Picker 会把表单行包一层，行成了“最后一个孩子”，分隔线就没了；由外面这一层补上。
+.pick-row {
+  border-bottom: 2rpx solid var(--hair);
+}
+.pick-row:last-child {
+  border-bottom: 0;
+}
+
+// 表单行右侧的一组选项：靠右排。窄屏放不下时折到第二行，上下留出间距。
+.row-chips .ui-chips {
+  justify-content: flex-end;
+  gap: 12rpx;
+  padding: 22rpx 0;
+}
+
+// “再管一个班组”这类跟在行后面的文字按钮
+.member-roles__more {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 36rpx;
+  min-height: 110rpx;
+  padding: 0 28rpx;
+  border-bottom: 2rpx solid var(--hair);
+}
+.member-roles__more:last-child {
+  border-bottom: 0;
+}
+.ui-screen--sign .member-roles__more .ui-btn {
+  margin: 0;
+}

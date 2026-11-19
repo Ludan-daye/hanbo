@@ -1,1 +1,1 @@
-export default definePageConfig({ navigationBarTitleText: "安全信用规则" });
+export default definePageConfig({ navigationBarTitleText: "信用规则" });

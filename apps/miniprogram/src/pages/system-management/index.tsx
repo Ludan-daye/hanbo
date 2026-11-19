@@ -1,26 +1,15 @@
-import {
-  PERMISSION_LEVELS,
-  permissionLabel,
-} from "../../routing/permissionLevels";
-import { Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
 import {
-  Button,
-  Field,
-  ListItem,
-  Notice,
   PageHeader,
   Screen,
-  Section,
   Segmented,
+  SkeletonRows,
   StateView,
-  Subtitle,
 } from "../../components/ui/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
-import type { RoleCode } from "../../services/auth.types";
 import {
   fetchCompanyProjects,
   fetchProjectTeams,
@@ -44,25 +33,15 @@ import {
 } from "../../services/workflows";
 import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
+import { levelText, scopeOptions, systemScreen } from "./system-view";
+import { AccountView, AccountsTab } from "./views/accounts";
+import { AuditTab } from "./views/audit";
+import { CompaniesTab, CompanyView, NewCompanyView } from "./views/companies";
+import { SettingsTab } from "./views/settings";
+
+import "./index.scss";
 
 type Tab = "COMPANIES" | "ACCOUNTS" | "SETTINGS" | "AUDIT";
-type ScopeOption = { readonly id: string; readonly name: string };
-const ROLE_OPTIONS: readonly RoleCode[] = PERMISSION_LEVELS.map(
-  (level) => level.roleCode,
-);
-const scopeOptions = (
-  role: RoleCode,
-  companies: readonly Company[],
-  projects: readonly CompanyProject[],
-  teams: readonly ProjectTeam[],
-): readonly ScopeOption[] =>
-  role === "SYSTEM_ADMIN"
-    ? [{ id: "GLOBAL", name: "全平台" }]
-    : role === "COMPANY_ADMIN"
-      ? companies
-      : role === "TEAM_LEADER"
-        ? teams
-        : projects;
 
 export default function SystemManagement(): JSX.Element {
   useSessionGuard();
@@ -78,13 +57,19 @@ export default function SystemManagement(): JSX.Element {
   const [draft, setDraft] = useState<Account | null>(null);
   const [companyName, setCompanyName] = useState<string>("");
   const [search, setSearch] = useState<string>("");
+  // 读取失败整块换成出错状态；保存、校验失败只在按钮旁边说明，填的东西留着。
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
+  // 同一个页面里的另外两屏：点开的公司，和新增公司。改账号权限那一屏跟着 draft 走。
+  const [openCompanyId, setOpenCompanyId] = useState<string | null>(null);
+  const [addingCompany, setAddingCompany] = useState<boolean>(false);
   const allowed = state.me?.roles.highestRoleCode === "SYSTEM_ADMIN";
   useEffect(() => {
     if (!allowed) return;
     let cancelled = false;
+    setLoadError(null);
     setError(null);
     setLoading(true);
     void (async (): Promise<void> => {
@@ -113,10 +98,7 @@ export default function SystemManagement(): JSX.Element {
           setTeams(teamRows);
         }
       } catch (failure: unknown) {
-        if (!cancelled)
-          setError(
-            errorMessage(failure, "平台数据读取失败"),
-          );
+        if (!cancelled) setLoadError(errorMessage(failure, "请稍后重试。"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -136,270 +118,205 @@ export default function SystemManagement(): JSX.Element {
       refresh();
       await Taro.showToast({ title: "已保存", icon: "success" });
     } catch (failure: unknown) {
-      setError(errorMessage(failure, "保存失败"));
+      setError(errorMessage(failure, "没保存成功，请重试。"));
     } finally {
       setBusy(false);
     }
   };
-  const savePermissions = async (): Promise<void> => {
-    if (!draft || busy) return;
-    if (
-      !draft.scopeId ||
-      !scopeOptions(draft.roleCode, companies, projects, teams).some(
-        (row) => row.id === draft.scopeId,
-      )
-    ) {
-      setError("请选择与角色对应的有效管理范围。");
-      return;
-    }
-    const confirmed = await Taro.showModal({
-      title: "确认调整账号权限",
-      content: `${draft.name}：${permissionLabel(draft.roleCode)}。新权限将在此账号下次进入时生效。`,
-      confirmText: "确认保存",
-    });
-    if (confirmed.confirm) await runAction(() => saveAccount(draft));
-  };
   const scopes = draft
     ? scopeOptions(draft.roleCode, companies, projects, teams)
     : [];
+  const savePermissions = async (): Promise<void> => {
+    if (!draft || busy) return;
+    const scope = scopes.find((row) => row.id === draft.scopeId);
+    if (!draft.scopeId || scope === undefined) {
+      setError("请选择和权限等级对应的管理范围。");
+      return;
+    }
+    const confirmed = await Taro.showModal({
+      title: "调整账号权限",
+      content: `${draft.name}：${levelText(draft.roleCode)}，${scope.name}，${draft.status === "ACTIVE" ? "正常使用" : "停用"}。新权限在这个账号下次进入时生效。`,
+      confirmText: "保存权限",
+    });
+    if (confirmed.confirm) await runAction(() => saveAccount(draft));
+  };
+  const openCompany = companies.find((row) => row.id === openCompanyId) ?? null;
+  const screen = systemScreen({
+    editingAccount: draft !== null,
+    addingCompany,
+    hasCompany: openCompany !== null,
+  });
+  const backToList = (): void => {
+    setDraft(null);
+    setAddingCompany(false);
+    setOpenCompanyId(null);
+    setError(null);
+  };
+  const title =
+    screen === "account"
+      ? "账号权限"
+      : screen === "new-company"
+        ? "新增公司"
+        : screen === "company" && openCompany !== null
+          ? openCompany.name
+          : "平台管理";
+
+  const renderScreen = (): JSX.Element | null => {
+    if (screen === "account" && draft !== null)
+      return (
+        <AccountView
+          saved={accounts.find((row) => row.id === draft.id) ?? draft}
+          draft={draft}
+          self={draft.id === state.me?.user.id}
+          scopes={scopes}
+          busy={busy}
+          problem={error}
+          onRole={(roleCode) =>
+            setDraft({
+              ...draft,
+              roleCode,
+              scopeId:
+                scopeOptions(roleCode, companies, projects, teams)[0]?.id ?? "",
+            })
+          }
+          onScope={(scopeId) => setDraft({ ...draft, scopeId })}
+          onStatus={(status) => setDraft({ ...draft, status })}
+          onSave={() => {
+            void savePermissions();
+          }}
+        />
+      );
+    if (screen === "new-company")
+      return (
+        <NewCompanyView
+          name={companyName}
+          busy={busy}
+          problem={error}
+          onName={setCompanyName}
+          onCreate={() => {
+            void runAction(async () => {
+              await saveCompany({
+                id: "",
+                name: companyName.trim(),
+                status: "ACTIVE",
+              });
+              // 建好了回到公司列表；没建成留在这一屏，名称还在。
+              setAddingCompany(false);
+            });
+          }}
+        />
+      );
+    if (screen === "company" && openCompany !== null)
+      return (
+        <CompanyView
+          company={openCompany}
+          projectCount={
+            projects.filter((row) => row.companyId === openCompany.id).length
+          }
+          busy={busy}
+          problem={error}
+          onProjects={() => {
+            void Taro.navigateTo({
+              url: `/pages/company-projects/index?companyId=${openCompany.id}`,
+            });
+          }}
+          onToggle={() => {
+            void runAction(() =>
+              saveCompany({
+                ...openCompany,
+                status:
+                  openCompany.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE",
+              }),
+            );
+          }}
+        />
+      );
+    if (tab === "COMPANIES")
+      return (
+        <CompaniesTab
+          companies={companies}
+          projects={projects}
+          onOpen={(companyId) => {
+            setOpenCompanyId(companyId);
+            setError(null);
+          }}
+          onAdd={() => {
+            setAddingCompany(true);
+            setError(null);
+          }}
+        />
+      );
+    if (tab === "ACCOUNTS")
+      return (
+        <AccountsTab
+          accounts={accounts}
+          search={search}
+          onSearch={setSearch}
+          onOpen={(account) => {
+            setDraft(account);
+            setError(null);
+          }}
+        />
+      );
+    if (tab === "SETTINGS")
+      return settings ? (
+        <SettingsTab
+          settings={settings}
+          busy={busy}
+          problem={error}
+          onChange={setSettings}
+          onSave={() => {
+            void runAction(() => saveSystemSettings(settings));
+          }}
+        />
+      ) : null;
+    return <AuditTab audit={audit} accounts={accounts} />;
+  };
+
   return (
-    <Screen>
-      <PageHeader title="平台管理" />
+    <Screen
+      header={
+        <PageHeader
+          title={title}
+          onBack={screen === "list" ? undefined : backToList}
+        />
+      }
+    >
       {!allowed ? (
-        <StateView title="需要五级平台管理权限" />
+        <StateView
+          kind="empty"
+          title="只有超级管理员能用平台管理"
+          sub="这个账号没有平台管理权限。"
+        />
       ) : (
         <>
-          <Segmented
-            options={[
-              { value: "COMPANIES", label: "公司" },
-              { value: "ACCOUNTS", label: "账号" },
-              { value: "SETTINGS", label: "设置" },
-              { value: "AUDIT", label: "日志" },
-            ]}
-            value={tab}
-            onChange={(value) => {
-              setTab(value);
-              setError(null);
-            }}
-          />
-          {error ? (
-            <StateView title="操作未完成" sub={error} onRetry={refresh} />
+          {screen === "list" ? (
+            <Segmented<Tab>
+              options={[
+                { value: "COMPANIES", label: "公司" },
+                { value: "ACCOUNTS", label: "账号" },
+                { value: "SETTINGS", label: "设置" },
+                { value: "AUDIT", label: "日志" },
+              ]}
+              value={tab}
+              onChange={(value) => {
+                setTab(value);
+                setError(null);
+              }}
+            />
           ) : null}
-          {loading ? <StateView title="加载中…" /> : null}
-          {!loading && tab === "COMPANIES" ? (
-            <>
-              <Section
-                title="公司与项目"
-                sub={`共 ${companies.length} 家公司 · ${projects.length} 个项目`}
-              >
-                {companies.map((company) => (
-                  <View key={company.id} className="management-card">
-                    <ListItem
-                      primary={company.name}
-                      secondary={`${projects.filter((row) => row.companyId === company.id).length} 个项目`}
-                      chip={company.status === "ACTIVE" ? "正常" : "已暂停"}
-                      onClick={() => {
-                        void Taro.navigateTo({
-                          url: `/pages/company-projects/index?companyId=${company.id}`,
-                        });
-                      }}
-                    />
-                    <Button
-                      variant="outline"
-                      loading={busy}
-                      onClick={() => {
-                        void runAction(() =>
-                          saveCompany({
-                            ...company,
-                            status:
-                              company.status === "ACTIVE"
-                                ? "SUSPENDED"
-                                : "ACTIVE",
-                          }),
-                        );
-                      }}
-                    >
-                      {company.status === "ACTIVE" ? "暂停公司" : "恢复公司"}
-                    </Button>
-                  </View>
-                ))}
-              </Section>
-              <Section title="新增公司">
-                <Field
-                  label="公司名称"
-                  value={companyName}
-                  placeholder="请输入完整公司名称"
-                  onInput={setCompanyName}
-                />
-                <Button
-                  disabled={!companyName.trim()}
-                  loading={busy}
-                  onClick={() => {
-                    void runAction(() =>
-                      saveCompany({
-                        id: "",
-                        name: companyName.trim(),
-                        status: "ACTIVE",
-                      }),
-                    );
-                  }}
-                >
-                  创建公司
-                </Button>
-              </Section>
-            </>
-          ) : null}
-          {!loading && tab === "ACCOUNTS" ? (
-            <>
-              <Field
-                value={search}
-                placeholder="搜索姓名或手机号"
-                onInput={setSearch}
-              />
-              <Notice>
-                角色对应功能，范围限定数据；本人权限由其他管理员修改。
-              </Notice>
-              {accounts
-                .filter((row) =>
-                  `${row.name} ${row.phone}`.includes(search.trim()),
-                )
-                .map((account) => (
-                  <ListItem
-                    key={account.id}
-                    primary={account.name}
-                    secondary={`${permissionLabel(account.roleCode)} · ${account.phone}`}
-                    chip={account.status === "ACTIVE" ? "正常" : "已停用"}
-                    onClick={() => {
-                      setDraft(account);
-                      setError(null);
-                    }}
-                  />
-                ))}
-              {draft ? (
-                <Section title={`编辑 · ${draft.name}`}>
-                  {draft.id === state.me?.user.id ? (
-                    <Notice>本人权限不可在此修改。</Notice>
-                  ) : (
-                    <>
-                      <Picker
-                        mode="selector"
-                        range={ROLE_OPTIONS.map((role) =>
-                          permissionLabel(role),
-                        )}
-                        value={ROLE_OPTIONS.indexOf(draft.roleCode)}
-                        onChange={(event) => {
-                          const roleCode =
-                            ROLE_OPTIONS[Number(event.detail.value)];
-                          setDraft({
-                            ...draft,
-                            roleCode,
-                            scopeId:
-                              scopeOptions(
-                                roleCode,
-                                companies,
-                                projects,
-                                teams,
-                              )[0]?.id ?? "",
-                          });
-                        }}
-                      >
-                        <ListItem
-                          primary="权限等级"
-                          secondary={permissionLabel(draft.roleCode)}
-                          chip="选择"
-                        />
-                      </Picker>
-                      <Picker
-                        mode="selector"
-                        range={scopes.map((row) => row.name)}
-                        value={Math.max(
-                          0,
-                          scopes.findIndex((row) => row.id === draft.scopeId),
-                        )}
-                        onChange={(event) =>
-                          setDraft({
-                            ...draft,
-                            scopeId: scopes[Number(event.detail.value)].id,
-                          })
-                        }
-                      >
-                        <ListItem
-                          primary="管理范围"
-                          secondary={
-                            scopes.find((row) => row.id === draft.scopeId)
-                              ?.name ?? "请先创建对应公司、项目或班组"
-                          }
-                          chip="选择"
-                        />
-                      </Picker>
-                      <Segmented
-                        options={[
-                          { value: "ACTIVE", label: "正常使用" },
-                          { value: "SUSPENDED", label: "停用账号" },
-                        ]}
-                        value={draft.status}
-                        onChange={(status) => setDraft({ ...draft, status })}
-                      />
-                      <Button
-                        loading={busy}
-                        onClick={() => {
-                          void savePermissions();
-                        }}
-                      >
-                        保存权限设置
-                      </Button>
-                    </>
-                  )}
-                  <Button variant="outline" onClick={() => setDraft(null)}>
-                    关闭编辑
-                  </Button>
-                </Section>
-              ) : null}
-            </>
-          ) : null}
-          {!loading && tab === "SETTINGS" && settings ? (
-            <Section title="平台设置">
-              <Field
-                label="联系电话"
-                value={settings.supportPhone}
-                placeholder="请输入管理员联系电话"
-                onInput={(supportPhone) =>
-                  setSettings({ ...settings, supportPhone })
-                }
-              />
-              <Field
-                label="首页公告"
-                value={settings.announcement}
-                placeholder="请输入现场提醒"
-                maxLength={160}
-                onInput={(announcement) =>
-                  setSettings({ ...settings, announcement })
-                }
-              />
-              <Button
-                loading={busy}
-                disabled={!settings.supportPhone.trim()}
-                onClick={() => {
-                  void runAction(() => saveSystemSettings(settings));
-                }}
-              >
-                保存平台设置
-              </Button>
-            </Section>
-          ) : null}
-          {!loading && tab === "AUDIT" ? (
-            <Section title="操作日志" sub="最近 200 条演示操作">
-              {audit.length === 0 ? <StateView title="暂无操作日志" /> : null}
-              {audit.map((row) => (
-                <ListItem
-                  key={row.id}
-                  primary={row.action}
-                  secondary={`${row.actor} · ${new Date(row.createdAt).toLocaleString("zh-CN")}`}
-                />
-              ))}
-              <Subtitle>正式操作由服务器记录。</Subtitle>
-            </Section>
-          ) : null}
+          {loading ? (
+            <SkeletonRows rows={4} gap />
+          ) : loadError !== null ? (
+            <StateView
+              kind="error"
+              title="平台数据没读到"
+              sub={loadError}
+              onRetry={refresh}
+            />
+          ) : (
+            renderScreen()
+          )}
         </>
       )}
     </Screen>

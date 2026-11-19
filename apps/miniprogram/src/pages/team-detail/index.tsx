@@ -2,21 +2,34 @@ import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
+import { ChipsRow } from "../../components/member-role-editor/form-rows";
 import {
+  joinText,
+  maskPhone,
+  personInitial,
+} from "../../components/member-role-editor/person-text";
+import {
+  BottomBar,
   Button,
-  Field,
-  ListItem,
+  Check,
+  FormArea,
+  FormInput,
+  Links,
   Notice,
   PageHeader,
+  Row,
   Screen,
-  Section,
-  Segmented,
+  SearchField,
+  SectionTitle,
+  Sheet,
+  SkeletonRows,
   StateView,
 } from "../../components/ui/index";
 import { useManagedProjectId } from "../../hooks/use-management-scope";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import type {
+  ManagedParticipant,
   ManagedTeam,
   ParticipantPage,
 } from "../../services/management.types";
@@ -28,13 +41,25 @@ import {
 import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
 
+import "./index.scss";
+
+const NAME_REQUIRED = "请填写班组名称。";
+const STATUS_OPTIONS = [
+  { value: "ACTIVE" as const, label: "正常" },
+  { value: "SUSPENDED" as const, label: "暂停" },
+];
+
 export default function TeamDetail(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
   const projectId: string | null = useManagedProjectId(state.me);
   const teamId: string | undefined = Taro.useRouter().params.teamId;
   const { revision, refresh } = usePageRefresh();
+  // 两个视图：班组资料、选负责人。同一个页面里切换。
+  const [view, setView] = useState<"main" | "leader">("main");
   const [team, setTeam] = useState<ManagedTeam | null>(null);
+  // 页头写的是已经保存的班组名，不跟着正在输入的字变。
+  const [savedName, setSavedName] = useState<string | null>(null);
   const [people, setPeople] = useState<ParticipantPage | null>(null);
   const [searchInput, setSearchInput] = useState<string>("");
   const [search, setSearch] = useState<string>("");
@@ -55,12 +80,12 @@ export default function TeamDetail(): JSX.Element {
       (data): void => {
         if (!cancelled) {
           setTeam(data);
+          setSavedName(data.name);
           setError(null);
         }
       },
       (failure: unknown): void => {
-        if (!cancelled)
-          setError(errorMessage(failure, "读取班组失败"));
+        if (!cancelled) setError(errorMessage(failure, "读取班组失败"));
       },
     );
     return (): void => {
@@ -83,8 +108,7 @@ export default function TeamDetail(): JSX.Element {
         if (!cancelled) setPeople(data);
       },
       (failure: unknown): void => {
-        if (!cancelled)
-          setError(errorMessage(failure, "读取成员失败"));
+        if (!cancelled) setError(errorMessage(failure, "读取成员失败"));
       },
     );
     return (): void => {
@@ -94,28 +118,28 @@ export default function TeamDetail(): JSX.Element {
   const save = async (): Promise<void> => {
     if (!projectId || !teamId || !team || busy) return;
     if (!team.name.trim()) {
-      setError("请填写班组名称。");
+      setError(NAME_REQUIRED);
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      setTeam(
-        await updateTeam(projectId, teamId, {
-          name: team.name.trim(),
-          status: team.status === "ACTIVE" ? "ACTIVE" : "SUSPENDED",
-          workType: team.workType?.trim() || null,
-          remark: team.remark?.trim() || null,
-          leader:
-            team.leader === null
-              ? null
-              : {
-                  memberId: team.leader.memberId,
-                  participantType: team.leader.participantType,
-                },
-          expectedUpdatedAt: team.updatedAt,
-        }),
-      );
+      const saved = await updateTeam(projectId, teamId, {
+        name: team.name.trim(),
+        status: team.status === "ACTIVE" ? "ACTIVE" : "SUSPENDED",
+        workType: team.workType?.trim() || null,
+        remark: team.remark?.trim() || null,
+        leader:
+          team.leader === null
+            ? null
+            : {
+                memberId: team.leader.memberId,
+                participantType: team.leader.participantType,
+              },
+        expectedUpdatedAt: team.updatedAt,
+      });
+      setTeam(saved);
+      setSavedName(saved.name);
       await Taro.showToast({ title: "班组资料已保存", icon: "success" });
     } catch (failure: unknown) {
       setError(errorMessage(failure, "保存班组失败"));
@@ -123,135 +147,212 @@ export default function TeamDetail(): JSX.Element {
       setBusy(false);
     }
   };
-  return (
-    <Screen>
-      <PageHeader title="班组资料" />
-      {error ? (
-        <StateView title="操作未完成" sub={error} onRetry={refresh} />
-      ) : null}
-      {!projectId || !teamId ? (
-        <StateView title="请从班组管理进入" />
-      ) : !team && !error ? (
-        <StateView title="加载中…" />
-      ) : null}
-      {team ? (
-        <>
-          <Section title="班组信息" sub={`在场 ${team.memberCount} 人`}>
-            <Field
-              label="班组名称 *"
-              value={team.name}
-              placeholder="例如：钢筋一班"
-              maxLength={30}
-              onInput={(name) => setTeam({ ...team, name })}
+
+  const title = savedName ?? "班组资料";
+  if (!projectId || !teamId)
+    return (
+      <Screen header={<PageHeader title={title} />}>
+        <StateView kind="empty" title="请从班组管理进入" />
+      </Screen>
+    );
+  if (team === null)
+    return (
+      <Screen header={<PageHeader title={title} />}>
+        {error ? (
+          <StateView
+            kind="error"
+            title="班组资料没读到"
+            sub={error}
+            onRetry={refresh}
+          />
+        ) : (
+          <StateView kind="loading" title="正在读取班组资料" />
+        )}
+      </Screen>
+    );
+
+  if (view === "leader") {
+    const choose = (person: ManagedParticipant | null): void => {
+      setTeam({
+        ...team,
+        leader:
+          person === null
+            ? null
+            : {
+                memberId: person.memberId,
+                participantType: person.participantType,
+                displayName: person.displayName,
+                phone: person.phone,
+              },
+      });
+      setView("main");
+    };
+    const hasPrevious = page > 1;
+    const hasNext = people !== null && page * people.pageSize < people.total;
+    return (
+      <Screen
+        header={<PageHeader title="选负责人" onBack={() => setView("main")} />}
+      >
+        <Sheet gap>
+          <Row title="不设负责人" onClick={() => choose(null)}>
+            <Check round checked={team.leader === null} />
+          </Row>
+        </Sheet>
+        <SearchField
+          value={searchInput}
+          placeholder="搜索姓名、手机号或工种"
+          onInput={setSearchInput}
+        />
+        {people === null ? (
+          error ? (
+            <StateView
+              kind="error"
+              title="成员没读到"
+              sub={error}
+              onRetry={refresh}
             />
-            <Field
-              label="主要工种"
-              value={team.workType ?? ""}
-              placeholder="例如：钢筋工、电工"
-              maxLength={40}
-              onInput={(workType) => setTeam({ ...team, workType })}
-            />
-            <Field
-              label="备注"
-              value={team.remark ?? ""}
-              placeholder="班组工作安排"
-              maxLength={1000}
-              onInput={(remark) => setTeam({ ...team, remark })}
-            />
-            <Segmented
-              value={team.status === "ACTIVE" ? "ACTIVE" : "SUSPENDED"}
-              options={[
-                { value: "ACTIVE", label: "正常" },
-                { value: "SUSPENDED", label: "暂停" },
-              ]}
-              onChange={(status) => setTeam({ ...team, status })}
-            />
-          </Section>
-          <Section title="班组负责人" sub="从本班组在场成员中指定">
-            <ListItem
-              primary={
-                team.leader?.displayName ??
-                (team.leader ? "姓名待补录" : "尚未指定")
-              }
-              secondary={team.leader?.phone ?? "下方选择负责人后保存"}
-            />
-            {team.leader ? (
-              <Button
-                variant="outline"
-                onClick={() => setTeam({ ...team, leader: null })}
-              >
-                取消负责人
-              </Button>
-            ) : null}
-            <Notice>
-              <View>负责人负责联络，审批需班组长权限。</View>
-              <View>转组、暂停或退场后取消负责人。</View>
-            </Notice>
-            <Field
-              value={searchInput}
-              placeholder="搜索负责人姓名前缀、手机号或工种"
-              onInput={setSearchInput}
-            />
-            {people === null ? <StateView title="加载成员…" /> : null}
-            {people?.items.map((person) => (
-              <ListItem
+          ) : (
+            <SkeletonRows rows={4} gap />
+          )
+        ) : people.items.length === 0 ? (
+          <StateView
+            kind="empty"
+            title="没有符合的在场成员"
+            sub={
+              search
+                ? "换个关键词再试。"
+                : "先到班组成员里加人，再来指定负责人。"
+            }
+          />
+        ) : (
+          <Sheet gap>
+            {people.items.map((person) => (
+              <Row
                 key={person.memberId}
-                primary={person.displayName ?? "姓名待补录"}
-                secondary={`${person.workType ?? "工种待补录"} · ${person.phone}`}
-                chip={
-                  team.leader?.memberId === person.memberId
-                    ? "已选"
-                    : "设为负责人"
-                }
-                onClick={() =>
-                  setTeam({
-                    ...team,
-                    leader: {
-                      memberId: person.memberId,
-                      participantType: person.participantType,
-                      displayName: person.displayName,
-                      phone: person.phone,
-                    },
-                  })
-                }
-              />
+                title={person.displayName ?? "姓名待补录"}
+                avatar={personInitial(person.displayName)}
+                sub={joinText([
+                  person.workType ?? "工种待补录",
+                  maskPhone(person.phone),
+                ])}
+                onClick={() => choose(person)}
+              >
+                <Check
+                  round
+                  checked={team.leader?.memberId === person.memberId}
+                />
+              </Row>
             ))}
-            {people !== null && people.items.length === 0 ? (
-              <Notice>
-                暂无匹配成员，可调整筛选或添加人员。
-              </Notice>
-            ) : null}
-            {page > 1 ? (
-              <Button variant="outline" onClick={() => setPage(page - 1)}>
+          </Sheet>
+        )}
+        {hasPrevious || hasNext ? (
+          <Links>
+            {hasPrevious ? (
+              <Button variant="text" onClick={() => setPage(page - 1)}>
                 上一页
               </Button>
             ) : null}
-            {people && page * people.pageSize < people.total ? (
-              <Button variant="outline" onClick={() => setPage(page + 1)}>
+            {hasNext ? (
+              <Button variant="text" onClick={() => setPage(page + 1)}>
                 下一页
               </Button>
             ) : null}
-          </Section>
-          <Button
-            loading={busy}
-            onClick={() => {
-              void save();
-            }}
-          >
-            保存班组资料
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              void Taro.navigateTo({
-                url: `/pages/participants/index?projectId=${projectId}&teamId=${teamId}`,
-              });
-            }}
-          >
-            管理班组成员
-          </Button>
-        </>
-      ) : null}
+          </Links>
+        ) : null}
+        <Notice>
+          只能从本班组在场的成员里选。选好后回到班组资料，点“保存”才生效。
+        </Notice>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen header={<PageHeader title={title} />}>
+      <Sheet gap>
+        <FormInput
+          label="班组名称"
+          required
+          value={team.name}
+          placeholder="例如：钢筋一班"
+          maxLength={30}
+          error={error === NAME_REQUIRED && !team.name.trim()}
+          onInput={(name) => setTeam({ ...team, name })}
+        />
+        <FormInput
+          label="主要工种"
+          value={team.workType ?? ""}
+          placeholder="例如：钢筋工、电工"
+          maxLength={40}
+          onInput={(workType) => setTeam({ ...team, workType })}
+        />
+        <ChipsRow
+          label="状态"
+          options={STATUS_OPTIONS}
+          selected={[team.status === "ACTIVE" ? "ACTIVE" : "SUSPENDED"]}
+          onToggle={(status) => setTeam({ ...team, status })}
+        />
+        <FormArea
+          label="备注"
+          value={team.remark ?? ""}
+          placeholder="班组的工作安排"
+          maxLength={1000}
+          onInput={(remark) => setTeam({ ...team, remark })}
+        />
+      </Sheet>
+
+      <SectionTitle>负责人</SectionTitle>
+      <Sheet>
+        <Row
+          title={
+            team.leader
+              ? (team.leader.displayName ?? "姓名待补录")
+              : "还没有负责人"
+          }
+          avatar={
+            team.leader ? personInitial(team.leader.displayName) : undefined
+          }
+          sub={
+            team.leader
+              ? maskPhone(team.leader.phone)
+              : "从本班组在场的成员里指定"
+          }
+          onClick={() => {
+            // 名单已经读到时，上一次的出错说明和选负责人无关，不带过去。
+            if (people !== null) setError(null);
+            setView("leader");
+          }}
+        >
+          <View className="team-detail__link">
+            {team.leader ? "更换" : "指定"}
+          </View>
+        </Row>
+      </Sheet>
+      <Notice>
+        负责人管联络，审批补卡需要班组长权限。负责人转组、暂停或退场后会自动取消。
+      </Notice>
+
+      <Sheet gap>
+        <Row
+          title="班组成员"
+          value={`在场 ${team.memberCount} 人`}
+          icon="users"
+          mute
+          chevron
+          onClick={() => {
+            void Taro.navigateTo({
+              url: `/pages/participants/index?projectId=${projectId}&teamId=${teamId}`,
+            });
+          }}
+        />
+      </Sheet>
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      <BottomBar
+        primary={busy ? "保存中…" : "保存"}
+        busy={busy}
+        onPrimary={() => {
+          void save();
+        }}
+      />
     </Screen>
   );
 }

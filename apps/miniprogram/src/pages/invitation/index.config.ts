@@ -1,1 +1,1 @@
-export default definePageConfig({ navigationBarTitleText: "生成绑定邀请码" });
+export default definePageConfig({ navigationBarTitleText: "邀请绑定" });

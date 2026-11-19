@@ -1,261 +1,279 @@
-import { Picker, View } from "@tarojs/components";
-import Taro from "@tarojs/taro";
-import { useState } from "react";
+import { Picker, Text, View } from "@tarojs/components";
 
-import { ReportPerson } from "./report-person-detail";
-import { displayProjectRole } from "../routing/features";
-import type {
-  DailyReport,
-  DailyReportParticipant,
-  RangeReport,
-  RangeReportParticipant,
-} from "../services/management.types";
 import {
-  Button,
-  Field,
-  ListItem,
-  Notice,
-  Segmented,
-  StateView,
-  Subtitle,
-} from "./ui/index";
-import { errorMessage } from "../services/error-messages";
+  rowSummary,
+  type ReportPersonGroup,
+  type ReportProjectGroup,
+  type ReportRow,
+} from "../pages/reports/view-model";
+import { displayProjectRole } from "../routing/features";
+import { Button, FormRow, Row, Sheet, StateView } from "./ui/index";
 
-type Row = DailyReportParticipant | RangeReportParticipant;
-type Filter = "ALL" | "WORKER" | "MANAGER";
-const rowSummary = (row: Row): string =>
-  "scheduledDays" in row
-    ? `应出勤 ${row.scheduledDays} 天 · 实出勤 ${row.actualAttendedDays} 天 · 出勤率 ${row.scheduledDays === 0 ? "不适用" : `${((row.actualAttendedDays / row.scheduledDays) * 100).toFixed(1)}%`} · 缺勤 ${row.absenceCount} 天 · 缺卡 ${row.missingPunchCount} 天 · 迟到 ${row.lateCount} 天 · 早退 ${row.earlyLeaveCount} 天 · 已批补卡 ${row.approvedMakeupCount} 次 · 异常 ${row.abnormalRecordCount} 次`
-    : [
-        row.isAbsent ? "缺勤" : "",
-        row.isMissingPunch ? "缺卡" : "",
-        row.isLate ? "迟到" : "",
-        row.isEarlyLeave ? "早退" : "",
-        `已批补卡 ${row.approvedMakeupCount} 次`,
-        `异常 ${row.abnormalRecordCount} 次`,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-export const ReportParticipants = ({
-  report,
-  teamId,
-  onChanged,
-}: {
-  readonly report: DailyReport | RangeReport;
-  readonly teamId: string | null;
-  readonly onChanged: () => void;
-}): JSX.Element => {
-  const [search, setSearch] = useState<string>("");
-  const [filter, setFilter] = useState<Filter>("ALL");
-  const [team, setTeam] = useState<string>("");
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [openProject, setOpenProject] = useState<string | null>(
-    new Set(report.participants.map((row) => row.projectId)).size === 1
-      ? (report.participants[0]?.projectId ?? null)
-      : null,
-  );
-  const [visibleCount, setVisibleCount] = useState<number>(30);
-  const [error, setError] = useState<string | null>(null);
-  const teams = [
-    ...new Map(
-      report.participants
-        .filter((row) => row.teamId !== null)
-        .map((row) => [
-          row.teamId!,
-          { id: row.teamId!, label: `${row.projectName} · ${row.teamName}` },
-        ]),
-    ).values(),
-  ];
-  const rows: readonly Row[] = report.participants.filter(
+import "../pages/reports/report.scss";
+
+export type PersonFilter = "ALL" | "WORKER" | "MANAGER";
+export type ReportFilters = {
+  readonly search: string;
+  readonly type: PersonFilter;
+  /** 班组编号，空串是全部班组。 */
+  readonly team: string;
+  /** 人员列表先显示多少人。 */
+  readonly visibleCount: number;
+};
+/** 人员一次显示这么多，多的点“显示更多”。 */
+export const REPORT_PAGE_SIZE = 30;
+export const INITIAL_REPORT_FILTERS: ReportFilters = {
+  search: "",
+  type: "ALL",
+  team: "",
+  visibleCount: REPORT_PAGE_SIZE,
+};
+const TYPES: ReadonlyArray<{
+  readonly value: PersonFilter;
+  readonly label: string;
+}> = [
+  { value: "ALL", label: "全部人员" },
+  { value: "WORKER", label: "工人" },
+  { value: "MANAGER", label: "管理员" },
+];
+
+export type ReportTeam = { readonly id: string; readonly label: string };
+
+/** 报表里出现过的班组。 */
+export const reportTeams = (
+  rows: readonly ReportRow[],
+): readonly ReportTeam[] => [
+  ...new Map(
+    rows
+      .filter((row) => row.teamId !== null)
+      .map((row) => [
+        row.teamId!,
+        { id: row.teamId!, label: row.teamName ?? "未命名班组" },
+      ]),
+  ).values(),
+];
+
+/** 按搜索、身份、班组筛。searchOnly 时只按搜索筛（公司报表按项目分行的那一层）。 */
+export const filterReportRows = (
+  rows: readonly ReportRow[],
+  filters: ReportFilters,
+  searchOnly?: boolean,
+): readonly ReportRow[] =>
+  rows.filter(
     (row) =>
-      (filter === "ALL" || row.participantType === filter) &&
-      (!team || row.teamId === team) &&
+      (searchOnly === true ||
+        ((filters.type === "ALL" || row.participantType === filters.type) &&
+          (!filters.team || row.teamId === filters.team))) &&
       `${row.displayName ?? ""} ${row.phone} ${displayProjectRole(row.projectRoleLabel)}`.includes(
-        search.trim(),
+        filters.search.trim(),
       ),
   );
-  const projects = [
-    ...new Map(rows.map((row) => [row.projectId, row.projectName])).entries(),
-  ].sort((a, b) => a[1].localeCompare(b[1], "zh-CN"));
-  const people = [
-    ...new Set(rows.map((row) => `${row.projectId}:${row.memberId}`)),
-  ];
-  const copy = async (): Promise<void> => {
-    setError(null);
-    const text = [
-      `考勤明细 ${report.startDate} 至 ${report.endDate}`,
-      "项目\t姓名\t工种\t岗位\t班组\t工时(h)\t出勤情况\t当前项目评分\t评语\t评分人\t评分时间\t正常工时(h)\t加班工时(h)\t未分类工时(h)\t安全信用分\t已确认违规",
-      ...rows.map((row) =>
-        [
-          row.projectName,
-          row.displayName ?? row.phone,
-          row.workType ?? "未填写",
-          displayProjectRole(row.projectRoleLabel),
-          row.teamName ?? "无班组",
-          (row.workedMinutes / 60).toFixed(1),
-          rowSummary(row),
-          row.evaluation?.score ?? "未评分",
-          row.evaluation?.comment ?? "",
-          row.evaluation?.reviewerName ?? "",
-          row.evaluation?.reviewedAt ?? "",
-          (row.normalMinutes / 60).toFixed(1),
-          (row.overtimeMinutes / 60).toFixed(1),
-          (row.unclassifiedMinutes / 60).toFixed(1),
-          row.safetyCreditScore ?? "不适用",
-          row.confirmedViolationCount,
-        ].join("\t"),
-      ),
-    ].join("\n");
-    try {
-      await Taro.setClipboardData({ data: text });
-    } catch (failure: unknown) {
-      setError(
-        errorMessage(failure, "复制失败，请检查剪贴板权限。"),
-      );
-    }
-  };
+
+export const personName = (row: ReportRow): string =>
+  row.displayName ?? `手机尾号 ${row.phone.slice(-4)}`;
+
+/** 复制到剪贴板的明细：一行一个人一个班组，制表符分列，能直接贴进表格。 */
+export const reportClipboardText = (
+  range: { readonly startDate: string; readonly endDate: string },
+  rows: readonly ReportRow[],
+): string =>
+  [
+    `考勤明细 ${range.startDate} 至 ${range.endDate}`,
+    "项目\t姓名\t工种\t岗位\t班组\t工时(h)\t出勤情况\t当前项目评分\t评语\t评分人\t评分时间\t正常工时(h)\t加班工时(h)\t未分类工时(h)\t安全信用分\t已确认违规",
+    ...rows.map((row) =>
+      [
+        row.projectName,
+        row.displayName ?? row.phone,
+        row.workType ?? "未填写",
+        displayProjectRole(row.projectRoleLabel),
+        row.teamName ?? "无班组",
+        (row.workedMinutes / 60).toFixed(1),
+        rowSummary(row),
+        row.evaluation?.score ?? "未评分",
+        row.evaluation?.comment ?? "",
+        row.evaluation?.reviewerName ?? "",
+        row.evaluation?.reviewedAt ?? "",
+        (row.normalMinutes / 60).toFixed(1),
+        (row.overtimeMinutes / 60).toFixed(1),
+        (row.unclassifiedMinutes / 60).toFixed(1),
+        row.safetyCreditScore ?? "不适用",
+        row.confirmedViolationCount,
+      ].join("\t"),
+    ),
+  ].join("\n");
+
+/** 筛选：“班组”“身份”两行，没得选的那行不显示；两行都没有就什么也不显示。 */
+export const ReportFilterRows = ({
+  filters,
+  teams,
+  showType,
+  onChange,
+}: {
+  readonly filters: ReportFilters;
+  /** 可选的班组；空的就不显示班组那一行。 */
+  readonly teams: readonly ReportTeam[];
+  /** 报表里既有工人又有管理员时才有必要按身份筛。 */
+  readonly showType: boolean;
+  readonly onChange: (patch: Partial<ReportFilters>) => void;
+}): JSX.Element | null => {
+  if (!showType && teams.length === 0) return null;
+  const typeIndex = Math.max(
+    0,
+    TYPES.findIndex((item) => item.value === filters.type),
+  );
   return (
-    <View>
-      <View className="report-section-title">
-        按项目查看 · {projects.length} 个项目 · {people.length} 人次
-      </View>
-      <Field
-        value={search}
-        placeholder="搜索姓名、手机号或岗位"
-        onInput={setSearch}
-      />
-      <Segmented<Filter>
-        options={[
-          { value: "ALL", label: "全部人员" },
-          { value: "WORKER", label: "工人" },
-          { value: "MANAGER", label: "管理员" },
-        ]}
-        value={filter}
-        onChange={setFilter}
-      />
-      <Picker
-        mode="selector"
-        range={["全部班组", ...teams.map((item) => item.label)]}
-        value={teams.findIndex((item) => item.id === team) + 1}
-        onChange={(event) =>
-          setTeam(teams[Number(event.detail.value) - 1]?.id ?? "")
-        }
-      >
-        <ListItem
-          primary="班组筛选"
-          secondary={
-            teams.find((item) => item.id === team)?.label ?? "全部班组"
-          }
-          chip="选择"
-        />
-      </Picker>
-      <Subtitle>按项目分别统计</Subtitle>
-      {rows.length === 0 ? <StateView title="没有符合条件的人员" /> : null}
-      {projects.map(([projectId, projectName]) => {
-        const projectRows = rows.filter((row) => row.projectId === projectId);
-        const memberIds = [...new Set(projectRows.map((row) => row.memberId))];
-        const hours =
-          projectRows.reduce((sum, row) => sum + row.workedMinutes, 0) / 60;
-        return (
-          <View key={projectId} className="report-project">
-            <ListItem
-              primary={projectName}
-              secondary={`${memberIds.length} 人 · 累计 ${hours.toFixed(1)}h`}
-              chip={openProject === projectId ? "收起" : "查看人员"}
-              onClick={() => {
-                setOpenProject(openProject === projectId ? null : projectId);
-                setOpenId(null);
-                setVisibleCount(30);
-              }}
+    <Sheet gap>
+      {teams.length > 0 ? (
+        <View className="rpt-pick">
+          <Picker
+            mode="selector"
+            range={["全部班组", ...teams.map((item) => item.label)]}
+            value={teams.findIndex((item) => item.id === filters.team) + 1}
+            onChange={(event) =>
+              onChange({
+                team: teams[Number(event.detail.value) - 1]?.id ?? "",
+              })
+            }
+          >
+            <FormRow
+              label="班组"
+              value={
+                teams.find((item) => item.id === filters.team)?.label ??
+                "全部班组"
+              }
+              chevron
             />
-            {openProject === projectId ? (
-              <View>
-                {memberIds.slice(0, visibleCount).map((memberId) => {
-                  const slices = projectRows.filter(
-                    (row) => row.memberId === memberId,
-                  );
-                  const person = slices[0];
-                  const key = `${projectId}:${memberId}`;
-                  const totalMinutes = slices.reduce(
-                    (sum, row) => sum + row.workedMinutes,
-                    0,
-                  );
-                  return (
-                    <View key={key} className="report-member">
-                      <ListItem
-                        primary={
-                          person.displayName ??
-                          `成员 · ${person.phone.slice(-4)}`
-                        }
-                        secondary={[
-                          ...new Set([
-                            person.workType ?? "工种未填写",
-                            displayProjectRole(person.projectRoleLabel),
-                          ]),
-                          person.projectKind === "REPAIR"
-                            ? "零星维修"
-                            : "常规施工",
-                          person.isTemporary ? "临时用工" : "常规用工",
-                          person.safetyCreditScore === null
-                            ? ""
-                            : `安全信用 ${person.safetyCreditScore}`,
-                          person.evaluation === null
-                            ? "未评分"
-                            : `${person.evaluation.score} 分`,
-                        ].join(" · ")}
-                        chip={`${(totalMinutes / 60).toFixed(1)}h · ${openId === key ? "收起" : "详情"}`}
-                        onClick={() => setOpenId(openId === key ? null : key)}
-                      />
-                      {openId === key ? (
-                        <View>
-                          {slices.map((row) => (
-                            <Notice key={row.teamId ?? "direct"}>
-                              {row.teamName ?? "项目直属"} · 正常{" "}
-                              {(row.normalMinutes / 60).toFixed(1)}h · 加班{" "}
-                              {(row.overtimeMinutes / 60).toFixed(1)}h · 未分类{" "}
-                              {(row.unclassifiedMinutes / 60).toFixed(1)}h ·{" "}
-                              {row.requiresAttendance
-                                ? rowSummary(row)
-                                : "免考勤成员，不计入应出勤。"}
-                            </Notice>
-                          ))}
-                          <ReportPerson
-                            key={`${key}:${report.startDate}:${report.endDate}:${team}`}
-                            projectId={projectId}
-                            memberId={memberId}
-                            teamId={teamId ?? (team || null)}
-                            from={report.startDate}
-                            to={report.endDate}
-                            onChanged={onChanged}
-                          />
-                        </View>
-                      ) : null}
-                    </View>
-                  );
-                })}
-                {memberIds.length > visibleCount ? (
-                  <Button
-                    variant="outline"
-                    onClick={() => setVisibleCount(visibleCount + 30)}
-                  >
-                    加载更多人员（剩余 {memberIds.length - visibleCount} 人）
-                  </Button>
-                ) : null}
-              </View>
-            ) : null}
-          </View>
-        );
-      })}
-      <Button
-        variant="outline"
-        disabled={rows.length === 0}
-        onClick={() => {
-          void copy();
-        }}
-      >
-        复制当前明细
-      </Button>
-      {error ? <Notice tone="error">{error}</Notice> : null}
-    </View>
+          </Picker>
+        </View>
+      ) : null}
+      {showType ? (
+        <View className="rpt-pick">
+          <Picker
+            mode="selector"
+            range={TYPES.map((item) => item.label)}
+            value={typeIndex}
+            onChange={(event) =>
+              onChange({
+                type: TYPES[Number(event.detail.value)]?.value ?? "ALL",
+              })
+            }
+          >
+            <FormRow label="身份" value={TYPES[typeIndex].label} chevron />
+          </Picker>
+        </View>
+      ) : null}
+    </Sheet>
   );
 };
+
+/** 一个人的副行：工种、岗位、是不是临时工；项目报表再带上班组。 */
+const personSub = (person: ReportPersonGroup, showTeam: boolean): string => {
+  const first = person.rows[0];
+  const role = displayProjectRole(first.projectRoleLabel);
+  const teams = [
+    ...new Set(person.rows.map((row) => row.teamName ?? "项目直属")),
+  ];
+  // 岗位和工种写的是同一个词时只说一遍。
+  return [
+    ...new Set([
+      first.workType ?? (first.participantType === "WORKER" ? "工种没填" : ""),
+      role === "普通工人" ? "" : role,
+      first.isTemporary ? "临时工" : "",
+      showTeam ? teams.join("、") : "",
+    ]),
+  ]
+    .filter(Boolean)
+    .join("，");
+};
+
+/** 人员：一人一行，有考勤问题的在最前面。点一行看这个人的明细。 */
+export const ReportPeople = ({
+  people,
+  visibleCount,
+  showTeam,
+  emptyTitle,
+  onOpen,
+  onMore,
+}: {
+  readonly people: readonly ReportPersonGroup[];
+  readonly visibleCount: number;
+  readonly showTeam: boolean;
+  /** 一个人也没有时说什么：是报表本来就空，还是筛没了。 */
+  readonly emptyTitle: string;
+  readonly onOpen: (person: ReportPersonGroup) => void;
+  readonly onMore: () => void;
+}): JSX.Element => {
+  if (people.length === 0) return <StateView kind="empty" title={emptyTitle} />;
+  const left = people.length - visibleCount;
+  return (
+    <>
+      <Sheet gap>
+        {people.slice(0, visibleCount).map((person) => {
+          const name = personName(person.rows[0]);
+          const { bad, exempt, hours } = person.outcome;
+          // 右边只说一件事：有问题说问题，免考勤又没记工的说免考勤，其余说工时。
+          const idle = bad === null && exempt && hours === "0.0";
+          return (
+            <Row
+              key={person.key}
+              avatar={name.slice(0, 1)}
+              title={name}
+              sub={personSub(person, showTeam) || undefined}
+              status={bad === null ? undefined : { kind: "bad", text: bad }}
+              value={idle ? "免考勤" : undefined}
+              mute={idle}
+              chevron
+              onClick={() => onOpen(person)}
+            >
+              {bad === null && !idle ? (
+                <View>
+                  <Text className="num">{hours}</Text> 小时
+                </View>
+              ) : null}
+            </Row>
+          );
+        })}
+      </Sheet>
+      {left > 0 ? (
+        <Button variant="outline" wide onClick={onMore}>
+          再显示 {Math.min(left, REPORT_PAGE_SIZE)} 人，还有 {left} 人
+        </Button>
+      ) : null}
+    </>
+  );
+};
+
+/** 按项目分行：公司报表用。点一行看这个项目的人员。 */
+export const ReportProjects = ({
+  projects,
+  onOpen,
+}: {
+  readonly projects: readonly ReportProjectGroup[];
+  readonly onOpen: (project: ReportProjectGroup) => void;
+}): JSX.Element =>
+  projects.length === 0 ? (
+    <StateView kind="empty" title="没有符合条件的人" />
+  ) : (
+    <Sheet gap>
+      {projects.map((project) => (
+        <Row
+          key={project.projectId}
+          title={project.projectName}
+          sub={`${project.people} 人，${project.hours} 小时`}
+          status={
+            project.rate === null && project.troubled > 0
+              ? { kind: "bad", text: `${project.troubled} 人有异常` }
+              : undefined
+          }
+          chevron
+          onClick={() => onOpen(project)}
+        >
+          {project.rate !== null ? (
+            <View>
+              <Text className="num">{project.rate}</Text>%
+            </View>
+          ) : null}
+        </Row>
+      ))}
+    </Sheet>
+  );

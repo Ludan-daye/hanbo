@@ -4,15 +4,22 @@ import { useEffect, useState } from "react";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 
 import {
-  AppIcon,
+  BottomBar,
   Button,
-  Field,
-  ListItem,
+  Card,
+  CardActions,
+  CardMeta,
+  CardTitle,
+  Divider,
+  KV,
+  PRESS,
   PageHeader,
   Screen,
+  SearchField,
   Segmented,
+  SkeletonRows,
   StateView,
-  Subtitle,
+  type StatusKind,
 } from "../../components/ui/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useManagedCompanyId } from "../../hooks/use-management-scope";
@@ -24,13 +31,21 @@ import type {
 import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
 
-const STATUS_LABEL: Readonly<Record<ProjectStatus, string>> = {
-  ACTIVE: "进行中",
-  COMPLETED: "已完工",
-  PREPARING: "筹备中",
-  SUSPENDED: "已暂停",
+const STATUS: Readonly<
+  Record<ProjectStatus, { readonly kind: StatusKind; readonly text: string }>
+> = {
+  ACTIVE: { kind: "ok", text: "进行中" },
+  COMPLETED: { kind: "idle", text: "已完工" },
+  PREPARING: { kind: "warn", text: "筹备中" },
+  SUSPENDED: { kind: "warn", text: "已暂停" },
 };
 type Filter = "ALL" | ProjectStatus;
+
+const plannedPeriod = (project: CompanyProject): string =>
+  project.plannedEndDate === null
+    ? `${project.plannedStartDate} 开工，完工日期未定`
+    : `${project.plannedStartDate} 到 ${project.plannedEndDate}`;
+
 export default function CompanyProjects(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
@@ -50,8 +65,7 @@ export default function CompanyProjects(): JSX.Element {
         if (!cancelled) setItems(rows);
       },
       (cause) => {
-        if (!cancelled)
-          setError(errorMessage(cause, "无法读取项目"));
+        if (!cancelled) setError(errorMessage(cause, "请稍后重试。"));
       },
     );
     return () => {
@@ -63,103 +77,120 @@ export default function CompanyProjects(): JSX.Element {
       (filter === "ALL" || project.status === filter) &&
       `${project.name} ${project.address}`.includes(search.trim()),
   );
+
+  if (companyId === null)
+    return (
+      <Screen header={<PageHeader title="公司项目" />}>
+        <StateView
+          kind="empty"
+          title="没有公司管理权限"
+          sub="这个账号不是公司管理员。"
+        />
+      </Screen>
+    );
+
   return (
-    <Screen>
-      <PageHeader title="公司项目" />
-      {companyId === null ? (
-        <StateView title="暂无公司管理权限" />
+    <Screen header={<PageHeader title="公司项目" />}>
+      <SearchField
+        value={search}
+        placeholder="搜索项目名称或地址"
+        onInput={setSearch}
+      />
+      <Segmented<Filter>
+        options={[
+          {
+            value: "ALL",
+            label: items === null ? "全部" : `全部 ${items.length}`,
+          },
+          { value: "ACTIVE", label: "进行中" },
+          { value: "PREPARING", label: "筹备中" },
+          { value: "COMPLETED", label: "已完工" },
+        ]}
+        value={filter}
+        onChange={setFilter}
+      />
+      {error !== null ? (
+        <StateView
+          kind="error"
+          title="项目没读到"
+          sub={error}
+          onRetry={refresh}
+        />
+      ) : items === null ? (
+        <SkeletonRows rows={3} gap />
+      ) : visible.length === 0 ? (
+        items.length === 0 ? (
+          <StateView
+            kind="empty"
+            title="还没有项目"
+            sub="点下面的“新建项目”建第一个。"
+          />
+        ) : (
+          <StateView
+            kind="empty"
+            title="没有找到项目"
+            sub="换个关键词，或者换一个筛选。"
+          />
+        )
       ) : (
-        <View>
-          <Field
-            value={search}
-            placeholder="搜索项目名称或地址"
-            onInput={setSearch}
-          />
-          <Segmented<Filter>
-            options={[
-              { value: "ALL", label: "全部" },
-              { value: "ACTIVE", label: "进行中" },
-              { value: "PREPARING", label: "筹备中" },
-              { value: "COMPLETED", label: "已完工" },
-            ]}
-            value={filter}
-            onChange={setFilter}
-          />
-          <Subtitle>共 {visible.length} 个项目</Subtitle>
-          {items === null && error === null ? (
-            <StateView title="加载中…" />
-          ) : null}
-          {error ? (
-            <StateView title="加载失败" sub={error} onRetry={refresh} />
-          ) : null}
-          {items !== null && visible.length === 0 ? (
-            <StateView
-              title="没有找到相关项目"
-              sub="可调整筛选或新建项目。"
-            />
-          ) : null}
-          {visible.map((project) => (
-            <View className="project-card" key={project.id}>
+        visible.map((project) => {
+          const open = opened === project.id;
+          // 收着的时候点整张卡展开；展开后卡里有按钮，只有名称这一块用来收起。
+          return (
+            <Card
+              gap
+              key={project.id}
+              onClick={open ? undefined : () => setOpened(project.id)}
+            >
               <View
-                className="project-card__heading"
-                onClick={() => {
-                  setOpened(opened === project.id ? null : project.id);
-                }}
+                className={open ? "ui-press" : undefined}
+                {...(open ? PRESS : {})}
+                onClick={open ? () => setOpened(null) : undefined}
               >
-                <View className="project-card__icon">
-                  <AppIcon name="building" />
-                </View>
-                <View className="project-card__name">{project.name}</View>
-                <View
-                  className={`project-card__status project-card__status--${project.status}`}
-                >
-                  {STATUS_LABEL[project.status]}
-                </View>
+                <CardTitle status={STATUS[project.status]}>
+                  {project.name}
+                </CardTitle>
+                {project.address ? (
+                  <CardMeta>{project.address}</CardMeta>
+                ) : null}
               </View>
-              <View className="project-card__address">
-                <AppIcon name="pin" />
-                <View>{project.address}</View>
-              </View>
-              <View className="project-card__footer">
-                <View>开工 {project.plannedStartDate}</View>
-                <View
-                  onClick={() => {
-                    setOpened(opened === project.id ? null : project.id);
-                  }}
-                >
-                  {opened === project.id ? "收起详情" : "项目详情"} ›
-                </View>
-              </View>
-              {opened === project.id ? (
-                <View className="project-card__details">
-                  <Button onClick={() => { void Taro.navigateTo({ url: `/pages/project-detail/index?projectId=${project.id}` }); }}>进入项目工作台</Button>
-                  <ListItem
-                    primary="考勤范围"
-                    secondary={`工地中心周围 ${project.geofenceRadiusM} 米`}
+              {open ? (
+                <View className="m-fade">
+                  <Divider />
+                  <KV
+                    label="考勤范围"
+                    value={`工地中心周围 ${project.geofenceRadiusM} 米`}
                   />
-                  <ListItem
-                    primary="工地位置"
-                    secondary={project.address}
-                    chip="查看地图"
-                    onClick={() => { void Taro.navigateTo({ url: `/pages/project-detail/index?projectId=${project.id}` }); }}
-                  />
-                  <ListItem
-                    primary="计划工期"
-                    secondary={`${project.plannedStartDate} 至 ${project.plannedEndDate ?? "未设置结束日期"}`}
-                  />
+                  <KV label="计划工期" value={plannedPeriod(project)} />
+                  <CardActions>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        void Taro.navigateTo({
+                          url: `/pages/project-detail/index?projectId=${project.id}&view=hub`,
+                        });
+                      }}
+                    >
+                      进入项目
+                    </Button>
+                    <Button variant="text" onClick={() => setOpened(null)}>
+                      收起
+                    </Button>
+                  </CardActions>
                 </View>
               ) : null}
-            </View>
-          ))}
-          <Button
-            onClick={() => {
-              void Taro.navigateTo({ url: `/pages/create-project/index?companyId=${companyId}` });
-            }}
-          >
-            ＋ 新建项目
-          </Button>
-        </View>
+            </Card>
+          );
+        })
       )}
+      <BottomBar
+        primary="新建项目"
+        onPrimary={() => {
+          void Taro.navigateTo({
+            url: `/pages/create-project/index?companyId=${companyId}`,
+          });
+        }}
+      />
     </Screen>
   );
 }

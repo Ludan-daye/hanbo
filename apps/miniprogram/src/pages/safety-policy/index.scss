@@ -1,0 +1,16 @@
+// 信用规则。公共样式在 components/ui/kit.scss，这里是带单位的数字行。
+
+// 数字靠右，后面跟着“分”“天”。输入框只留三位数的宽度，名称再长也不会把它挤掉。
+.ui-form-row__input.safety-policy__number {
+  flex: 0 0 150rpx;
+  font-size: 40rpx;
+}
+.safety-policy__unit {
+  flex-shrink: 0;
+}
+
+// 点一下去选的表单行包在 Picker 里，成了 Picker 唯一的孩子，
+// 公共样式会把它当成最后一行去掉分隔线。分隔线改由这层补上。
+.safety-policy__pick {
+  border-bottom: 2rpx solid var(--hair);
+}

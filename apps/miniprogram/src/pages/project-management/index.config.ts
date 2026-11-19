@@ -1,1 +1,1 @@
-export default definePageConfig({ navigationBarTitleText: "项目管理" });
+export default definePageConfig({ navigationBarTitleText: "班组管理" });

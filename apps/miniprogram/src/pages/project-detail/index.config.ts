@@ -1,1 +1,1 @@
-export default definePageConfig({ navigationBarTitleText: "项目工作台" });
+export default definePageConfig({ navigationBarTitleText: "项目设置" });

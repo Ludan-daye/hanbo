@@ -1,0 +1,9 @@
+// 邀请绑定。公共样式在 components/ui/kit.scss。
+
+// 公共的大号码是按 6 位数字定的尺寸；绑定邀请码有三十多位，一行放不下：改小，允许折行。
+.invitation-code--long .ui-code {
+  font-size: 52rpx;
+  line-height: 1.35;
+  letter-spacing: 2rpx;
+  word-break: break-all;
+}

@@ -1,57 +1,33 @@
-import { MonthlyExport } from "../../components/monthly-export";
-import { Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
-import { ReportParticipants } from "../../components/report-participants";
-import { useSessionGuard } from "../../hooks/use-session-guard";
 
-import {
-  ListItem,
-  PageHeader,
-  Screen,
-  Segmented,
-  StateView,
-  StatCards,
-} from "../../components/ui/index";
+import { PageHeader, Screen, StateView } from "../../components/ui/index";
 import { useManagedTeamId } from "../../hooks/use-management-scope";
+import { usePageRefresh } from "../../hooks/use-page-refresh";
+import { useSessionGuard } from "../../hooks/use-session-guard";
+import { errorMessage } from "../../services/error-messages";
 import {
   fetchTeamDailyReport,
   fetchTeamMonthlyReport,
   fetchTeamWeeklyReport,
 } from "../../services/management";
-import type {
-  DailyReport,
-  RangeReport,
-  ReportTotals,
-} from "../../services/management.types";
-import { usePageRefresh } from "../../hooks/use-page-refresh";
-import {
-  chinaToday,
-  chinaMonth,
-  chinaMonday,
-  mondayForDate,
-} from "../../services/time";
+import type { DailyReport, RangeReport } from "../../services/management.types";
+import { chinaMonday, chinaMonth, chinaToday } from "../../services/time";
 import { useSession } from "../../store/session";
 
-import { totalsStatItems } from "../reports/view-model";
-import { errorMessage } from "../../services/error-messages";
-
-type Period = "DAILY" | "WEEKLY" | "MONTHLY";
-const PERIOD_OPTIONS = [
-  { label: "日报", value: "DAILY" as const },
-  { label: "周报", value: "WEEKLY" as const },
-  { label: "月报", value: "MONTHLY" as const },
-];
+import { ReportView } from "../reports/report-view";
+import type { ReportPeriod } from "../reports/view-model";
 
 type Report = DailyReport | RangeReport;
 
+/** 班组考勤。班组长首页原来的工人名单现在在这里：日报里一人一行，有问题的排在前面。 */
 export default function TeamAttendance(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
   const { revision, refresh } = usePageRefresh();
   const teamId = useManagedTeamId(state.me);
   const requestedDate = Taro.useRouter().params.date;
-  const [period, setPeriod] = useState<Period>("DAILY");
+  const [period, setPeriod] = useState<ReportPeriod>("DAILY");
   const [date, setDate] = useState<string>(
     requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
       ? requestedDate
@@ -93,92 +69,33 @@ export default function TeamAttendance(): JSX.Element {
 
   if (teamId === null) {
     return (
-      <Screen>
-        <PageHeader title="班组考勤" />
-        <StateView title="无班组" sub="当前账号没有班组长身份。" />
+      <Screen header={<PageHeader title="班组考勤" />}>
+        <StateView
+          kind="empty"
+          title="没有可以看的班组"
+          sub="这个账号不是班组长。"
+        />
       </Screen>
     );
   }
 
-  const totals: ReportTotals | null = report?.totals ?? null;
-
   return (
-    <Screen>
-      <PageHeader title="班组考勤" />
-      <Segmented
-        options={PERIOD_OPTIONS}
-        value={period}
-        onChange={(v) => {
-          setPeriod(v);
-        }}
-      />
-      <View>
-        {period === "DAILY" ? (
-          <Picker
-            mode="date"
-            value={date}
-            onChange={(e) =>
-              setDate(String((e.detail as { value: string }).value))
-            }
-          >
-            <ListItem primary={`日期 · ${date}`} secondary="点选其它日期" />
-          </Picker>
-        ) : null}
-        {period === "WEEKLY" ? (
-          <Picker
-            mode="date"
-            value={weekStart}
-            onChange={(e) =>
-              setWeekStart(
-                mondayForDate(String((e.detail as { value: string }).value)),
-              )
-            }
-          >
-            <ListItem
-              primary={`周起始 · ${weekStart}`}
-              secondary="选择任一天，自动查看所属周"
-            />
-          </Picker>
-        ) : null}
-        {period === "MONTHLY" ? (
-          <Picker
-            mode="date"
-            fields="month"
-            value={month}
-            onChange={(e) =>
-              setMonth(String((e.detail as { value: string }).value))
-            }
-          >
-            <ListItem primary={`月份 · ${month}`} secondary="点选月份" />
-          </Picker>
-        ) : null}
-      </View>
-      {error !== null ? (
-        <StateView title="班组考勤读取失败" sub={error} onRetry={refresh} />
-      ) : null}
-      {report === null && error === null ? <StateView title="正在读取班组考勤…" /> : null}
-      {report !== null ? (
-        <View className="report-range">
-          统计区间：{report.startDate} — {report.endDate}
-        </View>
-      ) : null}
-      {totals !== null ? <StatCards items={totalsStatItems(totals)} /> : null}
-      {period === "MONTHLY" && report !== null ? (
-        <MonthlyExport
-          key={`${teamId}:${month}`}
-          scope="TEAM"
-          scopeId={teamId}
-          month={month}
-        />
-      ) : null}
-      {report ? (
-        <ReportParticipants
-          key={`${report.projectId}:${report.startDate}:${report.endDate}`}
-          report={report}
-          teamId={teamId}
-          onChanged={refresh}
-        />
-      ) : null}
-    </Screen>
+    <ReportView
+      title="班组考勤"
+      scope="TEAM"
+      scopeId={teamId}
+      teamId={teamId}
+      period={period}
+      date={date}
+      weekStart={weekStart}
+      month={month}
+      report={report}
+      error={error}
+      onPeriod={setPeriod}
+      onDate={setDate}
+      onWeekStart={setWeekStart}
+      onMonth={setMonth}
+      onRefresh={refresh}
+    />
   );
 }

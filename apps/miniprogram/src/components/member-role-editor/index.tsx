@@ -1,139 +1,125 @@
-import { Picker } from "@tarojs/components";
-import { Button, ListItem, Section, Subtitle } from "../ui";
+import { View } from "@tarojs/components";
+
+import { Button } from "../ui";
 import type {
   MemberRoleAssignment,
   ProjectTeam,
 } from "../../services/management.types";
 
+import { ChipsRow, SelectRow } from "./form-rows";
+import {
+  ROLE_CHOICES,
+  selectedRoleCodes,
+  toggleMemberRole,
+} from "./person-text";
+
+import "./index.scss";
+
 type Props = {
   readonly value: readonly MemberRoleAssignment[];
   readonly teams: readonly ProjectTeam[];
   readonly disabled: boolean;
+  /** 提交时没通过检查：把没选身份、没选班组的行标出来。 */
+  readonly invalid?: boolean;
   readonly onChange: (roles: readonly MemberRoleAssignment[]) => void;
 };
 
-const options: readonly {
-  readonly roleCode: MemberRoleAssignment["roleCode"];
-  readonly name: string;
-  readonly description: string;
-}[] = [
-  {
-    roleCode: "WORKER",
-    name: "一级 · 工人",
-    description: "在本项目承担施工工作",
-  },
-  {
-    roleCode: "TEAM_LEADER",
-    name: "二级 · 班组长",
-    description: "管理指定班组，可兼管多个班组",
-  },
-  {
-    roleCode: "PROJECT_ADMIN",
-    name: "三级 · 项目管理员",
-    description: "管理本项目的人员、考勤和报表",
-  },
-];
+/** 一个人最多管几个班组。 */
+const MAX_LED_TEAMS = 19;
 
+/**
+ * 本项目身份：一行里点选，可以选几个；选了班组长才出现“管哪个班组”。
+ * 兼任共用一份档案，考勤和评分不重复统计。
+ * 这里只出表单行，要放在 Sheet 里。
+ */
 export const MemberRoleEditor = ({
   value,
   teams,
   disabled,
+  invalid,
   onChange,
-}: Props): JSX.Element => (
-  <Section
-    title="本项目职级 · 可多选"
-    sub="兼任共用档案，考勤和评分不重复统计。"
-  >
-    {options.map((option) => {
-      const selected = value.some((role) => role.roleCode === option.roleCode);
-      return (
-        <ListItem
-          key={option.roleCode}
-          primary={option.name}
-          secondary={option.description}
-          chip={selected ? "✓ 已选择" : "选择"}
-          onClick={() => {
-            if (!disabled)
-              onChange(
-                selected
-                  ? value.filter((role) => role.roleCode !== option.roleCode)
-                  : [
-                      ...value,
-                      {
-                        roleCode: option.roleCode,
-                        teamId: option.roleCode === "TEAM_LEADER" ? "" : null,
-                      },
-                    ],
-              );
-          }}
-        />
-      );
-    })}
-    {value.map((role, index) =>
-      role.roleCode === "TEAM_LEADER" ? (
-        <Picker
-          key={index}
-          mode="selector"
-          disabled={disabled}
-          range={["请选择管理班组", ...teams.map((team) => team.name)]}
-          value={teams.findIndex((team) => team.id === role.teamId) + 1}
-          onChange={(event) =>
-            onChange(
-              value.map((item, position) =>
-                position === index
-                  ? {
-                      roleCode: "TEAM_LEADER",
-                      teamId: teams[Number(event.detail.value) - 1]?.id ?? "",
-                    }
-                  : item,
-              ),
-            )
-          }
-        >
-          <ListItem
-            primary="管理班组 *"
-            secondary={
-              teams.find((team) => team.id === role.teamId)?.name ??
-              "请选择班组"
+}: Props): JSX.Element => {
+  const ledCount = value.filter(
+    (role) => role.roleCode === "TEAM_LEADER",
+  ).length;
+  const canLeadMore =
+    ledCount > 0 && ledCount < Math.min(teams.length, MAX_LED_TEAMS);
+  return (
+    <>
+      <ChipsRow
+        label="身份"
+        required
+        error={invalid === true && value.length === 0}
+        options={ROLE_CHOICES}
+        selected={selectedRoleCodes(value)}
+        onToggle={(roleCode) => {
+          if (!disabled) onChange(toggleMemberRole(value, roleCode));
+        }}
+      />
+      {value.map((role, index) =>
+        role.roleCode === "TEAM_LEADER" ? (
+          <SelectRow
+            key={index}
+            label={
+              value
+                .slice(0, index)
+                .some((earlier) => earlier.roleCode === "TEAM_LEADER")
+                ? "还管哪个班组"
+                : "管哪个班组"
             }
-            chip="选择"
-          />
-        </Picker>
-      ) : null,
-    )}
-    {value.some((role) => role.roleCode === "TEAM_LEADER") ? (
-      <>
-        {teams.length === 0 ? (
-          <Subtitle>先建立班组，再分配班组长。</Subtitle>
-        ) : null}
-        <Button
-          variant="outline"
-          disabled={
-            disabled ||
-            value.filter((role) => role.roleCode === "TEAM_LEADER").length >=
-              Math.min(teams.length, 19)
-          }
-          onClick={() =>
-            onChange([...value, { roleCode: "TEAM_LEADER", teamId: "" }])
-          }
-        >
-          兼管另一个班组
-        </Button>
-        {value.filter((role) => role.roleCode === "TEAM_LEADER").length > 1 ? (
-          <Button
-            variant="outline"
+            required
             disabled={disabled}
-            onClick={() => {
-              const last = value
-                .map((role) => role.roleCode)
-                .lastIndexOf("TEAM_LEADER");
-              onChange(value.filter((_role, index) => index !== last));
-            }}
-          >
-            移除最后一个管理班组
-          </Button>
-        ) : null}
-      </>
-    ) : null}
-  </Section>
-);
+            error={invalid === true && !role.teamId}
+            options={["请选择管理班组", ...teams.map((team) => team.name)]}
+            index={teams.findIndex((team) => team.id === role.teamId) + 1}
+            value={teams.find((team) => team.id === role.teamId)?.name ?? ""}
+            placeholder={
+              teams.length === 0 ? "还没有班组，先去建一个" : "请选择"
+            }
+            onChange={(picked) =>
+              onChange(
+                value.map((item, position) =>
+                  position === index
+                    ? {
+                        roleCode: "TEAM_LEADER",
+                        teamId: teams[picked - 1]?.id ?? "",
+                      }
+                    : item,
+                ),
+              )
+            }
+          />
+        ) : null,
+      )}
+      {canLeadMore || ledCount > 1 ? (
+        <View className="member-roles__more">
+          {ledCount > 1 ? (
+            <Button
+              variant="text"
+              disabled={disabled}
+              onClick={() => {
+                const last = value
+                  .map((role) => role.roleCode)
+                  .lastIndexOf("TEAM_LEADER");
+                onChange(value.filter((_role, index) => index !== last));
+              }}
+            >
+              少管一个班组
+            </Button>
+          ) : null}
+          {canLeadMore ? (
+            <Button
+              variant="text"
+              disabled={disabled}
+              onClick={() =>
+                onChange([...value, { roleCode: "TEAM_LEADER", teamId: "" }])
+              }
+            >
+              再管一个班组
+            </Button>
+          ) : null}
+        </View>
+      ) : null}
+    </>
+  );
+};

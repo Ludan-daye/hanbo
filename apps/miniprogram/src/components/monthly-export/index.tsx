@@ -1,7 +1,8 @@
 import { View } from "@tarojs/components";
 import { useEffect, useState } from "react";
-import { Button, ListItem, Notice } from "../ui/index";
+
 import { FRONTEND_DEMO } from "../../config/env";
+import { errorMessage } from "../../services/error-messages";
 import {
   fetchReportExports,
   openReportExport,
@@ -9,20 +10,43 @@ import {
   type ExportScope,
   type ReportExport,
 } from "../../services/report-exports";
-import { chinaMonth, formatChinaHm } from "../../services/time";
-import { errorMessage } from "../../services/error-messages";
+import { chinaMonth } from "../../services/time";
+import { workTimestamp } from "../team-work-fields";
+import {
+  BottomBar,
+  Button,
+  Links,
+  Notice,
+  PRESS,
+  Row,
+  SectionTitle,
+  Sheet,
+  SkeletonRows,
+  type StatusKind,
+} from "../ui/index";
+
+import "./index.scss";
 
 type Props = {
   readonly scope: ExportScope;
   readonly scopeId: string;
   readonly month: string;
 };
-const STATUS: Readonly<Record<ReportExport["status"], string>> = {
-  PENDING: "排队中",
-  PROCESSING: "生成中",
-  COMPLETED: "可下载",
-  FAILED: "生成失败",
+const STATUS: Readonly<
+  Record<
+    Exclude<ReportExport["status"], "COMPLETED">,
+    { readonly kind: StatusKind; readonly text: string }
+  >
+> = {
+  PENDING: { kind: "warn", text: "排队中" },
+  PROCESSING: { kind: "warn", text: "生成中" },
+  FAILED: { kind: "bad", text: "生成失败" },
 };
+
+/**
+ * 月度 Excel：生成过的版本一行一个，能再下载；生成是这一屏底部的主按钮。
+ * 只放在月报里，所在的那一屏不能再有别的黑色实心按钮。
+ */
 export const MonthlyExport = ({
   scope,
   scopeId,
@@ -32,17 +56,22 @@ export const MonthlyExport = ({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  // 读到之前不知道有没有生成过，先放骨架；默认只显示最新一版。
+  const [loaded, setLoaded] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     if (FRONTEND_DEMO) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     setJobs([]);
     setError(null);
+    setLoaded(false);
     const load = async (): Promise<void> => {
       try {
         const result = await fetchReportExports({ scope, scopeId, month });
         if (cancelled) return;
         setJobs(result);
+        setLoaded(true);
         if (
           result.some(
             (job) => job.status === "PENDING" || job.status === "PROCESSING",
@@ -52,10 +81,7 @@ export const MonthlyExport = ({
             void load();
           }, 3000);
       } catch (cause: unknown) {
-        if (!cancelled)
-          setError(
-            errorMessage(cause, "导出任务加载失败。"),
-          );
+        if (!cancelled) setError(errorMessage(cause, "导出任务加载失败。"));
       }
     };
     void load();
@@ -84,79 +110,112 @@ export const MonthlyExport = ({
     try {
       await openReportExport(job);
     } catch (cause: unknown) {
-      setError(
-        errorMessage(cause, "文件打开失败，请重试。"),
-      );
+      setError(errorMessage(cause, "文件打开失败，请重试。"));
     } finally {
       setBusy(false);
     }
   };
   if (FRONTEND_DEMO)
     return (
-      <Notice>
-        演示数据不支持导出，请切换正式数据模式。
-      </Notice>
+      <>
+        <SectionTitle>月度 Excel</SectionTitle>
+        <Notice>演示版不能导出 Excel，正式版里才有。</Notice>
+      </>
     );
   const pending = jobs.some(
     (job) => job.status === "PENDING" || job.status === "PROCESSING",
   );
+  const future = month > chinaMonth();
+  const shown = showAll ? jobs : jobs.slice(0, 1);
   return (
-    <View className="form-card">
-      <Button
-        loading={busy}
-        disabled={busy || pending || month > chinaMonth()}
-        onClick={() => {
-          void generate();
-        }}
+    <>
+      <SectionTitle
+        action={
+          jobs.length > 1
+            ? showAll
+              ? "只看最新一版"
+              : `全部 ${jobs.length} 版`
+            : undefined
+        }
+        onAction={() => setShowAll((value) => !value)}
       >
-        {pending
-          ? "报表正在生成"
-          : jobs.length > 0
-            ? "重新生成 Excel"
-            : "生成月度 Excel"}
-      </Button>
+        月度 Excel
+      </SectionTitle>
+      {jobs.length > 0 ? (
+        <Sheet>
+          {shown.map((job) => (
+            <Row
+              key={job.id}
+              title={`${job.month} 第 ${job.version} 版`}
+              sub={`${workTimestamp(job.createdAt)} ${job.status === "COMPLETED" ? "生成" : "提交"}`}
+              status={
+                job.status === "COMPLETED" ? undefined : STATUS[job.status]
+              }
+            >
+              {job.status === "COMPLETED" ? (
+                <View
+                  className={`monthly-export__link ui-press${busy ? " monthly-export__link--off" : ""}`}
+                  {...PRESS}
+                  onClick={() => {
+                    void download(job);
+                  }}
+                >
+                  下载并打开
+                </View>
+              ) : null}
+            </Row>
+          ))}
+        </Sheet>
+      ) : error === null && !loaded ? (
+        <SkeletonRows rows={1} />
+      ) : null}
+      {shown
+        .filter((job) => job.status === "FAILED")
+        .map((job) => (
+          <Notice key={job.id} tone="error">
+            第 {job.version} 版没有生成出来
+            <View className="ui-notice__sub">
+              {job.errorMessage} 任务编号：{job.id}
+            </View>
+          </Notice>
+        ))}
       <Notice>
-        {month === chinaMonth()
-          ? "本月报表截至生成时间。"
-          : "生成后可打开或转发 Excel。"}{" "}
-        补卡后需重新生成。
+        {future
+          ? "这个月还没到，不能生成。"
+          : `${jobs.length === 0 && loaded ? "这个月还没有生成过。" : ""}${
+              month === chinaMonth()
+                ? "本月的报表只算到生成的那一刻。"
+                : "生成后可以打开，也可以转发。"
+            }补卡通过后要重新生成。${
+              jobs.length > 0 ? "这个月最近 20 次导出都留着。" : ""
+            }`}
       </Notice>
       {error !== null ? (
-        <View>
+        <>
           <Notice tone="error">{error}</Notice>
-          <Button variant="outline" onClick={() => setRevision((n) => n + 1)}>
-            刷新任务
-          </Button>
-        </View>
-      ) : null}
-      {jobs.map((job) => (
-        <View key={job.id}>
-          <ListItem
-            primary={`${job.month} · 第 ${job.version} 版`}
-            secondary={`${STATUS[job.status]} · ${formatChinaHm(job.createdAt)}`}
-            chip={STATUS[job.status]}
-          />
-          {job.status === "COMPLETED" ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                void download(job);
-              }}
-            >
-              下载并打开
+          <Links>
+            <Button variant="text" onClick={() => setRevision((n) => n + 1)}>
+              重新读取
             </Button>
-          ) : null}
-          {job.status === "FAILED" ? (
-            <Notice>
-              {job.errorMessage} 任务编号：{job.id}
-            </Notice>
-          ) : null}
-        </View>
-      ))}
-      {jobs.length > 0 ? (
-        <Notice>本月最近 20 次导出，保留历史版本。</Notice>
+          </Links>
+        </>
       ) : null}
-    </View>
+      <BottomBar
+        primary={
+          busy
+            ? "处理中…"
+            : pending
+              ? "正在生成…"
+              : jobs.length > 0
+                ? "重新生成 Excel"
+                : "生成 Excel"
+        }
+        busy={busy}
+        disabled={pending || future}
+        onPrimary={() => {
+          void generate();
+        }}
+      />
+    </>
   );
 };
