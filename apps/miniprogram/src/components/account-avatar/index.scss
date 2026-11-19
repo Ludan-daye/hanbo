@@ -1,5 +1,15 @@
+// 头像填满外面的框，圆角跟着框走。
 .account-avatar-image {
+  display: block;
   width: 100%;
   height: 100%;
   border-radius: inherit;
+}
+.account-avatar-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-weight: 900;
 }

@@ -1,12 +1,14 @@
 import type { PanelKey } from "./roleHome";
-import type { IconName } from "../components/ui/icon";
+import type { LineIconName } from "../components/ui/line-icon";
 
 export type Feature = {
   readonly title: string;
   readonly sub: string;
-  readonly icon: IconName;
+  readonly icon: LineIconName;
   readonly url: string;
 };
+// 本人的事（项目、任务、考勤、补卡）只放在 worker 这一组：工人在首页和“我的”里用，
+// 管理人员在“我的”里用。其余各组是工作台的内容，只放管理的事。
 const MY_PROJECTS: Feature = {
   title: "我的项目",
   sub: "按项目查看安排与打卡",
@@ -22,7 +24,7 @@ const RECORDS: Feature = {
 const MAKEUPS: Feature = {
   title: "补卡申请",
   sub: "提交申请、查看处理进度",
-  icon: "invite",
+  icon: "doc",
   url: "/pages/my-makeups/index",
 };
 const APPROVALS: Feature = { title: "补卡审批", sub: "处理授权范围内下级的申请", icon: "check", url: "/pages/team-makeups/index" };
@@ -36,12 +38,12 @@ export const PANEL_LABELS: Readonly<Record<PanelKey, string>> = {
   none: "待分配角色",
 };
 export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
-  worker: [MY_PROJECTS, { title: "我的任务", sub: "工作安排、安全交底与临时邀请", icon: "calendar", url: "/pages/my-tasks/index" }, RECORDS, MAKEUPS],
+  worker: [MY_PROJECTS, { title: "我的任务", sub: "工作安排、安全交底与临时邀请", icon: "task", url: "/pages/my-tasks/index" }, RECORDS, MAKEUPS],
   teamLeader: [
-    { title: "工作安排", sub: "安排工人、邀请临时工", icon: "people", url: "/pages/team-work/index" },
-    { title: "班组安全", sub: "安全交底与隐患整改", icon: "shield", url: "/pages/team-safety/index" },
-    { title: "班组日报", sub: "自动汇总出勤与工作日志", icon: "chart", url: "/pages/team-log/index" },
-    { title: "打卡安排", sub: "设置本班组下级的打卡要求", icon: "calendar", url: "/pages/schedules/index" },
+    { title: "工作安排", sub: "安排工人，邀请临时工", icon: "task", url: "/pages/team-work/index" },
+    { title: "班组安全", sub: "安全交底和隐患整改", icon: "shield", url: "/pages/team-safety/index" },
+    { title: "班组日报", sub: "自动汇总出勤和工作", icon: "doc", url: "/pages/team-log/index" },
+    { title: "打卡安排", sub: "设置本班组的打卡要求", icon: "clock", url: "/pages/schedules/index" },
     {
       title: "补卡审批",
       sub: "处理本班组的补卡申请",
@@ -50,22 +52,19 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
     },
     {
       title: "班组考勤",
-      sub: "班组日报、周报与月报",
+      sub: "日报、周报和月报",
       icon: "chart",
       url: "/pages/team-attendance/index",
     },
-    MY_PROJECTS,
-    RECORDS,
-    MAKEUPS,
   ],
   projectAdmin: [
     APPROVALS,
     SAFETY_REVIEW,
-    { title: "工时规则", sub: "项目类型、午休与加班时段", icon: "calendar", url: "/pages/project-worktime/index" },
+    { title: "工时规则", sub: "项目类型、午休与加班时段", icon: "clock", url: "/pages/project-worktime/index" },
     {
       title: "项目人员",
       sub: "人员资料、工种与班组",
-      icon: "people",
+      icon: "users",
       url: "/pages/participants/index",
     },
     {
@@ -77,13 +76,13 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
     {
       title: "邀请绑定",
       sub: "为项目成员生成邀请码",
-      icon: "invite",
+      icon: "key",
       url: "/pages/invitation/index",
     },
     {
       title: "班组管理",
       sub: "创建班组、分配成员与管理邀请",
-      icon: "building",
+      icon: "grid",
       url: "/pages/project-management/index",
     },
     {
@@ -95,16 +94,13 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
     {
       title: "项目设置",
       sub: "管理项目状态与考勤位置",
-      icon: "settings",
+      icon: "gear",
       url: "/pages/project-detail/index",
     },
-    MY_PROJECTS,
-    RECORDS,
-    MAKEUPS,
   ],
   companyAdmin: [
     APPROVALS,
-    { title: "打卡安排", sub: "设置授权项目下级的打卡要求", icon: "calendar", url: "/pages/schedules/index" },
+    { title: "打卡安排", sub: "设置授权项目下级的打卡要求", icon: "clock", url: "/pages/schedules/index" },
     {
       title: "公司项目",
       sub: "查看在建与筹备中的项目",
@@ -114,13 +110,13 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
     {
       title: "公司人员",
       sub: "跨项目人员与班组总览",
-      icon: "people",
+      icon: "users",
       url: "/pages/company-people/index",
     },
     {
       title: "新建项目",
       sub: "设置项目与考勤范围",
-      icon: "invite",
+      icon: "plus",
       url: "/pages/create-project/index",
     },
     {
@@ -132,12 +128,12 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
   ],
   systemAdmin: [
     APPROVALS,
-    { title: "信用规则", sub: "扣分与恢复标准", icon: "shield", url: "/pages/safety-policy/index" },
-    { title: "打卡安排", sub: "设置授权范围内下级的打卡要求", icon: "calendar", url: "/pages/schedules/index" },
+    { title: "信用规则", sub: "扣分与恢复标准", icon: "star", url: "/pages/safety-policy/index" },
+    { title: "打卡安排", sub: "设置授权范围内下级的打卡要求", icon: "clock", url: "/pages/schedules/index" },
     {
       title: "平台管理",
       sub: "公司、账号权限与平台设置",
-      icon: "shield",
+      icon: "gear",
       url: "/pages/system-management/index",
     },
   ],

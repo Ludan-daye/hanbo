@@ -1,15 +1,46 @@
-.worker-permissions {
-  padding-top: 24Px;
-  &__summary { background: #eaf2fc; padding: 24Px 20Px; border-radius: 22Px; }
-  &__name { font-size: 24Px; font-weight: 650; margin: 8Px 0; }
-  &__muted { font-size: 14Px; line-height: 1.7; color: #626d78; }
-  &__section { margin-top: 28Px; }
-  &__heading { font-size: 18Px; font-weight: 650; margin-bottom: 12Px; }
-  &__scope { padding: 16Px 0; border-bottom: 1Px solid #e5e8eb; }
-  &__level { display: flex; gap: 16Px; padding: 24Px 0; border-bottom: 1Px solid #e5e8eb; }
-  &__number { flex-shrink: 0; width: 40Px; height: 40Px; border-radius: 50%; background: #eaf2fc; text-align: center; line-height: 40Px; font-size: 20Px; color: #626d78; }
-  &__level-body { flex: 1; min-width: 0; }
-  &__level-title { font-size: 18Px; font-weight: 650; margin-bottom: 4Px; }
-  &__functions { margin: 8Px 0; font-size: 16Px; }
-  &__notice { margin-top: 24Px; color: #626d78; font-size: 14Px; line-height: 1.7; }
+// 权限与范围。公共样式在 components/ui/kit.scss，这里只有“五个等级”那张表的一行。
+
+.levels-row {
+  display: flex;
+  align-items: center;
+  gap: 32rpx;
+  padding: 32rpx 40rpx;
+  border-bottom: 2rpx solid var(--hair);
+}
+.levels-row:last-child {
+  border-bottom: 0;
+}
+.levels-row__num {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 90rpx;
+  height: 90rpx;
+  border-radius: 24rpx;
+  background: var(--page);
+  font-size: 44rpx;
+}
+// 自己那一级：数字反白。这一页的橙色留给顶上的小标牌，这里不再用橙色。
+.levels-row--mine .levels-row__num {
+  background: var(--k);
+  color: #fff;
+}
+.levels-row__text {
+  flex: 1;
+  min-width: 0;
+}
+.levels-row__name {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+.levels-row__sub {
+  font-size: 30rpx;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.levels-row__mark {
+  flex-shrink: 0;
+  font-size: 30rpx;
+  font-weight: 600;
 }

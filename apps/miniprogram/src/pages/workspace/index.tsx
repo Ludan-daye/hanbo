@@ -1,29 +1,45 @@
 import { useEffect, useState } from "react";
-import { FRONTEND_DEMO, TEST_LOGIN_ENABLED } from "../../config/env";
-import { fetchMyRoleScopes } from "../../services/management";
-import type { WorkRoleScope } from "../../services/management.types";
-import { usePageRefresh } from "../../hooks/use-page-refresh";
-import {
-  permissionLabel,
-  permissionLevel,
-} from "../../routing/permissionLevels";
-import Taro from "@tarojs/taro";
-import { Picker, View } from "@tarojs/components";
 
+import { RolePanel, ScopeChooser } from "../../components/role-panels/index";
+import { scopeKey, scopeLine } from "../../components/role-panels/scope";
 import {
   AppHeader,
   BottomNav,
-  ListItem,
+  Row,
   Screen,
+  SectionTitle,
+  Sheet,
   StateView,
-  Title,
 } from "../../components/ui/index";
-import { RolePanel } from "../../components/role-panels/index";
-import { roleHomePanel } from "../../routing/roleHome";
+import { useCachedRead } from "../../hooks/use-cached-read";
+import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
-import { useSession } from "../../store/session";
+import { PANEL_LABELS } from "../../routing/features";
+import { roleHomePanel, type PanelKey } from "../../routing/roleHome";
 import { errorMessage } from "../../services/error-messages";
+import {
+  fetchPendingMakeups,
+  type PendingMakeup,
+} from "../../services/makeups";
+import { fetchMyRoleScopes } from "../../services/management";
+import type { WorkRoleScope } from "../../services/management.types";
+import { useSession } from "../../store/session";
 
+// 每个职级的入口归在哪个标题下。
+const GROUP_TITLE: Readonly<Record<PanelKey, string>> = {
+  worker: "本人",
+  teamLeader: "班组",
+  projectAdmin: "项目",
+  companyAdmin: "公司",
+  systemAdmin: "平台",
+  none: "",
+};
+const APPROVALS_URL = "/pages/team-makeups/index";
+
+/**
+ * 工作台只放管理的事，每个入口带一句说明。兼任几个职级的人在顶上切换。
+ * 本人的项目、任务、考勤和补卡在“我的”里。
+ */
 export default function Workspace(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
@@ -31,8 +47,8 @@ export default function Workspace(): JSX.Element {
   const [scopes, setScopes] = useState<readonly WorkRoleScope[] | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const key = (scope: WorkRoleScope): string =>
-    `${scope.roleCode}:${scope.scopeId}`;
+  const [choosing, setChoosing] = useState<boolean>(false);
+  const userId = state.me?.user.id;
   useEffect(() => {
     let cancelled = false;
     setError(null);
@@ -41,69 +57,79 @@ export default function Workspace(): JSX.Element {
         if (!cancelled) setScopes(rows);
       })
       .catch((cause: unknown) => {
-        if (!cancelled)
-          setError(errorMessage(cause, "读取工作范围失败"));
+        if (!cancelled) setError(errorMessage(cause, "读取工作范围失败"));
       });
     return () => {
       cancelled = true;
     };
-  }, [revision, state.me?.user.id]);
-  const selected =
-    scopes?.find((scope) => key(scope) === selectedKey) ?? scopes?.[0];
+  }, [revision, userId]);
+  const selected: WorkRoleScope | undefined =
+    scopes?.find((scope) => scopeKey(scope) === selectedKey) ?? scopes?.[0];
   const panel = roleHomePanel(selected?.roleCode ?? null);
+  // 班组长的补卡审批后面写还有几条没批。和首页用同一份缓存，刚从首页过来不用再读。
+  const teamId =
+    selected?.roleCode === "TEAM_LEADER" && selected.scopeType === "TEAM"
+      ? selected.scopeId
+      : null;
+  const pending = useCachedRead<readonly PendingMakeup[]>(
+    userId === undefined || teamId === null
+      ? null
+      : `${userId}:team-pending-makeups:${teamId}`,
+    () => fetchPendingMakeups(teamId ?? ""),
+    revision,
+  );
+  const pendingCount = pending.data?.length ?? 0;
+
   return (
-    <Screen>
-      <AppHeader title="工作台" />
-      <View className="page-intro">
-        <Title>全部功能</Title>
-        <View className="ui-subtitle">
-          {permissionLabel(state.me?.roles.highestRoleCode ?? null)}
-        </View>
-      </View>
-      <View
-        className="management-link"
-        onClick={() => {
-          void Taro.navigateTo({ url: "/pages/permission-levels/index" });
-        }}
-      >
-        权限等级与功能 ›
-      </View>
-      {TEST_LOGIN_ENABLED || FRONTEND_DEMO ? (
-        <ListItem
-          primary="打卡流程测试"
-          secondary="定位 → 现场拍照 → 活体人脸识别（测试环境）"
-          chip="开始测试"
-          onClick={() => {
-            void Taro.navigateTo({ url: "/pages/punch-test/index" });
-          }}
-        />
-      ) : null}
+    <Screen header={<AppHeader title="工作台" />}>
       {error ? (
-        <StateView title="加载失败" sub={error} onRetry={refresh} />
+        <StateView title="工作范围读取失败" sub={error} onRetry={refresh} />
       ) : scopes === null ? (
-        <StateView title="加载中…" />
+        <StateView title="正在读取工作范围" />
+      ) : selected === undefined ? (
+        <StateView
+          kind="empty"
+          title="还没有分配角色"
+          sub="管理员给你分配角色以后，这里会出现你能管的事。"
+        />
+      ) : choosing ? (
+        <ScopeChooser
+          title="选择职级和范围"
+          scopes={scopes}
+          current={selected}
+          showRole
+          onChoose={(scope) => {
+            setSelectedKey(scopeKey(scope));
+            setChoosing(false);
+          }}
+          onCancel={() => setChoosing(false)}
+        />
       ) : (
         <>
-          {scopes.length > 0 ? (
-            <Picker
-              mode="selector"
-              range={scopes.map(
-                (scope) =>
-                  `${permissionLevel(scope.roleCode).name} · ${scope.scopeName}`,
-              )}
-              value={scopes.findIndex((scope) => key(scope) === key(selected!))}
-              onChange={(event) =>
-                setSelectedKey(key(scopes[Number(event.detail.value)]!))
-              }
-            >
-              <ListItem
-                primary="当前工作职级与范围"
-                secondary={`${permissionLevel(selected!.roleCode).name} · ${selected!.scopeName}`}
-                chip="切换"
-              />
-            </Picker>
-          ) : null}
-          <RolePanel panel={panel} scope={selected} />
+          <Sheet gap>
+            <Row
+              title={PANEL_LABELS[panel]}
+              sub={scopeLine(selected)}
+              value={scopes.length > 1 ? "切换" : undefined}
+              chevron={scopes.length > 1}
+              onClick={scopes.length > 1 ? () => setChoosing(true) : undefined}
+            />
+          </Sheet>
+          <SectionTitle>{GROUP_TITLE[panel]}</SectionTitle>
+          <RolePanel
+            panel={panel}
+            scope={selected}
+            statuses={
+              pendingCount > 0
+                ? {
+                    [APPROVALS_URL]: {
+                      kind: "warn",
+                      text: `${pendingCount} 条`,
+                    },
+                  }
+                : undefined
+            }
+          />
         </>
       )}
       <BottomNav active="workspace" />

@@ -1,45 +1,86 @@
-.profile-card__name {
-  overflow-wrap: anywhere;
+// 我的。公共样式在 components/ui/kit.scss，这里只有这一页独有的工牌和底部两处小东西。
+
+// 工牌：顶上一条橙色，中间一个挂绳孔。这一页的橙色只有这一处。
+.profile-badge {
+  overflow: hidden;
+  margin-top: 20rpx;
+  border-radius: var(--r-sign);
+  background: var(--sheet);
 }
-.profile-card > view:nth-child(2) {
+.profile-badge__band {
+  position: relative;
+  height: 106rpx;
+  background: var(--hi);
+}
+.profile-badge__slot {
+  position: absolute;
+  top: 36rpx;
+  left: 50%;
+  width: 106rpx;
+  height: 22rpx;
+  margin-left: -53rpx;
+  border-radius: 11rpx;
+  background: var(--page);
+}
+.profile-badge__body {
+  display: flex;
+  align-items: center;
+  gap: 34rpx;
+  padding: 42rpx;
+}
+.profile-badge__photo {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  width: 148rpx;
+  height: 148rpx;
+  border-radius: 32rpx;
+  background: var(--page);
+  font-size: 60rpx;
+}
+.profile-badge__text {
   flex: 1;
   min-width: 0;
 }
-.profile-card .profile-avatar {
-  flex-shrink: 0;
+.profile-badge__name {
+  overflow: hidden;
+  font-size: 58rpx;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.profile-badge__line {
+  overflow: hidden;
+  margin-top: 6rpx;
+  font-size: 30rpx;
+  line-height: 1.4;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+// 资料还在读：和名字、说明等高的灰块
+.profile-badge__sk {
+  width: 70%;
+  height: 32rpx;
+  margin-top: 20rpx;
+}
+.profile-badge__sk--name {
+  width: 46%;
+  height: 58rpx;
+  margin-top: 6rpx;
 }
 
-.worker-profile {
-  padding-top: 20Px;
-  padding-bottom: 16Px;
-  &__identity { display: flex; align-items: center; gap: 16Px; padding-bottom: 24Px; }
-  &__avatar { flex-shrink: 0; width: 64Px; height: 64Px; border-radius: 50%; overflow: hidden; }
-  &__avatar .account-avatar-image, &__avatar .app-icon { width: 64Px; height: 64Px; }
-  &__identity-body { min-width: 0; flex: 1; }
-  &__name { font-size: 22Px; font-weight: 650; line-height: 1.4; margin-bottom: 6Px; }
-  &__muted, &__row-hint { font-size: 14Px; color: #626d78; line-height: 1.6; }
-  &__group { margin-bottom: 20Px; border-top: 1Px solid #e5e8eb; }
-  &__row {
-    width: 100%; margin: 0; padding: 16Px 0; min-height: 56Px; box-sizing: border-box;
-    display: flex; justify-content: space-between; align-items: center; gap: 16Px;
-    border: 0; border-bottom: 1Px solid #e5e8eb; border-radius: 0; background: #fff;
-    color: #101820; font-size: 16Px; font-weight: 400; line-height: 1.5; text-align: left;
-    &::after { border: 0; }
-    > view:first-child { min-width: 0; }
-    .app-icon { flex-shrink: 0; width: 18Px; height: 18Px; }
-  }
-  &__row-hint { flex-shrink: 0; max-width: 45%; text-align: right; white-space: normal; }
-  &__editor { padding: 4Px 0 20Px; border-bottom: 1Px solid #e5e8eb; }
-  &__auxiliary { padding: 0 16Px 16Px; background: #f5f7f9; border-radius: 10Px; }
-  &__auxiliary &__row { background: transparent; }
-  &__auxiliary &__muted { padding-top: 12Px; }
-  &__help { padding: 4Px 0 16Px; color: #626d78; font-size: 14Px; line-height: 1.7; }
-  &__account-action {
-    display: block; width: 100%; min-height: 48Px; margin: 8Px 0 0; padding: 12Px;
-    border: 0; border-radius: 0; background: transparent; color: #626d78;
-    font-size: 16Px; line-height: 1.5;
-    &::after { border: 0; }
-    &[disabled] { color: #89929b; }
-  }
-  &__version { margin: 16Px 0 0; color: #626d78; font-size: 14Px; text-align: center; }
+// 退出登录是危险操作，用红字。公共的文字按钮没有红色这一种，在这里单独上色。
+.ui-screen--sign .profile-links .ui-btn--text:last-child {
+  color: var(--bad);
+}
+
+.profile-version {
+  margin-top: 32rpx;
+  font-size: 28rpx;
+  color: var(--ph);
+  text-align: center;
 }
