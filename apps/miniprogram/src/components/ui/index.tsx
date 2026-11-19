@@ -1,4 +1,4 @@
-import { Button as TaroButton, Input, View } from "@tarojs/components";
+import { Button as TaroButton, View } from "@tarojs/components";
 import type { PropsWithChildren, ReactNode } from "react";
 
 import { FRONTEND_DEMO } from "../../config/env";
@@ -47,29 +47,6 @@ export const Screen = ({
     </View>
   );
 };
-export const Title = ({ children }: PropsWithChildren): JSX.Element => (
-  <View className="ui-title">{children}</View>
-);
-export const Subtitle = ({ children }: PropsWithChildren): JSX.Element => (
-  <View className="ui-subtitle">{children}</View>
-);
-export const Label = ({ children }: PropsWithChildren): JSX.Element => (
-  <View className="ui-label">{children}</View>
-);
-export const Section = ({
-  title,
-  sub,
-  children,
-}: PropsWithChildren<{
-  readonly title: string;
-  readonly sub?: string;
-}>): JSX.Element => (
-  <View className="ui-section">
-    <View className="ui-section__heading">{title}</View>
-    {sub ? <Subtitle>{sub}</Subtitle> : null}
-    {children}
-  </View>
-);
 export const Notice = ({
   children,
   tone,
@@ -116,57 +93,6 @@ export const Button = ({
   </TaroButton>
 );
 
-export const Tile = ({
-  title,
-  sub,
-  stub,
-  onClick,
-}: {
-  readonly title: string;
-  readonly sub: string;
-  readonly stub?: boolean;
-  readonly onClick?: () => void;
-}): JSX.Element => (
-  <View className="ui-tile" onClick={onClick}>
-    <View className="ui-tile__title">{title}</View>
-    <View className="ui-tile__sub">{sub}</View>
-    {stub ? <View className="ui-badge">暂未开放</View> : null}
-  </View>
-);
-
-type FieldProps = {
-  readonly disabled?: boolean;
-  readonly value: string;
-  readonly placeholder: string;
-  readonly onInput: (value: string) => void;
-  readonly label?: string;
-  readonly type?: "text" | "number" | "digit";
-  readonly maxLength?: number;
-};
-
-export const Field = ({
-  disabled,
-  value,
-  placeholder,
-  onInput,
-  label,
-  type,
-  maxLength,
-}: FieldProps): JSX.Element => (
-  <View className="ui-field-wrap">
-    {label ? <View className="ui-field-label">{label}</View> : null}
-    <Input
-      disabled={disabled}
-      className="ui-field"
-      value={value}
-      placeholder={placeholder}
-      type={type ?? "text"}
-      maxlength={maxLength ?? 140}
-      onInput={(e) => onInput(e.detail.value)}
-    />
-  </View>
-);
-
 export const StateView = ({
   title,
   sub,
@@ -205,11 +131,7 @@ export const StateView = ({
 
 export { PageHeader, AppHeader } from "./page-header";
 export { Segmented, type SegmentedOption } from "./segmented";
-export { ListItem } from "./list-item";
-export { StatCard, StatCards } from "./stat-card";
-export { CopyButton } from "./copy-button";
 export { BottomNav } from "./bottom-nav";
-export { AppIcon, type IconName } from "./icon";
 export { LineIcon, type LineIconName } from "./line-icon";
 export { PRESS } from "./press";
 export {

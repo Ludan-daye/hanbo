@@ -55,10 +55,11 @@ export default defineAppConfig({
   },
   requiredPrivateInfos: ["getLocation", "chooseLocation"],
   window: {
-    backgroundColor: "#f5f6f8",
+    // 和页面底色一致：下拉回弹时露出来的那一截不变色
+    backgroundColor: "#edeef0",
     backgroundTextStyle: "dark",
     navigationStyle: "custom",
-    navigationBarBackgroundColor: "#ffffff",
+    navigationBarBackgroundColor: "#edeef0",
     navigationBarTitleText: "工地考勤",
     navigationBarTextStyle: "black",
   },

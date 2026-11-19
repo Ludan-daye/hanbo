@@ -928,15 +928,6 @@
 .ui-screen--sign .ui-state .ui-btn {
   margin-top: 42rpx;
 }
-// 人脸录像界面盖在改版页面上时，跟着用灰底，两个按钮都占满一行
-.ui-screen--sign .video-face {
-  background: var(--page);
-}
-.ui-screen--sign .video-face .ui-btn--outline {
-  display: flex;
-  width: 100%;
-  min-height: 122rpx;
-}
 
 // ---------- 卡片的零件 ----------
 .ui-card--stamped {
@@ -1272,4 +1263,79 @@
 .ui-progress__bar {
   height: 100%;
   background: var(--k);
+}
+
+// ---------- 几处容易踩的地方 ----------
+// 表单行、普通行被 Picker 包住时，它成了 Picker 里唯一的子元素，
+// 上面“最后一个不画分隔线”的规则会把线吃掉：只要这个 Picker 不是白条里的最后一个，就把线补回来。
+.ui-sheet > picker:not(:last-child) .ui-form-row,
+.ui-sheet > picker:not(:last-child) .ui-row,
+.ui-sheet > taro-picker-core:not(:last-child) .ui-form-row,
+.ui-sheet > taro-picker-core:not(:last-child) .ui-row {
+  border-bottom: 2rpx solid var(--hair);
+}
+// 表单行右边的值太长时省略结尾，而不是把开头挤出去
+.ui-form-row__value-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+// 放在行里、标题里的按钮不带上边距
+.ui-screen--sign .ui-row .ui-btn,
+.ui-screen--sign .ui-form-row .ui-btn,
+.ui-screen--sign .ui-h .ui-btn,
+.ui-screen--sign .ui-tl .ui-btn {
+  margin: 0;
+}
+// 卡片底部的操作放不下时换行
+.ui-card__actions {
+  flex-wrap: wrap;
+}
+// H5 里 Taro 的输入框只是个壳，里面还有一个原生的 input / textarea：
+// 让它填满壳、跟着外面的字和颜色走（小程序里没有这层，规则不生效）。
+.ui-form-row__input .weui-input,
+.ui-search__input .weui-input {
+  height: 100%;
+  color: inherit;
+  font: inherit;
+}
+.ui-form-area__box .taro-textarea {
+  width: 100%;
+  min-height: 116rpx;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  resize: none;
+}
+
+// H5 里输入框是外壳里套一个原生 input：让里面的字和外壳一样大、垂直居中
+.ui-form-row__input .weui-input,
+.ui-search__input .weui-input {
+  height: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  background: transparent;
+}
+.ui-form-row__input,
+.ui-search__input {
+  display: flex;
+  align-items: center;
+}
+.ui-form-row__input input,
+.ui-search__input input {
+  width: 100%;
+}
+.ui-form-area__box textarea,
+.ui-form-area__box .taro-textarea {
+  width: 100%;
+  min-height: 116rpx;
+  font: inherit;
+  font-size: 34rpx;
+  line-height: 1.6;
+  color: inherit;
+  background: transparent;
 }

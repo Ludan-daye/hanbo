@@ -35,7 +35,9 @@ export const FormRow = ({
     <View
       className={`ui-form-row__value${!children && !value ? " ui-form-row__value--ph" : ""}`}
     >
-      {children ?? (value || placeholder)}
+      {children ?? (
+        <View className="ui-form-row__value-text">{value || placeholder}</View>
+      )}
       {chevron ? <View className="ui-chevron" /> : null}
     </View>
   </View>
@@ -197,10 +199,12 @@ export const FormSwitch = ({
 export const SearchField = ({
   value,
   placeholder,
+  maxLength,
   onInput,
 }: {
   readonly value: string;
   readonly placeholder: string;
+  readonly maxLength?: number;
   readonly onInput: (value: string) => void;
 }): JSX.Element => (
   <View className="ui-search">
@@ -210,6 +214,7 @@ export const SearchField = ({
       value={value}
       placeholder={placeholder}
       placeholderClass="ui-form-row__placeholder"
+      maxlength={maxLength ?? 60}
       confirmType="search"
       onInput={(event) => onInput(event.detail.value)}
     />

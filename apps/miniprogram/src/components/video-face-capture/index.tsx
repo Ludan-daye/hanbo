@@ -2,7 +2,7 @@ import { Camera, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Button, Notice, Subtitle } from "../ui/index";
+import { Button, Notice, Say } from "../ui/index";
 import type {
   CompletedFaceSession,
   VideoFaceSession,
@@ -208,13 +208,19 @@ export const VideoFaceCapture = <Result extends CompletedFaceSession>({
     phase === "RECORDING" && action !== undefined
       ? actionText(action)
       : phase === "UPLOADING"
-        ? "正在确认活体与本人比对结果"
-        : "正对前置镜头，保持光线均匀";
+        ? "正在核验"
+        : "正对镜头，光线要足";
   return (
     <View className="video-face">
       <View className="video-face__sheet">
-        <View className="video-face__title">本人活体核验</View>
-        <Subtitle>{referenceDescription}</Subtitle>
+        <Say
+          title={instruction}
+          sub={
+            phase === "RECORDING"
+              ? `录制中，还剩 ${Math.max(0, 8 - seconds)} 秒`
+              : referenceDescription
+          }
+        />
         {process.env.TARO_ENV === "weapp" ? (
           <Camera
             className="video-face__camera"
@@ -230,54 +236,50 @@ export const VideoFaceCapture = <Result extends CompletedFaceSession>({
             onError={() => {
               setReady(false);
               setPhase("FAILED");
-              setError(
-                "相机未授权，请在微信设置中开启。",
-              );
+              setError("相机未授权，请在微信设置中开启。");
             }}
           />
         ) : (
-          <Notice>相机核验仅支持小程序真机预览。</Notice>
+          <Notice>相机核验只能在微信小程序里用手机做。</Notice>
         )}
-        <View className="video-face__instruction">{instruction}</View>
-        {phase === "RECORDING" ? (
-          <View className="video-face__count">
-            录制中 · 剩余 {Math.max(0, 8 - seconds)} 秒
-          </View>
-        ) : null}
-        <Subtitle>
-          <View>完成两个动作，约 8 秒自动结束。</View>
-          <View>录像发送至腾讯云，核验结果由服务器确认。</View>
-        </Subtitle>
+        <Notice>
+          两个动作，大约 8 秒，录完自动结束。录像会发到腾讯云做活体和本人比对，结果由服务器确认。
+        </Notice>
         {error !== null ? <Notice tone="error">{error}</Notice> : null}
-        {phase === "RETRY" ? (
-          <Button
-            onClick={() => {
-              if (session !== null && filePath.current !== null)
-                void confirm(session, filePath.current);
-            }}
-          >
-            确认本次核验结果
+        {/* 这一层盖在页面上，页面底部的操作条被挡住了，所以按钮放在内容里。 */}
+        <View className="video-face__actions">
+          <Button variant="text" onClick={onCancel}>
+            取消
           </Button>
-        ) : (
-          <Button
-            disabled={!ready || !["READY", "FAILED"].includes(phase)}
-            loading={phase === "PREPARING" || phase === "UPLOADING"}
-            onClick={() => {
-              void start();
-            }}
-          >
-            {phase === "RECORDING"
-              ? "请按提示完成动作"
-              : phase === "UPLOADING"
-                ? "正在核验…"
-                : phase === "FAILED"
-                  ? "重新核验"
-                  : "开始录像核验"}
-          </Button>
-        )}
-        <Button variant="outline" onClick={onCancel}>
-          取消并返回
-        </Button>
+          {phase === "RETRY" ? (
+            <Button
+              onClick={() => {
+                if (session !== null && filePath.current !== null)
+                  void confirm(session, filePath.current);
+              }}
+            >
+              确认核验结果
+            </Button>
+          ) : (
+            <Button
+              disabled={!ready || !["READY", "FAILED"].includes(phase)}
+              loading={phase === "PREPARING" || phase === "UPLOADING"}
+              onClick={() => {
+                void start();
+              }}
+            >
+              {phase === "PREPARING"
+                ? "准备中…"
+                : phase === "RECORDING"
+                  ? "录制中…"
+                  : phase === "UPLOADING"
+                    ? "核验中…"
+                    : phase === "FAILED"
+                      ? "重新核验"
+                      : "开始录像"}
+            </Button>
+          )}
+        </View>
       </View>
     </View>
   );
