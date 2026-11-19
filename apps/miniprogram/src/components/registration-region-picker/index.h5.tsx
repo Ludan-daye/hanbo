@@ -1,6 +1,8 @@
-import { Picker, View } from "@tarojs/components";
+import { Picker } from "@tarojs/components";
 import { useEffect, useState } from "react";
 import { areaList } from "@vant/area-data";
+
+import { RegionRow } from "./row";
 import type { RegionPickerProps } from "./types";
 
 type Area = { readonly code: string; readonly name: string };
@@ -47,12 +49,15 @@ export function RegistrationRegionPicker({
   disabled,
   invalid,
   onChange,
+  label,
+  required,
 }: RegionPickerProps): JSX.Element {
   const [indices, setIndices] = useState<Indices>(() => selectedIndices(value));
   useEffect(() => setIndices(selectedIndices(value)), [value]);
   const columns: Columns = columnsAt(indices);
   return (
     <Picker
+      className="region-picker"
       mode="multiSelector"
       range={columns.map((column) => column.map((area) => area.name))}
       value={[...indices]}
@@ -78,14 +83,13 @@ export function RegistrationRegionPicker({
         onChange(options.map((column, index) => column[selected[index]].name));
       }}
     >
-      <View
-        className={`registration-select ${invalid ? "registration-input--error" : ""}`}
-      >
-        <View className={value.length ? "" : "registration-placeholder"}>
-          {value.length ? value.join(" / ") : "请选择省 / 市 / 区"}
-        </View>
-        <View className="registration-chevron">›</View>
-      </View>
+      <RegionRow
+        value={value}
+        disabled={disabled}
+        invalid={invalid}
+        label={label}
+        required={required}
+      />
     </Picker>
   );
 }

@@ -1,22 +1,29 @@
-import { View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
-import { Button, Notice, Subtitle, Title } from "../../components/ui/index";
 import { AccountProfileForm } from "../../components/account-profile-form";
-import { FlowScreen } from "../../components/worker-flow";
+import {
+  AppHeader,
+  Button,
+  Notice,
+  Say,
+  Screen,
+  Steps,
+} from "../../components/ui/index";
+import { WorkEntryNotice } from "../../components/work-entry-notice";
 import { ACCESS_TOKEN_KEY, FRONTEND_DEMO } from "../../config/env";
 import { sessionEntryUrl } from "../../routing/session";
-import { useSession } from "../../store/session";
-import { WorkEntryNotice } from "../../components/work-entry-notice";
-
-import "./index.scss";
 import { errorMessage } from "../../services/error-messages";
+import { useSession } from "../../store/session";
 
+import { ONBOARDING_STEPS, readOnboardingTotal } from "./onboarding-steps";
+
+/** 入场第 1 步：只填姓名和手机号，头像和昵称留到“我的”里。 */
 export default function CompleteProfile(): JSX.Element {
   const { state, phase, refreshMe, clear } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState<boolean>(false);
+  const [total] = useState<number>(readOnboardingTotal);
   const guard = (): void => {
     const url: string | null = Taro.getStorageSync(ACCESS_TOKEN_KEY)
       ? sessionEntryUrl(phase)
@@ -41,40 +48,37 @@ export default function CompleteProfile(): JSX.Element {
   };
 
   return (
-    <FlowScreen title="完善本人资料" enabled root>
-      <View className="complete-profile-intro">
-        <Title>先认识一下你</Title>
-        <Subtitle>完善资料，绑定本人档案。</Subtitle>
-      </View>
+    <Screen header={<AppHeader title="入场登记" />}>
+      <Steps current={1} total={total} label={ONBOARDING_STEPS[0]} />
+      <Say title="先认识一下你" sub="姓名和手机号要和管理员建的档案一致。" />
       <WorkEntryNotice />
-      <View className="complete-profile-form">
-        {state.accountProfile !== null ? (
-          <AccountProfileForm
-            appearance="worker"
-            identityOnly
-            profile={state.accountProfile}
-            submitLabel="保存并继续"
-            onSaved={async (): Promise<void> => {
-              await refreshMe();
+      {state.accountProfile !== null ? (
+        <AccountProfileForm
+          identityOnly
+          inBar
+          profile={state.accountProfile}
+          submitLabel="保存并继续"
+          note={
+            FRONTEND_DEMO
+              ? "演示资料只保存在本机。"
+              : "头像和昵称以后可以在“我的”里设置。"
+          }
+          onSaved={async (): Promise<void> => {
+            await refreshMe();
+          }}
+        >
+          <Button
+            variant="text"
+            loading={signingOut}
+            onClick={() => {
+              void signOut();
             }}
-          />
-        ) : null}
-      </View>
-      <View className="complete-profile-note">
-        {FRONTEND_DEMO
-          ? "演示资料仅保存在本机。"
-          : "头像和昵称可稍后在“我的”中设置。"}
-      </View>
+          >
+            {signingOut ? "退出中…" : "退出登录"}
+          </Button>
+        </AccountProfileForm>
+      ) : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
-      <Button
-        variant="outline"
-        loading={signingOut}
-        onClick={() => {
-          void signOut();
-        }}
-      >
-        退出登录
-      </Button>
-    </FlowScreen>
+    </Screen>
   );
 }

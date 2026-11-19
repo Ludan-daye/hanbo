@@ -1,0 +1,18 @@
+// 选地区的那一行包在选择器里。选择器自己是一层，里面的行总被当成“最后一行”而没有分隔线，
+// 这里补上：这一行后面一定还跟着“详细地址”。
+.region-picker {
+  display: block;
+}
+.ui-sheet .region-picker .ui-form-row {
+  border-bottom: 2rpx solid var(--hair);
+}
+// 地区名字长（比如自治区加自治州）时省略末尾，不把左边的名称挤掉
+.region-picker__text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.region-picker__text--ph {
+  color: var(--ph);
+}

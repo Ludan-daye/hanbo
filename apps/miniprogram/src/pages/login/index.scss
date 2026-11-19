@@ -1,128 +1,70 @@
-.worker-flow {
-  .login-intro { padding: 32Px 0 28Px; }
-  .login-logo { width: 48Px; height: 48Px; display: flex; align-items: center; justify-content: center; background: #eaf2fc; border-radius: 14Px; margin-bottom: 24Px; }
-  .login-logo .app-icon { width: 26Px; height: 26Px; }
-  .login-title { font-size: 24Px; font-weight: 650; color: #101820; line-height: 1.4; }
-  .login-intro .ui-subtitle { font-size: 16Px; margin-top: 12Px; }
-  .login-wechat .ui-btn { margin-top: 0; }
-  .login-demo-preview { margin-bottom: 20Px; }
-  .login-wechat__note { margin-top: 12Px; font-size: 14Px; line-height: 1.7; color: #626d78; }
-  .login-section { margin: 28Px 0 4Px; padding-top: 24Px; border-top: 1Px solid #e9ecef; }
-  .login-section__title { font-size: 18Px; font-weight: 600; }
-  .login-roles { display: flex; flex-direction: column; }
-  .login-role { display: flex; align-items: center; gap: 12Px; padding: 16Px 0; min-height: 56Px; border-bottom: 1Px solid #e9ecef; }
-  .login-role:active, .login-role--busy { background: #f6f7f8; }
-  .login-role__icon { background: #f6f7f8; border-radius: 50%; width: 40Px; height: 40Px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .login-role__icon .app-icon { width: 22Px; height: 22Px; }
-  .login-role__body { flex: 1; min-width: 0; }
-  .login-role__title { font-size: 16Px; font-weight: 500; }
-  .login-role__sub { font-size: 14Px; color: #626d78; margin-top: 4Px; }
-  .login-role__arrow { font-size: 22Px; color: #626d78; }
-  .login-disclaimer { font-size: 14Px; color: #626d78; line-height: 1.8; margin-top: 24Px; }
-}
+// 登录页。公共样式在 components/ui/kit.scss，这里只有这一页独有的三样：
+// 橙色的标志（这一屏唯一的橙色）、两个用工入口、演示身份列表的分隔线。
 
-.worker-flow {
-.login-entry-heading {
-  margin-bottom: 12Px;
-  font-size: 16Px;
-  font-weight: 500;
-  color: #101820;
-}
-.login-entries {
-  display: flex;
-  flex-direction: column;
-  gap: 12Px;
-  margin-bottom: 24Px;
-}
-.login-entry {
-  display: flex;
-  align-items: center;
-  gap: 12Px;
-  width: 100%;
-  min-height: 80Px;
-  box-sizing: border-box;
-  margin: 0;
-  padding: 16Px;
-  border: 1Px solid #e5e8eb;
-  border-radius: 16Px;
-  background: #fff;
-  color: #101820;
-  text-align: left;
-  line-height: 1.5;
-}
-.login-entry::after,
-.login-manager::after,
-.login-test-toggle::after {
-  border: 0;
-}
-.login-entry--selected {
-  border-color: #0066d6;
-  background: #eaf2fc;
-}
-.login-entry__icon {
+.login-logo {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32Px;
-  height: 32Px;
-  flex-shrink: 0;
+  width: 168rpx;
+  height: 168rpx;
+  margin: 90rpx 0 0 12rpx;
+  border-radius: var(--r-sign);
+  background: var(--hi);
+  color: var(--k);
+  font-size: 80rpx;
+  font-weight: 900;
 }
-.login-entry__icon .app-icon {
-  width: 24Px;
-  height: 24Px;
+
+.login-entries {
+  margin-top: 22rpx;
 }
-.login-entry__body {
-  flex: 1;
-  min-width: 0;
-}
-.login-entry__title {
-  font-size: 18Px;
-  font-weight: 500;
-}
-.login-entry__description {
-  margin-top: 4Px;
-  color: #626d78;
-  font-size: 14Px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.login-entry__check {
-  width: 20Px;
-  height: 20Px;
-  border: 1Px solid #cbd2d9;
-  border-radius: 50%;
-  flex-shrink: 0;
-  color: #fff;
-  text-align: center;
-  font-size: 14Px;
-  line-height: 20Px;
-}
-.login-entry--selected .login-entry__check {
-  border-color: #0066d6;
-  background: #0066d6;
-}
-.login-manager {
-  min-height: 44Px;
-  padding: 12Px;
-  margin: 12Px 0 0;
-  background: transparent;
-  color: #626d78;
-  font-size: 14Px;
-  line-height: 1.5;
-}
-.login-test-toggle {
-  width: 100%;
-  min-height: 44Px;
+// 用工入口：没选的是白条，选中的是黑底白字加一个勾
+.login-entry {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-right: 0;
-  padding-left: 0;
-  border-radius: 0;
-  background: transparent;
-  gap: 12Px;
-  color: #626d78;
-  font-size: 14Px;
-  line-height: 1.5;
+  gap: 26rpx;
+  margin-top: 26rpx;
+  padding: 36rpx 40rpx;
+  border-radius: var(--r-sheet);
+  background: var(--sheet);
 }
+.login-entry__text {
+  min-width: 0;
+}
+.login-entry__title {
+  font-size: 42rpx;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.login-entry__sub {
+  margin-top: 6rpx;
+  font-size: 32rpx;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.login-entry--on {
+  background: var(--k);
+  color: #fff;
+}
+.login-entry--on .login-entry__sub {
+  color: #a3a8ae;
+}
+.login-entry__tick {
+  flex-shrink: 0;
+  width: 30rpx;
+  height: 16rpx;
+  margin: -8rpx 4rpx 0 0;
+  border-bottom: 6rpx solid #fff;
+  border-left: 6rpx solid #fff;
+  transform: rotate(-45deg);
+}
+
+// 每个身份外面包了一层带 login-role 类名的块（走查脚本按这个类名点），
+// 里面的行都成了“最后一行”，分隔线在这里补上。
+.login-role + .login-role {
+  border-top: 2rpx solid var(--hair);
+}
+.login-role--busy {
+  opacity: 0.6;
 }

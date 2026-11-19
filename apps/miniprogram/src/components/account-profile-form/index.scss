@@ -1,58 +1,57 @@
-.account-avatar-button {
+// 本人资料表单。行和输入框用公共组件，这里只有头像那一行：
+// 它必须是原生按钮（要用微信的选头像能力），所以把按钮自带的样子去掉，做成和别的行一样。
+.account-form__avatar {
   display: flex;
   align-items: center;
-  gap: 22rpx;
-  padding: 8rpx 0 24rpx;
-  margin: 0 0 22rpx;
+  gap: 26rpx;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 152rpx;
+  margin: 0;
+  padding: 0 40rpx;
+  border-bottom: 2rpx solid var(--hair);
   border-radius: 0;
-  border-bottom: 1rpx solid var(--line);
   background: transparent;
-  color: var(--ink);
+  color: var(--k);
+  font-size: 36rpx;
+  line-height: 1.45;
   text-align: left;
-  font-size: 26rpx;
-  line-height: 1.6;
 }
-.account-avatar-button::after {
+.account-form__avatar::after {
   border: 0;
 }
-.account-avatar-button .profile-avatar {
+.account-form .account-form__avatar[disabled] {
+  background: transparent;
+  color: var(--k);
+}
+.account-form__avatar-pic {
+  display: flex;
   flex-shrink: 0;
-  width: 88rpx;
-  height: 88rpx;
-  background: var(--surface-sunk);
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  width: 90rpx;
+  height: 90rpx;
+  border-radius: 50%;
+  background: var(--page);
 }
-.account-avatar-button__sub {
-  font-size: 21rpx;
-  color: var(--ink-soft);
-  margin-top: 6rpx;
+.account-form__avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
-.account-avatar-button__title {
-  color: var(--ink);
+.account-form__avatar-text {
+  flex: 1;
+  min-width: 0;
 }
-.account-avatar-button__arrow {
-  margin-left: auto;
-  color: var(--ink-soft);
-  font-size: 36rpx;
+.account-form__avatar-title {
+  font-weight: 600;
 }
-.account-saved {
-  color: #168852;
-  font-size: 23rpx;
-  margin: 16rpx 0;
-}
-
-.account-identity-note {
+.account-form__avatar-sub {
+  overflow: hidden;
+  font-size: 30rpx;
+  line-height: 1.4;
   color: var(--muted);
-  font-size: 24px;
-  line-height: 1.6;
-  margin: 20px 0;
-}
-
-.account-form--worker {
-  .account-avatar-button { min-height: 72Px; padding: 12Px 0 20Px; gap: 14Px; margin-bottom: 20Px; }
-  .account-avatar-button .profile-avatar { width: 56Px; height: 56Px; }
-  .account-avatar-button__title { font-size: 16Px; }
-  .account-avatar-button__sub { font-size: 14Px; margin-top: 4Px; }
-  .account-avatar-button__arrow { font-size: 22Px; }
-  .account-identity-note { color: #626d78; font-size: 14Px; margin: 16Px 0; line-height: 1.65; }
-  .account-saved { font-size: 14Px; margin: 12Px 0; }
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
