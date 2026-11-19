@@ -1,10 +1,5 @@
 import { Button as TaroButton, Input, View } from "@tarojs/components";
-import {
-  createContext,
-  useContext,
-  type PropsWithChildren,
-  type ReactNode,
-} from "react";
+import type { PropsWithChildren, ReactNode } from "react";
 
 import { FRONTEND_DEMO } from "../../config/env";
 import { useSession } from "../../store/session";
@@ -16,54 +11,40 @@ import { SkeletonRows, SkeletonSign } from "./skeleton";
 import { stateKindForTitle, type StateKind } from "./state-kind";
 
 import "./ui.scss";
-import "./worker.scss";
 import "./kit.scss";
 
-/** 当前页面是不是改版后的样子；公共组件据此决定读取中显示骨架还是转圈。 */
-const SignScreen = createContext<boolean>(false);
-
+/**
+ * 页面外壳：灰底、两侧留边、底部给导航或操作条留出位置。
+ * 页头通过 header 传入（固定在顶部）。appearance 只为兼容旧调用保留，不再有区别。
+ */
 export const Screen = ({
   children,
-  appearance,
   header,
 }: PropsWithChildren<{
-  /** "sign" 是改版后的样子（灰底、标牌、白条）；"worker" 是还没改版的工人页面。 */
   readonly appearance?: HeaderAppearance;
   readonly header?: ReactNode;
 }>): JSX.Element => {
   const { phase } = useSession();
-  const sign = appearance === "sign";
   return (
-    <SignScreen.Provider value={sign}>
-      <View
-        className={`ui-screen${appearance === "worker" ? " worker-ui" : ""}${sign ? " ui-screen--sign" : ""}`}
-      >
-        {phase === "loading" ? (
-          sign ? (
-            <>
-              <SkeletonSign />
-              <SkeletonRows rows={3} gap />
-            </>
-          ) : (
-            <View className="session-loading">
-              <View className="ui-btn__spinner" />
-              <View>正在连接工作现场…</View>
+    <View className="ui-screen ui-screen--sign">
+      {phase === "loading" ? (
+        <>
+          <SkeletonSign />
+          <SkeletonRows rows={3} gap />
+        </>
+      ) : (
+        <>
+          {header}
+          {FRONTEND_DEMO ? (
+            <View className="demo-mode-strip">
+              本机演示，定位和人脸都是模拟的
             </View>
-          )
-        ) : (
-          <>
-            {header}
-            {FRONTEND_DEMO ? (
-              <View className="demo-mode-strip">
-                本机演示，定位和人脸都是模拟的
-              </View>
-            ) : null}
-            {children}
-          </>
-        )}
-        <PrivacyAuthorization />
-      </View>
-    </SignScreen.Provider>
+          ) : null}
+          {children}
+        </>
+      )}
+      <PrivacyAuthorization />
+    </View>
   );
 };
 export const Title = ({ children }: PropsWithChildren): JSX.Element => (
@@ -110,8 +91,9 @@ type ButtonProps = PropsWithChildren<{
   readonly disabled?: boolean;
   /** 提交中：按钮变灰、不能再点。文案由调用方换成“…中”。 */
   readonly loading?: boolean;
+  /** 只为兼容旧调用保留，不再有区别。 */
   readonly appearance?: "worker";
-  /** 改版页面里黑框按钮默认按内容宽度，wide 让它占满一行。 */
+  /** 黑框按钮默认按内容宽度，wide 让它占满一行。 */
   readonly wide?: boolean;
 }>;
 
@@ -121,11 +103,10 @@ export const Button = ({
   variant,
   disabled,
   loading,
-  appearance,
   wide,
 }: ButtonProps): JSX.Element => (
   <TaroButton
-    className={`ui-btn ui-press ui-btn--${variant ?? "primary"}${appearance === "worker" ? " worker-button" : ""}${wide ? " ui-btn--wide" : ""}`}
+    className={`ui-btn ui-press ui-btn--${variant ?? "primary"}${wide ? " ui-btn--wide" : ""}`}
     {...PRESS}
     onClick={onClick}
     disabled={disabled === true || loading === true ? true : undefined}
@@ -200,10 +181,9 @@ export const StateView = ({
   readonly kind?: StateKind;
   readonly retryLabel?: string;
 }): JSX.Element => {
-  const sign = useContext(SignScreen);
   const resolved = kind ?? stateKindForTitle(title);
-  // 改版页面里读取中不转圈：用骨架把版面站住，数据到了原位替换。
-  if (sign && resolved === "loading")
+  // 读取中不转圈：用骨架把版面站住，数据到了原位替换。
+  if (resolved === "loading")
     return (
       <View aria-label={title}>
         <SkeletonRows rows={3} gap />
@@ -214,7 +194,7 @@ export const StateView = ({
       <View className="ui-state__symbol">{resolved === "error" ? "!" : "·"}</View>
       <View className="ui-state__title">{title}</View>
       {sub ? <View className="ui-subtitle">{sub}</View> : null}
-      {onRetry && resolved !== "loading" ? (
+      {onRetry ? (
         <Button variant="outline" onClick={onRetry}>
           {retryLabel ?? "重新加载"}
         </Button>
@@ -245,15 +225,44 @@ export {
 } from "./sign";
 export {
   Card,
+  CardActions,
+  CardMeta,
+  CardTitle,
+  Divider,
+  EntryGrid,
+  KV,
+  Links,
   Numbers,
   Row,
   Say,
   SectionTitle,
   Sheet,
+  Timeline,
+  type EntryItem,
   type NumberItem,
+  type TimelineItem,
 } from "./sheet";
 export { Status } from "./status";
 export { statusKindFor, type StatusKind } from "./status-kind";
-export { BottomBar, Stamp, Steps } from "./flow";
-export { DateSwitch, FormError, FormRow } from "./form";
+export {
+  BottomBar,
+  Code,
+  Photo,
+  PhotoRow,
+  ProgressBar,
+  Stamp,
+  Steps,
+} from "./flow";
+export {
+  Check,
+  Chips,
+  DateSwitch,
+  FormArea,
+  FormError,
+  FormInput,
+  FormRow,
+  FormSwitch,
+  SearchField,
+  Weekdays,
+} from "./form";
 export { SkeletonRows, SkeletonSign } from "./skeleton";

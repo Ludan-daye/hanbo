@@ -1,6 +1,7 @@
-import { Text, View } from "@tarojs/components";
+import { Image, Text, View } from "@tarojs/components";
 import type { PropsWithChildren } from "react";
 
+import { LineIcon, type LineIconName } from "./line-icon";
 import { PRESS } from "./press";
 
 /** 步骤条：第几步、共几步、这一步叫什么。 */
@@ -81,3 +82,64 @@ export const BottomBar = ({
     </View>
   );
 };
+
+/**
+ * 照片位：有照片就显示照片，没有就是一个带图标和一句话的占位。
+ * add 为真时是虚线框的“添加”位；small 用在一排多张的地方（放进 PhotoRow）。
+ */
+export const Photo = ({
+  src,
+  label,
+  icon,
+  small,
+  add,
+  onClick,
+}: {
+  readonly src?: string | null;
+  readonly label?: string;
+  readonly icon?: LineIconName;
+  readonly small?: boolean;
+  readonly add?: boolean;
+  readonly onClick?: () => void;
+}): JSX.Element => (
+  <View
+    className={`ui-photo${small ? " ui-photo--small" : ""}${add ? " ui-photo--add" : ""}${onClick ? " ui-press" : ""}`}
+    {...(onClick ? PRESS : {})}
+    onClick={onClick}
+  >
+    {src ? (
+      <Image className="ui-photo__image" src={src} mode="aspectFill" lazyLoad />
+    ) : (
+      <>
+        <LineIcon name={icon ?? (add ? "plus" : "camera")} tone="muted" />
+        {label ? <View className="ui-photo__label">{label}</View> : null}
+      </>
+    )}
+  </View>
+);
+
+/** 一排照片位。 */
+export const PhotoRow = ({ children }: PropsWithChildren): JSX.Element => (
+  <View className="ui-photo-row">{children}</View>
+);
+
+/** 大号的码：邀请码、验证码这类要照着念或抄的数字。 */
+export const Code = ({
+  children,
+}: {
+  readonly children: string;
+}): JSX.Element => <View className="ui-code num">{children}</View>;
+
+/** 进度条：percent 是 0 到 100。 */
+export const ProgressBar = ({
+  percent,
+}: {
+  readonly percent: number;
+}): JSX.Element => (
+  <View className="ui-progress">
+    <View
+      className="ui-progress__bar"
+      style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
+    />
+  </View>
+);

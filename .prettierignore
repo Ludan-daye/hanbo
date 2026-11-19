@@ -1,7 +1,5 @@
 # Taro treats uppercase Px as logical pixels; Prettier lowercases CSS units.
-apps/miniprogram/src/components/ui/worker.scss
 apps/miniprogram/src/components/worker-records/index.scss
-apps/miniprogram/src/components/worker-flow/index.scss
 apps/miniprogram/src/components/account-profile-form/index.scss
 apps/miniprogram/src/pages/login/index.scss
 apps/miniprogram/src/pages/my-projects/index.scss

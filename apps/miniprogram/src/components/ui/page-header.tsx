@@ -1,4 +1,4 @@
-import { Button, View } from "@tarojs/components";
+import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import {
   useId,
@@ -10,7 +10,7 @@ import {
 
 import { PRESS } from "./press";
 
-/** "sign" 是改版后的样子；"worker" 是还没改版的工人页面在用的样子。 */
+/** 只为兼容旧调用保留：页头只有一种样子。 */
 export type HeaderAppearance = "worker" | "sign";
 
 const headerStyle = (): { readonly paddingTop: string } => ({
@@ -22,16 +22,13 @@ const headerStyle = (): { readonly paddingTop: string } => ({
 
 const HeaderFrame = ({
   children,
-  appearance,
   footer,
 }: PropsWithChildren<{
-  readonly appearance?: HeaderAppearance;
   readonly footer?: ReactNode;
 }>): JSX.Element => {
-  // 这两种样子的页头固定在顶部，并让开右上角的胶囊按钮。
-  const fixed = appearance !== undefined;
+  // 页头固定在顶部，并让开右上角的胶囊按钮。
   const capsule =
-    fixed && process.env.TARO_ENV === "weapp"
+    process.env.TARO_ENV === "weapp"
       ? Taro.getMenuButtonBoundingClientRect()
       : null;
   const statusHeight =
@@ -47,7 +44,6 @@ const HeaderFrame = ({
       ),
   );
   useLayoutEffect(() => {
-    if (!fixed) return;
     let active = true;
     const measure = (): void => {
       Taro.nextTick(() => {
@@ -67,11 +63,11 @@ const HeaderFrame = ({
       active = false;
       Taro.offWindowResize(measure);
     };
-  }, [fixed, children, footer, headerId]);
+  }, [children, footer, headerId]);
   const header = (
     <View
-      id={fixed ? headerId : undefined}
-      className={`ui-header${appearance ? ` ${appearance}-header` : ""}`}
+      id={headerId}
+      className="ui-header sign-header"
       style={headerStyle()}
     >
       <View
@@ -96,16 +92,8 @@ const HeaderFrame = ({
       {footer}
     </View>
   );
-  return fixed ? (
-    <View
-      className="worker-header-space"
-      style={{ height: `${headerHeight}px` }}
-    >
-      {header}
-    </View>
-  ) : (
-    header
-  );
+  // 页头是固定定位的，用一个同样高的空块把下面的内容顶开。
+  return <View style={{ height: `${headerHeight}px` }}>{header}</View>;
 };
 
 const returnToPreviousPage = async (): Promise<void> => {
@@ -118,7 +106,6 @@ const returnToPreviousPage = async (): Promise<void> => {
 
 export const PageHeader = ({
   title,
-  appearance,
   footer,
   onBack,
 }: {
@@ -128,38 +115,24 @@ export const PageHeader = ({
   /** 页面里有自己的“上一层”（比如同一个页面里的子视图）时，由它决定返回到哪。 */
   readonly onBack?: () => void;
 }): JSX.Element => (
-  <HeaderFrame appearance={appearance} footer={footer}>
-    {appearance === "sign" ? (
-      <View
-        className="ui-header__back-hit ui-press"
-        aria-label="返回"
-        {...PRESS}
-        onClick={() => {
-          if (onBack) onBack();
-          else void returnToPreviousPage();
-        }}
-      >
-        <View className="ui-chevron ui-chevron--back" />
-      </View>
-    ) : (
-      <Button
-        className="ui-header__back"
-        aria-label="返回"
-        onClick={() => {
-          if (onBack) onBack();
-          else void returnToPreviousPage();
-        }}
-      >
-        ‹
-      </Button>
-    )}
+  <HeaderFrame footer={footer}>
+    <View
+      className="ui-header__back-hit ui-press"
+      aria-label="返回"
+      {...PRESS}
+      onClick={() => {
+        if (onBack) onBack();
+        else void returnToPreviousPage();
+      }}
+    >
+      <View className="ui-chevron ui-chevron--back" />
+    </View>
     <View className="ui-header__title">{title}</View>
   </HeaderFrame>
 );
 
 export const AppHeader = ({
   title,
-  appearance,
   onSwitch,
 }: {
   readonly title: string;
@@ -167,7 +140,7 @@ export const AppHeader = ({
   /** 传了就在标题后显示小三角，点标题切换项目或班组。 */
   readonly onSwitch?: () => void;
 }): JSX.Element => (
-  <HeaderFrame appearance={appearance}>
+  <HeaderFrame>
     {onSwitch ? (
       <View className="ui-header__switch ui-press" {...PRESS} onClick={onSwitch}>
         <View className="ui-header__brand">{title}</View>
