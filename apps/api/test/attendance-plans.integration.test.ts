@@ -1115,7 +1115,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       expect(file.headers["content-type"]).toContain("spreadsheetml.sheet");
       const bytes: Buffer = file.body;
       const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(bytes);
+      await workbook.xlsx.load(bytes as never);
       expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
         "月度汇总",
         "每日明细",
@@ -1195,7 +1195,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         .get(ReportExportsService)
         .download("planning-admin", String(again.body.id));
       const revisedWorkbook = new ExcelJS.Workbook();
-      await revisedWorkbook.xlsx.load(revised.bytes);
+      await revisedWorkbook.xlsx.load(revised.bytes as never);
       expect(
         revisedWorkbook.getWorksheet("月度汇总")!.getColumn(18).values,
       ).toContain(0);
@@ -1248,7 +1248,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         .get(ReportExportsService)
         .download("planning-leader", String(retry.body.id));
       const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(file.bytes);
+      await workbook.xlsx.load(file.bytes as never);
       const teams = workbook
         .getWorksheet("每日明细")!
         .getColumn(2)
@@ -1340,7 +1340,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         requestedByUserId: "planning-admin", calculationVersion: REPORT_CALCULATION_VERSION,
       } });
       const originalBytes = await createMonthlyWorkbook(job, "本项目", snapshot);
-      const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(originalBytes);
+      const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(originalBytes as never);
       expect(workbook.getWorksheet("安全记录")!.rowCount).toBe(2);
       expect(workbook.getWorksheet("打卡位置")!.rowCount).toBe(4);
       expect(JSON.stringify(workbook.model)).not.toContain("其他公司保密事件");

@@ -284,6 +284,59 @@ const assertDemoScope = (
     assignedScope,
   });
 };
+/**
+ * 项目管理员首页的概览：用演示版自己的日报、收件箱、违规看板和底照列表算，
+ * 所以数字和点进去的列表一定相同。
+ */
+const demoProjectOverview = (
+  state: DemoState,
+  userId: string,
+  projectId: string,
+  date: string,
+): unknown => {
+  const read = <T,>(path: string): T =>
+    routeDemo(state, userId, path, { method: "GET" }).data as T;
+  const daily = read<{
+    readonly totals: {
+      readonly scheduledDays: number;
+      readonly actualAttendedDays: number;
+      readonly missingPunchCount: number;
+      readonly workedMinutes: number;
+    };
+  }>(`/reports/projects/${projectId}/daily?date=${date}`);
+  const inbox = read<{ readonly items: readonly unknown[] }>(
+    `/makeups/pending?projectId=${encodeURIComponent(projectId)}`,
+  );
+  const board = read<{
+    readonly violations: readonly {
+      readonly status: string;
+      readonly appeals: readonly { readonly status: string }[];
+    }[];
+  }>(`/safety-credit/projects/${projectId}`);
+  const faces = read<readonly { readonly status: string }[]>(
+    `/face-profiles/projects/${projectId}`,
+  );
+  return {
+    attendance: {
+      expected: daily.totals.scheduledDays,
+      missing: daily.totals.missingPunchCount,
+      present: daily.totals.actualAttendedDays,
+      workedMinutes: daily.totals.workedMinutes,
+    },
+    date,
+    projectId,
+    todos: {
+      appealPending: board.violations.filter((row) =>
+        row.appeals.some((appeal) => appeal.status === "PENDING"),
+      ).length,
+      facePending: faces.filter((row) => row.status === "PENDING").length,
+      makeupPending: inbox.items.length,
+      violationPending: board.violations.filter(
+        (row) => row.status === "PENDING",
+      ).length,
+    },
+  };
+};
 const routeDemo = (
   state: DemoState,
   userId: string,
@@ -642,6 +695,16 @@ const routeDemo = (
     });
   }
 
+  if (
+    parts[0] === "management" &&
+    parts[1] === "projects" &&
+    parts[3] === "overview" &&
+    method === "GET"
+  )
+    return response(
+      state,
+      demoProjectOverview(state, userId, parts[2], query.date ?? chinaToday()),
+    );
   if (parts[0] === "management" || parts[0] === "bindings") {
     const scope = parts[1];
     const scopeId = parts[2];
@@ -1305,6 +1368,7 @@ const routeDemo = (
           );
           if (
             !person ||
+            (query.projectId !== undefined && row.projectId !== query.projectId) ||
             row.requesterUserId === userId ||
             (parts[1] === "pending" ? row.status !== "PENDING" : row.status === "PENDING" || row.approverUserId !== userId)
           )

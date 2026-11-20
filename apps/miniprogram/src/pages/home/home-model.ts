@@ -1,10 +1,8 @@
-import type { SafetyCreditBoard } from "@construction/domain";
-
-import type { FaceProfile } from "../../services/face";
-import type { MakeupInbox, PendingMakeup } from "../../services/makeups";
+import type { PendingMakeup } from "../../services/makeups";
 import type {
   DailyReport,
   DailyReportParticipant,
+  ProjectOverview,
   WorkRoleScope,
 } from "../../services/management.types";
 import { projectPunchUrl } from "../../services/project-attendance";
@@ -225,46 +223,22 @@ export const leaderMakeupTodos = (
   ];
 };
 
-/** 项目管理员的三类待办：补卡申请、违规待复核、底照待审核。没有的那类不出现。 */
+/** 项目管理员的三类待办：补卡申请、违规待复核（含申诉）、底照待审核。没有的那类不出现。 */
 export const projectAdminTodos = (input: {
   readonly projectId: string;
-  readonly inbox:
-    | (Pick<MakeupInbox, "nextCursor"> & {
-        readonly items: readonly { readonly projectId: string }[];
-      })
-    | null;
-  readonly board: {
-    readonly violations: readonly {
-      readonly status: SafetyCreditBoard["violations"][number]["status"];
-      readonly appeals: readonly { readonly status: string }[];
-    }[];
-  } | null;
-  readonly faces:
-    | readonly Pick<FaceProfile, "ownerId" | "ownerType" | "status">[]
-    | null;
+  /** 项目概览里的待办数；null 表示还没读到。 */
+  readonly todos: ProjectOverview["todos"] | null;
 }): readonly HomeTodo[] => {
   const query = `projectId=${encodeURIComponent(input.projectId)}`;
-  const makeups =
-    input.inbox?.items.filter((item) => item.projectId === input.projectId)
-      .length ?? 0;
-  const violations =
-    input.board?.violations.filter(
-      (row) =>
-        row.status === "PENDING" ||
-        row.appeals.some((appeal) => appeal.status === "PENDING"),
-    ).length ?? 0;
-  const faces = new Set(
-    (input.faces ?? [])
-      .filter((profile) => profile.status === "PENDING")
-      .map((profile) => `${profile.ownerType}:${profile.ownerId}`),
-  ).size;
+  const todos = input.todos;
+  if (todos === null) return [];
+  const violations = todos.violationPending + todos.appealPending;
   return [
-    ...(makeups > 0
+    ...(todos.makeupPending > 0
       ? [
           {
             key: "makeups",
-            // 收件箱是分页的：还有下一页时，这里只是“至少这么多”。
-            title: `补卡申请 ${makeups}${input.inbox?.nextCursor ? " 条以上" : " 条"}`,
+            title: `补卡申请 ${todos.makeupPending} 条`,
             url: `/pages/team-makeups/index?${query}`,
           },
         ]
@@ -274,21 +248,49 @@ export const projectAdminTodos = (input: {
           {
             key: "violations",
             title: `违规待复核 ${violations} 条`,
-            url: `/pages/safety-review/index?${query}`,
+            url: `/pages/safety-review/index?${query}${todos.violationPending === 0 ? "&tab=APPEAL" : ""}`,
           },
         ]
       : []),
-    ...(faces > 0
+    ...(todos.facePending > 0
       ? [
           {
             key: "faces",
-            title: `底照待审核 ${faces} 人`,
+            title: `底照待审核 ${todos.facePending} 人`,
             url: `/pages/face-review/index?${query}`,
           },
         ]
       : []),
   ];
 };
+
+/** 项目概览的待办数写在工作台入口上：补卡审批、违规复核、底照审核。 */
+export const projectAdminStatuses = (
+  todos: ProjectOverview["todos"] | null,
+): Readonly<Record<string, { readonly kind: "warn"; readonly text: string }>> => {
+  if (todos === null) return {};
+  const counts: readonly (readonly [string, number])[] = [
+    ["/pages/team-makeups/index", todos.makeupPending],
+    [
+      "/pages/safety-review/index",
+      todos.violationPending + todos.appealPending,
+    ],
+    ["/pages/face-review/index", todos.facePending],
+  ];
+  return Object.fromEntries(
+    counts
+      .filter(([, count]) => count > 0)
+      .map(([url, count]) => [url, { kind: "warn" as const, text: `${count} 条` }]),
+  );
+};
+
+/** 项目首页黑条：缺卡几个人；没人缺卡就是空的。 */
+export const overviewMissingText = (
+  overview: Pick<ProjectOverview, "attendance"> | null,
+): string =>
+  overview !== null && overview.attendance.missing > 0
+    ? `${overview.attendance.missing} 人`
+    : "";
 
 /** 公司首页上一个项目一行。 */
 export type ProjectLine = {

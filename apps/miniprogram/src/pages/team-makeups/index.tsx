@@ -144,7 +144,7 @@ export default function TeamMakeups(): JSX.Element {
     setItems(null);
     setNextCursor(null);
     const load = tab === "PENDING" ? fetchMakeupInbox : fetchReviewedMakeups;
-    void load(null).then(
+    void load(null, requestedProjectId).then(
       (page) => {
         if (!cancelled) {
           setItems(page.items);
@@ -158,7 +158,7 @@ export default function TeamMakeups(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [revision, tab]);
+  }, [revision, tab, requestedProjectId]);
   const review = async (
     id: string,
     action: ReviewAction,
@@ -226,7 +226,7 @@ export default function TeamMakeups(): JSX.Element {
     try {
       const page = await (
         tab === "PENDING" ? fetchMakeupInbox : fetchReviewedMakeups
-      )(nextCursor);
+      )(nextCursor, requestedProjectId);
       setItems((rows) => [...(rows ?? []), ...page.items]);
       setNextCursor(page.nextCursor);
     } catch (cause) {

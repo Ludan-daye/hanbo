@@ -17,6 +17,7 @@ import { RequirePermission } from "../authorization/require-permission.decorator
 
 import {
   parseCreateMakeupRequestBody,
+  parseMakeupInboxQuery,
   parseReviewMakeupRequestBody,
 } from "./makeup-body.parsers.js";
 import { MakeupService } from "./makeup.service.js";
@@ -36,18 +37,20 @@ export class MakeupController {
   @UseGuards(AccessTokenGuard)
   async inbox(
     @CurrentUser() user: AuthenticatedUser,
-    @Query("cursor") cursor: string | undefined,
+    @Query() query: unknown,
   ): Promise<MakeupInboxResponse> {
-    return this.makeupService.pendingInbox(user.userId, cursor ?? null);
+    const { cursor, projectId } = parseMakeupInboxQuery(query);
+    return this.makeupService.pendingInbox(user.userId, cursor, projectId);
   }
 
   @Get("reviewed")
   @UseGuards(AccessTokenGuard)
   async reviewed(
     @CurrentUser() user: AuthenticatedUser,
-    @Query("cursor") cursor: string | undefined,
+    @Query() query: unknown,
   ): Promise<MakeupInboxResponse> {
-    return this.makeupService.reviewedInbox(user.userId, cursor ?? null);
+    const { cursor, projectId } = parseMakeupInboxQuery(query);
+    return this.makeupService.reviewedInbox(user.userId, cursor, projectId);
   }
 
   @Post("projects/:projectId/requests")

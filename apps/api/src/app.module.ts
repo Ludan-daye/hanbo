@@ -12,6 +12,7 @@ import { PrismaModule } from "./infrastructure/database/prisma.module.js";
 import { ManagementModule } from "./management/management.module.js";
 import { MakeupModule } from "./makeup/makeup.module.js";
 import { MeModule } from "./me/me.module.js";
+import { ProjectOverviewModule } from "./overview/project-overview.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
 import { UploadsModule } from "./uploads/uploads.module.js";
 import { WorktimeModule } from "./worktime/worktime.module.js";
@@ -30,6 +31,7 @@ import { SafetyCreditModule } from "./safety-credit/safety-credit.module.js";
     MakeupModule,
     MeModule,
     ReportsModule,
+    ProjectOverviewModule,
     TeamWorkModule,
     WorktimeModule,
     SafetyCreditModule,

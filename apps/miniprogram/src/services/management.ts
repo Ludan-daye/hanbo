@@ -10,6 +10,7 @@ import type {
   ProjectInvitation,
   ProjectParticipant,
   ProjectManagerCandidate,
+  ProjectOverview,
   ProjectTeam,
   WorkRoleScope,
   RangeReport,
@@ -23,6 +24,16 @@ export const fetchParticipants = async (
 ): Promise<ReadonlyArray<ProjectParticipant>> =>
   apiClient.request<ReadonlyArray<ProjectParticipant>>(
     `/management/projects/${projectId}/participants`,
+    { method: "GET" },
+  );
+
+/** 项目管理员首页的概览：只有合计和待办条数。 */
+export const fetchProjectOverview = async (
+  projectId: string,
+  date: string,
+): Promise<ProjectOverview> =>
+  apiClient.request<ProjectOverview>(
+    `/management/projects/${encodeURIComponent(projectId)}/overview?date=${date}`,
     { method: "GET" },
   );
 

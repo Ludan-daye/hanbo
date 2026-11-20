@@ -21,8 +21,16 @@ import {
   fetchPendingMakeups,
   type PendingMakeup,
 } from "../../services/makeups";
-import { fetchMyRoleScopes } from "../../services/management";
-import type { WorkRoleScope } from "../../services/management.types";
+import {
+  fetchMyRoleScopes,
+  fetchProjectOverview,
+} from "../../services/management";
+import type {
+  ProjectOverview,
+  WorkRoleScope,
+} from "../../services/management.types";
+import { chinaToday } from "../../services/time";
+import { projectAdminStatuses } from "../home/home-model";
 import { useSession } from "../../store/session";
 
 // 每个职级的入口归在哪个标题下。
@@ -79,6 +87,30 @@ export default function Workspace(): JSX.Element {
     revision,
   );
   const pendingCount = pending.data?.length ?? 0;
+  // 项目管理员的补卡、违规、底照三项后面写待办数，和首页同一份概览缓存。
+  const projectId =
+    selected?.roleCode === "PROJECT_ADMIN" && selected.scopeType === "PROJECT"
+      ? selected.scopeId
+      : null;
+  const date = chinaToday();
+  const overview = useCachedRead<ProjectOverview>(
+    userId === undefined || projectId === null
+      ? null
+      : `${userId}:project-overview:${projectId}:${date}`,
+    () => fetchProjectOverview(projectId ?? "", date),
+    revision,
+  );
+  const statuses =
+    projectId !== null
+      ? projectAdminStatuses(overview.data?.todos ?? null)
+      : pendingCount > 0
+        ? {
+            [APPROVALS_URL]: {
+              kind: "warn" as const,
+              text: `${pendingCount} 条`,
+            },
+          }
+        : undefined;
 
   return (
     <Screen header={<AppHeader title="工作台" />}>
@@ -119,16 +151,7 @@ export default function Workspace(): JSX.Element {
           <RolePanel
             panel={panel}
             scope={selected}
-            statuses={
-              pendingCount > 0
-                ? {
-                    [APPROVALS_URL]: {
-                      kind: "warn",
-                      text: `${pendingCount} 条`,
-                    },
-                  }
-                : undefined
-            }
+            statuses={statuses}
           />
         </>
       )}

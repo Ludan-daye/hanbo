@@ -9,6 +9,8 @@ import {
   missingPeople,
   peopleValue,
   projectAdminTodos,
+  projectAdminStatuses,
+  overviewMissingText,
   resolveHomeScope,
   signDateLabel,
 } from "../src/pages/home/home-model";
@@ -363,33 +365,32 @@ describe("leaderMakeupTodos", () => {
 });
 
 describe("projectAdminTodos", () => {
+  const todos = (
+    counts: Partial<{
+      makeupPending: number;
+      violationPending: number;
+      appealPending: number;
+      facePending: number;
+    }>,
+  ) => ({
+    appealPending: 0,
+    facePending: 0,
+    makeupPending: 0,
+    violationPending: 0,
+    ...counts,
+  });
   test("each kind appears only when something is waiting, with the project carried in the link", () => {
-    const todos = projectAdminTodos({
-      projectId: "p 1",
-      inbox: {
-        items: [
-          { projectId: "p 1" },
-          { projectId: "p 1" },
-          { projectId: "p-2" },
-        ],
-        nextCursor: null,
-      },
-      board: {
-        violations: [
-          { status: "PENDING", appeals: [] },
-          { status: "CONFIRMED", appeals: [{ status: "PENDING" }] },
-          { status: "CONFIRMED", appeals: [{ status: "REJECTED" }] },
-          { status: "REJECTED", appeals: [] },
-        ],
-      },
-      faces: [
-        { ownerId: "w-1", ownerType: "WORKER", status: "PENDING" },
-        { ownerId: "w-1", ownerType: "WORKER", status: "REPLACED" },
-        { ownerId: "w-2", ownerType: "WORKER", status: "APPROVED" },
-        { ownerId: "m-1", ownerType: "MANAGER", status: "PENDING" },
-      ],
-    });
-    expect(todos).toEqual([
+    expect(
+      projectAdminTodos({
+        projectId: "p 1",
+        todos: todos({
+          makeupPending: 2,
+          violationPending: 1,
+          appealPending: 1,
+          facePending: 2,
+        }),
+      }),
+    ).toEqual([
       {
         key: "makeups",
         title: "补卡申请 2 条",
@@ -408,34 +409,46 @@ describe("projectAdminTodos", () => {
     ]);
   });
 
-  test("a paged inbox is reported as a lower bound", () => {
+  test("only appeals waiting opens the appeal tab", () => {
     expect(
-      projectAdminTodos({
-        projectId: "p-1",
-        inbox: { items: [{ projectId: "p-1" }], nextCursor: "next" },
-        board: null,
-        faces: null,
-      })[0]?.title,
-    ).toBe("补卡申请 1 条以上");
+      projectAdminTodos({ projectId: "p-1", todos: todos({ appealPending: 3 }) })[0]
+        ?.url,
+    ).toBe("/pages/safety-review/index?projectId=p-1&tab=APPEAL");
   });
 
   test("nothing read and nothing waiting both give an empty list", () => {
+    expect(projectAdminTodos({ projectId: "p-1", todos: null })).toEqual([]);
+    expect(projectAdminTodos({ projectId: "p-1", todos: todos({}) })).toEqual(
+      [],
+    );
+  });
+});
+
+describe("projectAdminStatuses", () => {
+  test("workspace entries show the same counts as the home todos", () => {
     expect(
-      projectAdminTodos({
-        projectId: "p-1",
-        inbox: null,
-        board: null,
-        faces: null,
+      projectAdminStatuses({
+        appealPending: 1,
+        facePending: 0,
+        makeupPending: 4,
+        violationPending: 2,
       }),
-    ).toEqual([]);
-    expect(
-      projectAdminTodos({
-        projectId: "p-1",
-        inbox: { items: [], nextCursor: null },
-        board: { violations: [] },
-        faces: [],
-      }),
-    ).toEqual([]);
+    ).toEqual({
+      "/pages/team-makeups/index": { kind: "warn", text: "4 条" },
+      "/pages/safety-review/index": { kind: "warn", text: "3 条" },
+    });
+    expect(projectAdminStatuses(null)).toEqual({});
+  });
+});
+
+describe("overviewMissingText", () => {
+  test("writes the missing count, or nothing", () => {
+    const overview = (missing: number) => ({
+      attendance: { expected: 5, missing, present: 3, workedMinutes: 0 },
+    });
+    expect(overviewMissingText(overview(2))).toBe("2 人");
+    expect(overviewMissingText(overview(0))).toBe("");
+    expect(overviewMissingText(null)).toBe("");
   });
 });
 

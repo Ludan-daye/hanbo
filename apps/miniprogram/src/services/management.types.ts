@@ -119,6 +119,24 @@ export type DailyReportParticipant = ReportParticipantBase & {
 export type RangeReportParticipant = ReportParticipantBase &
   Omit<ReportTotals, "participantCount">;
 
+/** 项目管理员首页：今天的应到、到岗、缺卡和三类待办的条数，不带明细。 */
+export type ProjectOverview = {
+  readonly attendance: {
+    readonly expected: number;
+    readonly missing: number;
+    readonly present: number;
+    readonly workedMinutes: number;
+  };
+  readonly date: string;
+  readonly projectId: string;
+  readonly todos: {
+    readonly appealPending: number;
+    readonly facePending: number;
+    readonly makeupPending: number;
+    readonly violationPending: number;
+  };
+};
+
 export type DailyReport = {
   readonly endDate: string;
   readonly participants: ReadonlyArray<DailyReportParticipant>;

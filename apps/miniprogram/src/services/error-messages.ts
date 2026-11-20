@@ -1,4 +1,6 @@
 export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  INVALID_OVERVIEW_QUERY: "日期不对，请返回首页重新打开。",
+  INVALID_MAKEUP_INBOX_QUERY: "补卡列表的筛选条件不对，请返回重新打开。",
   TEST_LOGIN_DISABLED: "当前环境未开放测试人员登录。",
   INVALID_TEST_LOGIN_REQUEST: "测试登录请求无效，请重新选择测试身份。",
   TEST_ACCOUNT_NOT_READY: "测试账号尚未初始化，请联系管理员。",

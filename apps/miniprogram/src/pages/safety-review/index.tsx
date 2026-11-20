@@ -61,7 +61,13 @@ export default function SafetyReview(): JSX.Element {
   const projectId = useManagedProjectId(state.me);
   const { revision, refresh } = usePageRefresh();
   const [board, setBoard] = useState<SafetyCreditBoard | null>(null);
-  const [tab, setTab] = useState<ReviewTab>("PENDING");
+  // 首页只有申诉待处理时，链接带 tab=APPEAL，进来就是那一页。
+  const router = Taro.useRouter();
+  const [tab, setTab] = useState<ReviewTab>(
+    router.params.tab === "APPEAL"
+      ? "APPEAL"
+      : "PENDING",
+  );
   const [selected, setSelected] = useState<string | null>(null);
   const [reason, setReason] = useState<string>("");
   const [error, setError] = useState<string | null>(null);

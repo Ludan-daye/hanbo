@@ -91,3 +91,18 @@ export const parseCreateMakeupRequestBody = (body: unknown): CreateMakeupRequest
 
 export const parseReviewMakeupRequestBody = (body: unknown): ReviewMakeupRequestBody =>
   parseBody(body, reviewMakeupRequestBodySchema, "INVALID_REVIEW_MAKEUP_REQUEST");
+
+const inboxQuerySchema = z.object({
+  cursor: z.string().min(1).optional(),
+  projectId: z.string().min(1).optional()
+});
+
+export type MakeupInboxQuery = {
+  readonly cursor: string | null;
+  readonly projectId: string | null;
+};
+
+export const parseMakeupInboxQuery = (query: unknown): MakeupInboxQuery => {
+  const value = parseBody(query ?? {}, inboxQuerySchema, "INVALID_MAKEUP_INBOX_QUERY");
+  return { cursor: value.cursor ?? null, projectId: value.projectId ?? null };
+};

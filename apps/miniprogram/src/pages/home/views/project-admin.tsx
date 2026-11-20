@@ -1,18 +1,13 @@
-import type { SafetyCreditBoard } from "@construction/domain";
-
 import { RoleGrid } from "../../../components/role-panels/index";
 import { featureUrl } from "../../../components/role-panels/scope";
 import { Sign, SignText } from "../../../components/ui/index";
 import { useCachedRead } from "../../../hooks/use-cached-read";
 import { usePageRefresh } from "../../../hooks/use-page-refresh";
 import type { MeResponse } from "../../../services/auth.types";
-import { fetchProjectFaces, type FaceProfile } from "../../../services/face";
-import { fetchMakeupInbox, type MakeupInbox } from "../../../services/makeups";
-import { fetchDailyReport } from "../../../services/management";
-import type { DailyReport } from "../../../services/management.types";
-import { fetchProjectSafetyCredit } from "../../../services/safety-credit";
+import { fetchProjectOverview } from "../../../services/management";
+import type { ProjectOverview } from "../../../services/management.types";
 import { chinaToday } from "../../../services/time";
-import { countMissingText, projectAdminTodos } from "../home-model";
+import { overviewMissingText, projectAdminTodos } from "../home-model";
 import { useHomeScope } from "../use-home-scope";
 
 import {
@@ -36,6 +31,7 @@ const ENTRIES: readonly string[] = [
 /**
  * 项目管理员首页：和班组长首页一个结构，范围是整个项目。
  * 标牌说今天到了多少、缺卡多少；补卡申请、违规待复核、底照待审核排在“等你处理”。
+ * 数字都来自 /management/projects/:id/overview，等于点进去的列表条数。
  */
 export const ProjectAdminHome = ({
   me,
@@ -53,52 +49,37 @@ export const ProjectAdminHome = ({
   const project = choice.scope;
   const projectId = project?.scopeId ?? null;
   const date = chinaToday();
-  const report = useCachedRead<DailyReport>(
-    projectId === null ? null : `${userId}:project-daily:${projectId}:${date}`,
-    () => fetchDailyReport(projectId ?? "", date),
+  // 一个小接口给出标牌和三类待办的数：和点进去的列表同一口径。
+  const overview = useCachedRead<ProjectOverview>(
+    projectId === null ? null : `${userId}:project-overview:${projectId}:${date}`,
+    () => fetchProjectOverview(projectId ?? "", date),
     revision,
     "暂时无法读取工作概览",
-  );
-  // 三类待办各读各的：哪一类没读到，不耽误标牌和另外两类。
-  const inbox = useCachedRead<MakeupInbox>(
-    projectId === null ? null : `${userId}:makeup-inbox`,
-    () => fetchMakeupInbox(null),
-    revision,
-    "补卡申请没读到，请重试。",
-  );
-  const board = useCachedRead<SafetyCreditBoard>(
-    projectId === null ? null : `${userId}:project-safety-credit:${projectId}`,
-    () => fetchProjectSafetyCredit(projectId ?? ""),
-    revision,
-    "违规记录没读到，请重试。",
-  );
-  const faces = useCachedRead<readonly FaceProfile[]>(
-    projectId === null ? null : `${userId}:project-faces:${projectId}`,
-    () => fetchProjectFaces(projectId ?? ""),
-    revision,
-    "底照审核没读到，请重试。",
   );
   const settings = useAnnouncement(userId, revision);
   usePullRefresh(
     refresh,
     choice.loading ||
       choice.refreshing ||
-      report.loading ||
-      report.refreshing ||
-      inbox.loading ||
-      inbox.refreshing ||
-      board.loading ||
-      board.refreshing ||
-      faces.loading ||
-      faces.refreshing,
+      overview.loading ||
+      overview.refreshing,
   );
   const problem =
     choice.error ??
-    (report.data !== null ? report.error : null) ??
-    inbox.error ??
-    board.error ??
-    faces.error ??
+    (overview.data !== null ? overview.error : null) ??
     settings.error;
+  const sign = {
+    data:
+      overview.data === null
+        ? null
+        : {
+            totals: {
+              scheduledDays: overview.data.attendance.expected,
+              actualAttendedDays: overview.data.attendance.present,
+            },
+          },
+    error: overview.error,
+  };
 
   return (
     <HomeShell
@@ -124,22 +105,18 @@ export const ProjectAdminHome = ({
             <>
               <AttendanceSign
                 date={date}
-                report={report}
-                missing={countMissingText(report.data)}
+                report={sign}
+                missing={overviewMissingText(overview.data)}
                 onOpen={() => go(featureUrl("/pages/reports/index", project))}
                 onRetry={refresh}
               />
               <TodoSheet
                 todos={projectAdminTodos({
                   projectId,
-                  inbox: inbox.data,
-                  board: board.data,
-                  faces: faces.data,
+                  todos: overview.data?.todos ?? null,
                 })}
-                loading={inbox.loading || board.loading || faces.loading}
-                incomplete={[inbox, board, faces].some(
-                  (read) => read.data === null && read.error !== null,
-                )}
+                loading={overview.loading}
+                incomplete={overview.data === null && overview.error !== null}
               />
             </>
           )}

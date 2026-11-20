@@ -23,6 +23,7 @@ import type {
   ManagedProject,
   ParticipantPage,
   DailyReport,
+  ProjectOverview,
   DefaultAttendanceConfiguration,
   ProjectParticipant,
   ProjectTeam,
@@ -237,6 +238,42 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     expect(detail.managers[0]?.name).toBe("陈工（演示）");
     await expect(client.request("/me/projects/demo-project-2", { method: "GET" })).rejects.toThrow("不在该项目");
     await expect(client.request("/management/projects/demo-project", { method: "PUT", data: {} })).rejects.toThrow("权限");
+  });
+
+  test("project overview numbers equal the lists they open", async () => {
+    await login("dev-project");
+    const date = chinaToday();
+    const overview = await client.request<ProjectOverview>(
+      `/management/projects/demo-project/overview?date=${date}`,
+      { method: "GET" },
+    );
+    const daily = await client.request<DailyReport>(
+      `/reports/projects/demo-project/daily?date=${date}`,
+      { method: "GET" },
+    );
+    expect(overview.attendance).toEqual({
+      expected: daily.totals.scheduledDays,
+      missing: daily.totals.missingPunchCount,
+      present: daily.totals.actualAttendedDays,
+      workedMinutes: daily.totals.workedMinutes,
+    });
+    const inbox = await client.request<{ items: { projectId: string }[] }>(
+      "/makeups/pending?projectId=demo-project",
+      { method: "GET" },
+    );
+    expect(inbox.items.every((item) => item.projectId === "demo-project")).toBe(true);
+    expect(overview.todos.makeupPending).toBe(inbox.items.length);
+    const faces = await client.request<FaceProfile[]>(
+      "/face-profiles/projects/demo-project",
+      { method: "GET" },
+    );
+    expect(overview.todos.facePending).toBe(
+      faces.filter((face) => face.status === "PENDING").length,
+    );
+    await login("dev-team");
+    await expect(
+      client.request("/management/projects/demo-project/overview", { method: "GET" }),
+    ).rejects.toThrow();
   });
 
   test("groups reports by project and persists a scoped person evaluation with daily detail", async () => {

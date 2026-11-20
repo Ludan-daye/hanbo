@@ -60,6 +60,7 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
   projectAdmin: [
     APPROVALS,
     SAFETY_REVIEW,
+    { title: "底照审核", sub: "审核成员提交的人脸底照", icon: "face", url: "/pages/face-review/index" },
     { title: "工时规则", sub: "项目类型、午休与加班时段", icon: "clock", url: "/pages/project-worktime/index" },
     {
       title: "项目人员",

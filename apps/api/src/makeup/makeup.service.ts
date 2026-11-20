@@ -45,6 +45,7 @@ import type {
   ProfileOwnerTypeValue,
 } from "../attendance/attendance.types.js";
 import { AuthorizationContextService } from "../authorization/authorization-context.service.js";
+import type { AuthorizationData } from "../authorization/authorization.types.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 
 import type {
@@ -715,28 +716,56 @@ export class MakeupService {
   async pendingInbox(
     userId: string,
     cursor: string | null,
+    projectId: string | null = null,
   ): Promise<MakeupInboxResponse> {
-    return this.inboxPage(userId, cursor, { status: "PENDING" }, [
-      { createdAt: "asc" },
-      { id: "asc" },
-    ]);
+    return this.inboxPage(
+      userId,
+      cursor,
+      projectId,
+      { status: "PENDING" },
+      [{ createdAt: "asc" }, { id: "asc" }],
+    );
   }
 
   async reviewedInbox(
     userId: string,
     cursor: string | null,
+    projectId: string | null = null,
   ): Promise<MakeupInboxResponse> {
     return this.inboxPage(
       userId,
       cursor,
+      projectId,
       { status: { in: ["APPROVED", "REJECTED"] }, approverUserId: userId },
       [{ approvedAt: "desc" }, { id: "desc" }],
     );
   }
 
+  /**
+   * How many pending requests of one project this user's inbox would list.
+   * Same scope, self-exclusion and level rules as `pendingInbox`, across all pages.
+   */
+  async countPendingForProject(
+    userId: string,
+    projectId: string,
+  ): Promise<number> {
+    const authorization =
+      await this.authorizationContext.loadAuthorizationData(userId);
+    const rows = await this.prisma.makeupRequest.findMany({
+      where: {
+        projectId,
+        requesterUserId: { not: userId },
+        status: "PENDING",
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    return (await this.reviewableItems(userId, authorization, rows)).length;
+  }
+
   private async inboxPage(
     userId: string,
     cursor: string | null,
+    projectId: string | null,
     filter: Prisma.MakeupRequestWhereInput,
     orderBy: Prisma.MakeupRequestOrderByWithRelationInput[],
   ): Promise<MakeupInboxResponse> {
@@ -757,6 +786,7 @@ export class MakeupService {
     const candidates = await this.prisma.makeupRequest.findMany({
       where: {
         ...filter,
+        ...(projectId === null ? {} : { projectId }),
         requesterUserId: { not: userId },
         OR: scopes,
       },
@@ -764,7 +794,24 @@ export class MakeupService {
       take: 51,
       ...(cursor === null ? {} : { cursor: { id: cursor }, skip: 1 }),
     });
-    const page = candidates.slice(0, 50);
+    const items = await this.reviewableItems(
+      userId,
+      authorization,
+      candidates.slice(0, 50),
+    );
+    return {
+      items,
+      nextCursor: candidates.length > 50 ? candidates[49]!.id : null,
+    };
+  }
+
+  /** Keep only the rows this user may review, with names for the inbox. */
+  private async reviewableItems(
+    userId: string,
+    authorization: AuthorizationData,
+    page: readonly MakeupRequest[],
+  ): Promise<MakeupInboxItem[]> {
+    if (page.length === 0) return [];
     const projectIds = [...new Set(page.map((r) => r.projectId))];
     const [projects, workers, managers, histories, teams, grants] =
       await Promise.all([
@@ -890,10 +937,7 @@ export class MakeupService {
           state.teamId === null ? null : (teamNames.get(state.teamId) ?? null),
       });
     }
-    return {
-      items,
-      nextCursor: candidates.length > 50 ? candidates[49]!.id : null,
-    };
+    return items;
   }
 
   private assertRequestedOccurredAtMatchesAttendanceDate(

@@ -130,7 +130,16 @@ export const AttendanceSign = ({
   onRetry,
 }: {
   readonly date: string;
-  readonly report: CachedRead<DailyReport>;
+  /** 日报，或项目概览里换成同样字段的合计：只用到应到和到岗。 */
+  readonly report: Pick<
+    CachedRead<{
+      readonly totals: Pick<
+        DailyReport["totals"],
+        "scheduledDays" | "actualAttendedDays"
+      >;
+    }>,
+    "data" | "error"
+  >;
   /** 黑条里写谁缺卡或缺几个人；空着就不出黑条。 */
   readonly missing: string;
   readonly onOpen: () => void;

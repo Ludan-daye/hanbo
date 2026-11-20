@@ -58,18 +58,28 @@ export type MakeupInbox = {
   readonly items: readonly InboxMakeup[];
   readonly nextCursor: string | null;
 };
+/** 收件箱的查询串：翻页游标；从项目进来时只看这个项目（服务端过滤）。 */
+const inboxQuery = (cursor: string | null, projectId: string | null): string => {
+  const pairs = [
+    ...(cursor === null ? [] : [`cursor=${encodeURIComponent(cursor)}`]),
+    ...(projectId === null ? [] : [`projectId=${encodeURIComponent(projectId)}`]),
+  ];
+  return pairs.length === 0 ? "" : `?${pairs.join("&")}`;
+};
+
 export const fetchMakeupInbox = async (
   cursor: string | null,
+  projectId: string | null = null,
 ): Promise<MakeupInbox> =>
   apiClient.request<MakeupInbox>(
-    `/makeups/pending${cursor === null ? "" : `?cursor=${encodeURIComponent(cursor)}`}`,
+    `/makeups/pending${inboxQuery(cursor, projectId)}`,
     { method: "GET" },
   );
 
 export const fetchReviewedMakeups = (
   cursor: string | null,
+  projectId: string | null = null,
 ): Promise<MakeupInbox> =>
-  apiClient.request(
-    `/makeups/reviewed${cursor === null ? "" : `?cursor=${encodeURIComponent(cursor)}`}`,
-    { method: "GET" },
-  );
+  apiClient.request(`/makeups/reviewed${inboxQuery(cursor, projectId)}`, {
+    method: "GET",
+  });
