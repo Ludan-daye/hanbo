@@ -1,3 +1,4 @@
+import type { TransferRequest } from "../transfers";
 import type { DemoSafetyConfirmation } from "./attendance-safety";
 import type { DemoTeamWork } from "./team-work";
 import type { DemoSafetyCredit } from "./safety-credit";
@@ -72,8 +73,16 @@ export type DemoState = {
   readonly boundProfileId: string | null;
   readonly accountProfiles?: Readonly<Record<string, AccountProfile>>;
   readonly workerRegistrations?: Readonly<Record<string, WorkerRegistration>>;
+  /** 跨项目调人申请。 */
+  readonly transfers?: readonly DemoTransfer[];
   /** 管理员对用工登记的核实，按工人档案编号。 */
   readonly registrationReviews?: Readonly<Record<string, DemoRegistrationReview>>;
+};
+
+export type DemoTransfer = TransferRequest & {
+  readonly companyId: string;
+  readonly sourceMemberId: string;
+  readonly requestedByUserId: string;
 };
 
 export type DemoRegistrationReview = {

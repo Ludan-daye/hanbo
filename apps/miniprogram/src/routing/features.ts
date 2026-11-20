@@ -115,6 +115,12 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       url: "/pages/company-projects/index",
     },
     {
+      title: "调人申请",
+      sub: "项目之间调人，由你同意",
+      icon: "users",
+      url: "/pages/transfer-approvals/index",
+    },
+    {
       title: "公司人员",
       sub: "跨项目人员与班组总览",
       icon: "users",

@@ -1,0 +1,23 @@
+import { describe, expect, test } from "vitest";
+
+import { transferPost, transferRoute, transferWho } from "../src/pages/transfer-approvals/transfer-view";
+import { transferStatusLabel } from "../src/services/transfers";
+
+describe("transfer request text", () => {
+  test("route, post and who asked", () => {
+    expect(transferRoute({ sourceProjectName: "城市更新", targetProjectName: "滨江花园" })).toBe("从 城市更新 调到 滨江花园");
+    expect(transferPost({ projectRoleLabel: "TEAM_LEADER", teamName: "钢筋一班" })).toBe("班组长，钢筋一班");
+    expect(transferPost({ projectRoleLabel: "木工", teamName: null })).toBe("木工，不分班组");
+    expect(
+      transferWho({ requestedByName: "李经理", createdAt: "2026-11-18T02:00:00.000Z", reviewedByName: null, reviewedAt: null, status: "PENDING" }),
+    ).toBe("李经理 2026-11-18 申请");
+    expect(
+      transferWho({ requestedByName: "李经理", createdAt: "2026-11-18T02:00:00.000Z", reviewedByName: "王总", reviewedAt: "2026-11-19T02:00:00.000Z", status: "REJECTED" }),
+    ).toBe("李经理 2026-11-18 申请，王总 2026-11-19 没同意");
+  });
+  test("status is shape plus colour", () => {
+    expect(transferStatusLabel("PENDING")).toEqual({ kind: "warn", text: "等公司同意" });
+    expect(transferStatusLabel("APPROVED")).toEqual({ kind: "ok", text: "已调入" });
+    expect(transferStatusLabel("REJECTED")).toEqual({ kind: "bad", text: "未同意" });
+  });
+});

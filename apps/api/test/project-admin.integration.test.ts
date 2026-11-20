@@ -134,7 +134,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
               key,
               randomBytes(12),
             ),
-            phone: "13900000999",
+            phone: `1390000099${name.slice(1)}`,
             workType: "钢筋工",
             realNameStatus: "PENDING",
             faceProfileStatus: "PENDING",
@@ -678,6 +678,110 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         .get(`/team-work/teams/${otherTeamId}/tasks?date=${date}`)
         .auth(auth("admin"), { type: "bearer" })
         .expect(403);
+    });
+
+    test("a project admin asks for a person of another project; a company admin approves or rejects", async (): Promise<void> => {
+      const base = `/management/projects/${projectId}`;
+      const sources = (
+        await http().get(`${base}/transfer-sources`).auth(auth("admin"), { type: "bearer" }).expect(200)
+      ).body as { id: string }[];
+      expect(sources.map((row) => row.id)).toEqual([otherProjectId]);
+      const candidates = (
+        await http()
+          .get(`${base}/transfer-candidates?sourceProjectId=${otherProjectId}&page=1&pageSize=20&search=`)
+          .auth(auth("admin"), { type: "bearer" })
+          .expect(200)
+      ).body as { items: { memberId: string; phone: string }[] };
+      const w3 = candidates.items.find((row) => row.memberId === memberIds.get("w3"));
+      expect(w3?.phone).toBe("139****0993");
+      const ask = (memberId: string) =>
+        http()
+          .post(`${base}/transfer-requests`)
+          .auth(auth("admin"), { type: "bearer" })
+          .send({
+            sourceProjectId: otherProjectId,
+            sourceMemberId: memberId,
+            participantType: "WORKER",
+            projectRoleLabel: "钢筋工",
+            teamId,
+            requiresAttendance: true,
+            enteredAt: "2026-11-20T00:00:00+08:00",
+          });
+      const asked = (await ask(memberIds.get("w3")!).expect(201)).body as { id: string; status: string; displayName: string };
+      expect(asked).toMatchObject({ status: "PENDING", displayName: "工人w3" });
+      expect((await ask(memberIds.get("w3")!).expect(409)).body.message).toBe("TRANSFER_REQUEST_ALREADY_PENDING");
+      const companyPath = `/management/companies/${companyId}/transfer-requests`;
+      await http().get(companyPath).auth(auth("admin"), { type: "bearer" }).expect(403);
+      const pending = (
+        await http().get(companyPath).auth(auth("company"), { type: "bearer" }).expect(200)
+      ).body as { id: string }[];
+      expect(pending.map((row) => row.id)).toContain(asked.id);
+      await http()
+        .post(`${companyPath}/${asked.id}/approve`)
+        .auth(auth("admin"), { type: "bearer" })
+        .send({})
+        .expect(403);
+      const approved = (
+        await http()
+          .post(`${companyPath}/${asked.id}/approve`)
+          .auth(auth("company"), { type: "bearer" })
+          .send({})
+          .expect(201)
+      ).body as { status: string; createdMemberId: string };
+      expect(approved.status).toBe("APPROVED");
+      expect(
+        await database.projectWorkerMember.findUniqueOrThrow({ where: { id: approved.createdMemberId } }),
+      ).toMatchObject({ projectId, workerId: workerIds.get("w3"), teamId });
+      await http()
+        .post(`${companyPath}/${asked.id}/reject`)
+        .auth(auth("company"), { type: "bearer" })
+        .send({})
+        .expect(409);
+      // Rejecting another request leaves the person where they are.
+      const worker = await database.workerProfile.create({
+        data: {
+          encryptedName: encryptPersonnelName("工人w4", key, randomBytes(12)),
+          phone: "13900000444",
+          workType: "木工",
+          realNameStatus: "PENDING",
+          faceProfileStatus: "PENDING",
+          employmentStatus: "ACTIVE",
+        },
+      });
+      const member = await database.projectWorkerMember.create({
+        data: {
+          projectId: otherProjectId,
+          workerId: worker.id,
+          teamId: otherTeamId,
+          enteredAt: new Date("2026-10-01T00:00:00+08:00"),
+          projectRoleLabel: "木工",
+          status: "ACTIVE",
+        },
+      });
+      const second = (await ask(member.id).expect(201)).body as { id: string };
+      const rejected = (
+        await http()
+          .post(`${companyPath}/${second.id}/reject`)
+          .auth(auth("company"), { type: "bearer" })
+          .send({ reason: "那边还要用" })
+          .expect(201)
+      ).body;
+      expect(rejected).toMatchObject({ status: "REJECTED", reviewReason: "那边还要用" });
+      expect(await database.projectWorkerMember.count({ where: { projectId, workerId: worker.id } })).toBe(0);
+      const actions = (
+        await database.auditLog.findMany({ where: { entityType: "personnel_transfer_request" } })
+      ).map((row) => row.action);
+      expect(actions).toEqual(
+        expect.arrayContaining([
+          "PERSONNEL_TRANSFER_REQUESTED",
+          "PERSONNEL_TRANSFER_APPROVED",
+          "PERSONNEL_TRANSFER_REJECTED",
+        ]),
+      );
+      // A project admin who manages both projects reuses directly instead of asking.
+      expect(
+        (await http().get(`${base}/transfer-sources`).auth(auth("company"), { type: "bearer" }).expect(200)).body,
+      ).toEqual([]);
     });
   },
 );

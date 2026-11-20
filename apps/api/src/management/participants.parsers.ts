@@ -7,7 +7,7 @@ import type {
   ReuseParticipantRequest,
 } from "./participants.types.js";
 
-const validManagementAssignment = (
+export const validManagementAssignment = (
   body: Pick<
     ParticipantWriteRequest,
     "participantType" | "projectRoleLabel" | "teamId"
@@ -22,7 +22,7 @@ const validManagementAssignment = (
   );
 };
 
-const additionalRoleSchema = z.discriminatedUnion("roleCode", [
+export const additionalRoleSchema = z.discriminatedUnion("roleCode", [
   z.object({ roleCode: z.literal("WORKER"), teamId: z.null() }).strict(),
   z
     .object({ roleCode: z.literal("TEAM_LEADER"), teamId: z.string().min(1) })

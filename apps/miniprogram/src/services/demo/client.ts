@@ -45,6 +45,7 @@ import type { UploadResult } from "../uploads";
 import { chinaToday, chinaDaysAgo } from "../time";
 import { checkAttendanceGeofence } from "../geofence";
 import { managedDemoTeam } from "./teams";
+import type { TransferRequestForm } from "../transfers";
 import { demoDaySummary, demoReport, dailyPerson } from "./reports";
 import {
   demoId,
@@ -57,6 +58,7 @@ import {
   upgradeDemoPlanning,
   type DemoFace,
   type DemoInvitation,
+  type DemoTransfer,
 } from "./state";
 
 const validateDemoRoles = (state: DemoState, projectId: string, body: Pick<PersonForm, "participantType" | "projectRoleLabel" | "teamId" | "additionalRoles">): void => {
@@ -207,6 +209,78 @@ const canManageDemoProject = (
           (company) =>
             company.id === project.companyId && company.status === "ACTIVE",
         )),
+  );
+};
+/** 本公司里当前用户不管的项目：从那里要人得向公司管理员申请。 */
+const demoTransferSources = (
+  state: DemoState,
+  userId: string,
+  projectId: string,
+): readonly { readonly id: string; readonly name: string }[] => {
+  const target = state.projects.find((row) => row.id === projectId);
+  return state.projects
+    .filter(
+      (row) =>
+        row.id !== projectId &&
+        row.companyId === target?.companyId &&
+        !canManageDemoProject(state, userId, row.id),
+    )
+    .map((row) => ({ id: row.id, name: row.name }));
+};
+/** 公司管理员看、同意或不同意调人申请；同意时走演示版的人员复用。 */
+const demoReviewTransfer = (
+  state: DemoState,
+  userId: string,
+  companyId: string,
+  requestId: string | undefined,
+  decision: string | undefined,
+  status: string | undefined,
+): DemoResponse => {
+  const all = (state.transfers ?? []).filter((row) => row.companyId === companyId);
+  if (requestId === undefined)
+    return response(
+      state,
+      status === "DONE" ? all.filter((row) => row.status !== "PENDING") : all.filter((row) => row.status === "PENDING"),
+    );
+  const request = all.find((row) => row.id === requestId);
+  if (!request) throw new ApiError(404, "TRANSFER_REQUEST_NOT_FOUND", { message: "TRANSFER_REQUEST_NOT_FOUND" });
+  if (request.status !== "PENDING") throw new ApiError(409, "TRANSFER_REQUEST_NOT_PENDING", { message: "TRANSFER_REQUEST_NOT_PENDING" });
+  const reviewed = {
+    reviewedAt: new Date().toISOString(),
+    reviewedByName: state.accountProfiles?.[userId]?.realName ?? "公司管理员",
+  };
+  let next: DemoState = state;
+  let createdMemberId: string | null = null;
+  if (decision === "approve") {
+    const source = state.people.find((row) => row.memberId === request.sourceMemberId && row.projectId === request.sourceProjectId);
+    if (!source) throw new ApiError(404, "来源人员不存在。", {});
+    const added = routeDemo(state, userId, `/management/projects/${request.targetProjectId}/reused-participants`, {
+      method: "POST",
+      data: {
+        additionalRoles: request.additionalRoles,
+        sourceProjectId: request.sourceProjectId,
+        sourceMemberId: request.sourceMemberId,
+        participantType: request.participantType,
+        expectedSourceUpdatedAt: source.updatedAt,
+        expectedProfileUpdatedAt: source.profileUpdatedAt,
+        projectRoleLabel: request.projectRoleLabel,
+        teamId: request.teamId,
+        requiresAttendance: request.requiresAttendance,
+        enteredAt: request.enteredAt,
+      },
+    });
+    next = added.state;
+    createdMemberId = (added.data as { readonly memberId: string }).memberId;
+  } else if (decision !== "reject") throw new ApiError(405, "调人申请不支持此操作。", {});
+  const updated: DemoTransfer = {
+    ...request,
+    ...reviewed,
+    createdMemberId,
+    status: decision === "approve" ? "APPROVED" : "REJECTED",
+  };
+  return response(
+    { ...next, transfers: (next.transfers ?? []).map((row) => (row.id === request.id ? updated : row)) },
+    updated,
   );
 };
 /** 管理员看工人的用工登记原文并标记核实（与服务端同口径）。 */
@@ -850,6 +924,8 @@ const routeDemo = (
           project,
         );
       }
+      if (resource === "transfer-requests")
+        return demoReviewTransfer(state, userId, scopeId, parts[4], parts[5], query.status);
       if (resource === "participants")
         return response(
           state,
@@ -956,6 +1032,69 @@ const routeDemo = (
           { ...state, people: [...state.people, person] },
           person,
         );
+      }
+      if (resource === "transfer-sources")
+        return response(state, demoTransferSources(state, userId, scopeId));
+      if (resource === "transfer-candidates") {
+        if (!demoTransferSources(state, userId, scopeId).some((row) => row.id === query.sourceProjectId))
+          throw new ApiError(403, "TRANSFER_SOURCE_NOT_ALLOWED", { message: "TRANSFER_SOURCE_NOT_ALLOWED" });
+        const search = (query.search ?? "").trim();
+        const rows = state.people.filter(
+          (person) =>
+            person.projectId === query.sourceProjectId &&
+            (!search || (person.displayName ?? "").startsWith(search) || person.phone.includes(search)),
+        );
+        const pageNumber = Number(query.page ?? 1);
+        const size = Number(query.pageSize ?? 50);
+        return response(state, {
+          items: rows
+            .slice((pageNumber - 1) * size, pageNumber * size)
+            .map((person) => ({ ...person, phone: person.phone.replace(/^(\d{3})\d{4}(\d{4})$/, "$1****$2") })),
+          page: pageNumber,
+          pageSize: size,
+          total: rows.length,
+        });
+      }
+      if (resource === "transfer-requests") {
+        if (method === "GET")
+          return response(state, (state.transfers ?? []).filter((row) => row.targetProjectId === scopeId).slice().reverse());
+        const body = options.data as TransferRequestForm;
+        if (!demoTransferSources(state, userId, scopeId).some((row) => row.id === body.sourceProjectId))
+          throw new ApiError(403, "TRANSFER_SOURCE_NOT_ALLOWED", { message: "TRANSFER_SOURCE_NOT_ALLOWED" });
+        const source = state.people.find((row) => row.projectId === body.sourceProjectId && row.memberId === body.sourceMemberId);
+        if (!source) throw new ApiError(404, "来源人员不存在。", {});
+        assertDemoPeerGrant(state, userId, null, { ...body, participantType: source.participantType, status: "ACTIVE" });
+        if (state.people.some((row) => row.projectId === scopeId && row.profileId === source.profileId))
+          throw new ApiError(409, "此人员已在本项目，请在人员列表恢复或编辑。", {});
+        if ((state.transfers ?? []).some((row) => row.targetProjectId === scopeId && row.status === "PENDING" && row.sourceMemberId === source.memberId))
+          throw new ApiError(409, "TRANSFER_REQUEST_ALREADY_PENDING", { message: "TRANSFER_REQUEST_ALREADY_PENDING" });
+        const transfer: DemoTransfer = {
+          additionalRoles: body.additionalRoles ?? [],
+          companyId: project.companyId,
+          createdAt: new Date().toISOString(),
+          createdMemberId: null,
+          displayName: source.displayName,
+          enteredAt: body.enteredAt,
+          id: demoId("transfer"),
+          participantType: source.participantType,
+          projectRoleLabel: body.projectRoleLabel,
+          requestedByName: state.accountProfiles?.[userId]?.realName ?? "项目管理员",
+          requestedByUserId: userId,
+          requiresAttendance: body.requiresAttendance,
+          reviewedAt: null,
+          reviewedByName: null,
+          reviewReason: null,
+          sourceMemberId: source.memberId,
+          sourceProjectId: body.sourceProjectId,
+          sourceProjectName: state.projects.find((row) => row.id === body.sourceProjectId)?.name ?? "",
+          status: "PENDING",
+          targetProjectId: scopeId,
+          targetProjectName: project.name,
+          teamId: body.teamId,
+          teamName: state.teams.find((row) => row.id === body.teamId)?.name ?? null,
+          workType: source.workType ?? null,
+        };
+        return response({ ...state, transfers: [...(state.transfers ?? []), transfer] }, transfer);
       }
       if (resource === "managed-teams")
         return response(

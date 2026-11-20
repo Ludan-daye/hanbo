@@ -724,7 +724,7 @@ export class ParticipantsService {
    * higher level over the project. Project admins manage workers and team leaders;
    * only company admins and above manage project admins.
    */
-  private async assertAssignableGrants(
+  async assertAssignableGrants(
     projectId: string,
     actorUserId: string,
     previous: readonly MembershipGrant[],

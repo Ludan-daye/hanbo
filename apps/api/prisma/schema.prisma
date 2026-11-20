@@ -284,6 +284,7 @@ model BindingInvitation {
 }
 
 model Company {
+  transferRequests PersonnelTransferRequest[]
   id            String         @id @default(uuid())
   name          String
   status        String
@@ -301,6 +302,8 @@ model Company {
 }
 
 model Project {
+  transferRequestsIn       PersonnelTransferRequest[] @relation("transferTarget")
+  transferRequestsOut      PersonnelTransferRequest[] @relation("transferSource")
   worktimeRules            ProjectWorktimeRule[]
   safetyViolations         SafetyViolation[]
   attendanceSafetyConfirmations AttendanceSafetyConfirmation[]
@@ -1053,4 +1056,37 @@ model ProjectWorktimeRule {
   @@unique([projectId, version])
   @@index([projectId, startsOn, version])
   @@map("project_worktime_rules")
+}
+
+/// A project admin asks for a person from another project of the same company;
+/// a company admin approves (the person is then added by the reuse flow) or rejects.
+model PersonnelTransferRequest {
+  id                 String           @id @default(uuid())
+  companyId          String
+  targetProjectId    String
+  sourceProjectId    String
+  sourceMemberId     String
+  participantType    ProfileOwnerType
+  profileId          String
+  projectRoleLabel   String
+  teamId             String?
+  additionalRoles    Json             @default("[]")
+  requiresAttendance Boolean
+  enteredAt          DateTime
+  status             String           @default("PENDING")
+  requestedByUserId  String
+  reviewedByUserId   String?
+  reviewedAt         DateTime?
+  reviewReason       String?
+  createdMemberId    String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  company            Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  targetProject      Project          @relation("transferTarget", fields: [targetProjectId], references: [id], onDelete: Restrict)
+  sourceProject      Project          @relation("transferSource", fields: [sourceProjectId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, status, createdAt])
+  @@index([targetProjectId, createdAt])
+  @@index([profileId, participantType, status])
+  @@map("personnel_transfer_requests")
 }

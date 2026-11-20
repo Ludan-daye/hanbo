@@ -1,4 +1,12 @@
 export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  TRANSFER_SOURCE_NOT_ALLOWED: "只能从本公司别的项目申请调人。",
+  TRANSFER_REQUEST_ALREADY_PENDING: "已经申请过这个人，请等公司管理员处理。",
+  TRANSFER_REQUEST_NOT_FOUND: "这条调人申请不存在，请返回刷新。",
+  TRANSFER_REQUEST_NOT_PENDING: "这条申请已经处理过了，请刷新。",
+  INVALID_TRANSFER_REQUEST: "请检查岗位、班组和进场日期。",
+  INVALID_TRANSFER_CANDIDATES_QUERY: "人员筛选条件不对，请重新选择来源项目。",
+  INVALID_TRANSFER_LIST_QUERY: "申请列表的筛选条件不对，请返回重新打开。",
+  INVALID_TRANSFER_REVIEW: "处理请求不完整，请重新打开再试。",
   REGISTRATION_SELF_VERIFY_FORBIDDEN: "不能核实自己的用工资料，请其他管理员办理。",
   REGISTRATION_NOT_SUBMITTED: "他还没填用工登记，不能核实。",
   REGISTRATION_CHANGED_RELOAD_BEFORE_SAVING:

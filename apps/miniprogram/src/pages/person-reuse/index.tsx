@@ -48,8 +48,21 @@ import {
   reusePerson,
 } from "../../services/workflows";
 import { chinaToday, formatChinaDate } from "../../services/time";
+import {
+  fetchProjectTransfers,
+  fetchTransferCandidates,
+  fetchTransferSources,
+  requestTransfer,
+  transferStatusLabel,
+  type TransferRequest,
+} from "../../services/transfers";
 import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
+
+/**
+ * 来源项目：自己也管的项目直接复用；本公司别的项目要向公司管理员申请（决定 6）。
+ */
+type SourceProject = ReuseProject & { readonly request: boolean };
 
 const sourceStatus = (status: ManagedParticipant["status"]): string =>
   status === "EXITED"
@@ -65,7 +78,8 @@ export default function PersonReuse(): JSX.Element {
   const initialTeamId: string | undefined = Taro.useRouter().params.teamId;
   // 两步：先选人，再安排岗位。同一个页面里切换。
   const [step, setStep] = useState<"pick" | "arrange">("pick");
-  const [sources, setSources] = useState<readonly ReuseProject[] | null>(null);
+  const [sources, setSources] = useState<readonly SourceProject[] | null>(null);
+  const [transfers, setTransfers] = useState<readonly TransferRequest[]>([]);
   const [sourcesAttempt, setSourcesAttempt] = useState<number>(0);
   const [targetName, setTargetName] = useState<string | null>(null);
   const [revision, setRevision] = useState<number>(0);
@@ -92,15 +106,25 @@ export default function PersonReuse(): JSX.Element {
     let cancelled: boolean = false;
     void Promise.all([
       fetchReuseProjects(projectId),
+      fetchTransferSources(projectId),
       fetchProjectTeams(projectId),
       fetchProject(projectId),
+      // 申请记录没读到不挡选人。
+      fetchProjectTransfers(projectId).catch(
+        (): readonly TransferRequest[] => [],
+      ),
     ]).then(
-      ([projects, rows, project]): void => {
+      ([projects, others, rows, project, requests]): void => {
         if (!cancelled) {
-          setSources(projects);
+          const all: readonly SourceProject[] = [
+            ...projects.map((row) => ({ ...row, request: false })),
+            ...others.map((row) => ({ ...row, request: true })),
+          ];
+          setSources(all);
           setTeams(rows);
-          setSourceId(projects[0]?.id ?? null);
+          setSourceId(all[0]?.id ?? null);
           setTargetName(project.name);
+          setTransfers(requests);
         }
       },
       (failure: unknown): void => {
@@ -121,19 +145,29 @@ export default function PersonReuse(): JSX.Element {
     }, 350);
     return (): void => clearTimeout(timer);
   }, [searchInput]);
+  const source = sources?.find((row) => row.id === sourceId);
+  const requesting: boolean = source?.request === true;
   useEffect(() => {
-    if (!sourceId) return;
+    if (!sourceId || !projectId) return;
     let cancelled: boolean = false;
     setPeople(null);
     setError(null);
-    void fetchParticipantPage(sourceId, {
-      page,
-      pageSize: 50,
-      search,
-      teamId: null,
-      participantType: null,
-      status: null,
-    }).then(
+    void (
+      requesting
+        ? fetchTransferCandidates(projectId, sourceId, {
+            page,
+            pageSize: 50,
+            search,
+          })
+        : fetchParticipantPage(sourceId, {
+            page,
+            pageSize: 50,
+            search,
+            teamId: null,
+            participantType: null,
+            status: null,
+          })
+    ).then(
       (rows): void => {
         if (!cancelled) setPeople(rows);
       },
@@ -144,7 +178,7 @@ export default function PersonReuse(): JSX.Element {
     return (): void => {
       cancelled = true;
     };
-  }, [sourceId, page, search, revision]);
+  }, [sourceId, requesting, projectId, page, search, revision]);
   const choose = (person: ManagedParticipant): void => {
     try {
       const primaryRole = participantPermissionRole(person);
@@ -191,14 +225,29 @@ export default function PersonReuse(): JSX.Element {
       return;
     }
     const confirmation = await Taro.showModal({
-      title: "确认加入本项目",
-      content: "沿用档案和微信绑定，保留原项目记录。",
-      confirmText: "确认加入",
+      title: requesting ? "向公司管理员申请" : "确认加入本项目",
+      content: requesting
+        ? "公司管理员同意后，他沿用档案和微信绑定加入本项目。"
+        : "沿用档案和微信绑定，保留原项目记录。",
+      confirmText: requesting ? "提交申请" : "确认加入",
     });
     if (!confirmation.confirm) return;
     setBusy(true);
     setError(null);
     try {
+      if (requesting) {
+        await requestTransfer(projectId, {
+          sourceProjectId: selected.projectId,
+          sourceMemberId: selected.memberId,
+          participantType: selected.participantType,
+          ...fields,
+          enteredAt,
+          requiresAttendance,
+        });
+        await Taro.showToast({ title: "已提交申请", icon: "success" });
+        await Taro.navigateBack();
+        return;
+      }
       await reusePerson(projectId, {
         sourceProjectId: selected.projectId,
         sourceMemberId: selected.memberId,
@@ -289,11 +338,21 @@ export default function PersonReuse(): JSX.Element {
           />
         </Sheet>
         <Notice>
-          {`加到${targetName ?? "本项目"}后，沿用原档案和微信绑定，原项目的记录保留。`}
+          {requesting
+            ? `公司管理员同意后加到${targetName ?? "本项目"}，沿用原档案和微信绑定，原项目的记录保留。`
+            : `加到${targetName ?? "本项目"}后，沿用原档案和微信绑定，原项目的记录保留。`}
         </Notice>
         {error ? <Notice tone="error">{error}</Notice> : null}
         <BottomBar
-          primary={busy ? "加入中…" : "加入本项目"}
+          primary={
+            requesting
+              ? busy
+                ? "提交中…"
+                : "提交申请"
+              : busy
+                ? "加入中…"
+                : "加入本项目"
+          }
           busy={busy}
           onPrimary={() => {
             void submit();
@@ -307,15 +366,33 @@ export default function PersonReuse(): JSX.Element {
     );
   }
 
-  const source = sources?.find((row) => row.id === sourceId);
   const hasPrevious = page > 1;
   const hasNext = people !== null && page * people.pageSize < people.total;
   return (
     <Screen header={<PageHeader title="复用人员" />}>
       <SignLine
         title={`加到 ${targetName ?? "本项目"}`}
-        sub="沿用原档案和微信绑定，原项目的记录保留"
+        sub={
+          requesting
+            ? "这个项目不归你管，要公司管理员同意后才加入"
+            : "沿用原档案和微信绑定，原项目的记录保留"
+        }
       />
+      {transfers.length > 0 ? (
+        <>
+          <SectionTitle>调人申请</SectionTitle>
+          <Sheet>
+            {transfers.slice(0, 5).map((row) => (
+              <Row
+                key={row.id}
+                title={row.displayName ?? "姓名待补录"}
+                sub={`从${row.sourceProjectName}，${formatChinaDate(row.createdAt)}申请`}
+                status={transferStatusLabel(row.status)}
+              />
+            ))}
+          </Sheet>
+        </>
+      ) : null}
       {sources === null ? (
         error ? (
           <StateView
@@ -334,14 +411,16 @@ export default function PersonReuse(): JSX.Element {
         <StateView
           kind="empty"
           title="没有可以调人的项目"
-          sub="要同时管理本公司的另一个项目，才能把那里的人复用过来。"
+          sub="本公司还没有别的项目。"
         />
       ) : (
         <>
           <Sheet gap>
             <SelectRow
               label="从哪个项目"
-              options={sources.map((row) => row.name)}
+              options={sources.map((row) =>
+                row.request ? `${row.name}（需申请）` : row.name,
+              )}
               index={sources.findIndex((row) => row.id === sourceId)}
               value={source?.name ?? ""}
               placeholder="请选择"

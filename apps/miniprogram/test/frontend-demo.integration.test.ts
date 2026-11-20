@@ -41,6 +41,7 @@ import { locationFromMapSelection, locationFromMapBoundary, projectMapBounds } f
 import { checkAttendanceGeofence } from "../src/services/geofence";
 import type { FaceProfile, MyFace } from "../src/services/face";
 import type { MemberRegistration } from "../src/services/registration-review";
+import type { TransferRequest } from "../src/services/transfers";
 import type {
   Account,
   Company,
@@ -950,6 +951,39 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     });
     expect(task.teamId).toBe("demo-team");
     await client.request(`/team-work/teams/demo-team/daily?date=${chinaToday()}`, { method: "GET" });
+  });
+
+  test("a project admin asks for a person of another project and the company admin approves", async () => {
+    await login("dev-company");
+    const helper = await client.request<{ memberId: string }>("/management/projects/demo-project-2/participants", {
+      method: "POST",
+      data: {
+        displayName: "李调动", phone: "13800007711", participantType: "WORKER", projectRoleLabel: "木工", workType: "木工",
+        teamId: null, requiresAttendance: true, status: "ACTIVE", enteredAt: new Date().toISOString(), exitedAt: null,
+        expectedUpdatedAt: null, expectedProfileUpdatedAt: null,
+      },
+    });
+    await login("dev-project");
+    const sources = await client.request<{ id: string }[]>("/management/projects/demo-project/transfer-sources", { method: "GET" });
+    expect(sources.map((row) => row.id)).toContain("demo-project-2");
+    const page = await client.request<{ items: { memberId: string; phone: string }[] }>(
+      "/management/projects/demo-project/transfer-candidates?sourceProjectId=demo-project-2&page=1&pageSize=50&search=李",
+      { method: "GET" },
+    );
+    expect(page.items.find((row) => row.memberId === helper.memberId)?.phone).toBe("138****7711");
+    const asked = await client.request<TransferRequest>("/management/projects/demo-project/transfer-requests", {
+      method: "POST",
+      data: { sourceProjectId: "demo-project-2", sourceMemberId: helper.memberId, participantType: "WORKER", projectRoleLabel: "木工",
+        teamId: null, requiresAttendance: true, enteredAt: new Date().toISOString() },
+    });
+    expect(asked.status).toBe("PENDING");
+    await expect(client.request("/management/companies/demo-company/transfer-requests?status=PENDING", { method: "GET" })).rejects.toThrow();
+    await login("dev-company");
+    const pending = await client.request<TransferRequest[]>("/management/companies/demo-company/transfer-requests?status=PENDING", { method: "GET" });
+    expect(pending.map((row) => row.id)).toContain(asked.id);
+    const approved = await client.request<TransferRequest>(`/management/companies/demo-company/transfer-requests/${asked.id}/approve`, { method: "POST", data: {} });
+    expect(approved.status).toBe("APPROVED");
+    expect(readDemoState().people.some((row) => row.projectId === "demo-project" && row.memberId === approved.createdMemberId)).toBe(true);
   });
 
   test("selected project managers receive access without losing their original project", async () => {

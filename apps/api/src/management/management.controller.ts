@@ -25,6 +25,9 @@ import { TeamsService } from "./teams.service.js";
 import { parseRegistrationVerification } from "./registration-review.parsers.js";
 import { RegistrationReviewService } from "./registration-review.service.js";
 import type { MemberRegistrationResponse } from "./registration-review.types.js";
+import { parseTransferCandidates, parseTransferListStatus, parseTransferRequest, parseTransferReview } from "./transfer-requests.parsers.js";
+import { TransferRequestsService } from "./transfer-requests.service.js";
+import type { TransferRequestResponse } from "./transfer-requests.types.js";
 import type { ManagedTeamResponse } from "./teams.types.js";
 import type { ManagedParticipantResponse, ParticipantPageResponse } from "./participants.types.js";
 import type { BindingInvitationListItem } from "./management-invitation.types.js";
@@ -47,7 +50,8 @@ export class ManagementController {
     @Inject(ManagementService) private readonly managementService: ManagementService,
     @Inject(ParticipantsService) private readonly participants: ParticipantsService,
     @Inject(TeamsService) private readonly teams: TeamsService,
-    @Inject(RegistrationReviewService) private readonly registrations: RegistrationReviewService
+    @Inject(RegistrationReviewService) private readonly registrations: RegistrationReviewService,
+    @Inject(TransferRequestsService) private readonly transfers: TransferRequestsService
   ) {}
 
   @Get("my-role-scopes")
@@ -117,6 +121,55 @@ export class ManagementController {
   @UseGuards(AccessTokenGuard, PermissionsGuard)
   async participant(@Param("projectId") projectId: string, @Param("memberId") memberId: string): Promise<ManagedParticipantResponse> {
     return this.participants.get(projectId, memberId);
+  }
+
+  @Get("projects/:projectId/transfer-sources")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async transferSources(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string): Promise<readonly ReuseProjectResponse[]> {
+    return this.transfers.sources(projectId, actor.userId);
+  }
+
+  @Get("projects/:projectId/transfer-candidates")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async transferCandidates(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string, @Query() query: unknown): Promise<ParticipantPageResponse> {
+    return this.transfers.candidates(projectId, actor.userId, parseTransferCandidates(query));
+  }
+
+  @Get("projects/:projectId/transfer-requests")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async projectTransferRequests(@Param("projectId") projectId: string): Promise<readonly TransferRequestResponse[]> {
+    return this.transfers.listForProject(projectId);
+  }
+
+  @Post("projects/:projectId/transfer-requests")
+  @RequirePermission({ permissionCode: "project.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async requestTransfer(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string, @Body() body: unknown): Promise<TransferRequestResponse> {
+    return this.transfers.create(projectId, actor.userId, parseTransferRequest(body));
+  }
+
+  @Get("companies/:companyId/transfer-requests")
+  @RequirePermission({ permissionCode: "company.manage", target: { source: "companyParam", paramName: "companyId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async companyTransferRequests(@Param("companyId") companyId: string, @Query() query: unknown): Promise<readonly TransferRequestResponse[]> {
+    return this.transfers.listForCompany(companyId, parseTransferListStatus(query));
+  }
+
+  @Post("companies/:companyId/transfer-requests/:requestId/approve")
+  @RequirePermission({ permissionCode: "company.manage", target: { source: "companyParam", paramName: "companyId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async approveTransfer(@CurrentUser() actor: AuthenticatedUser, @Param("companyId") companyId: string, @Param("requestId") requestId: string, @Body() body: unknown): Promise<TransferRequestResponse> {
+    return this.transfers.approve(companyId, requestId, actor.userId, parseTransferReview(body).reason);
+  }
+
+  @Post("companies/:companyId/transfer-requests/:requestId/reject")
+  @RequirePermission({ permissionCode: "company.manage", target: { source: "companyParam", paramName: "companyId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async rejectTransfer(@CurrentUser() actor: AuthenticatedUser, @Param("companyId") companyId: string, @Param("requestId") requestId: string, @Body() body: unknown): Promise<TransferRequestResponse> {
+    return this.transfers.reject(companyId, requestId, actor.userId, parseTransferReview(body).reason);
   }
 
   @Get("projects/:projectId/participants/:memberId/registration")
