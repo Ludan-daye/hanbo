@@ -25,6 +25,7 @@ import {
 } from "../../services/attendance-device";
 import { FRONTEND_DEMO } from "../../config/env";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
+import { useLeaveGuard } from "../../hooks/use-leave-guard";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import {
   completeFaceSession,
@@ -822,6 +823,13 @@ export default function Punch(): JSX.Element {
     step,
   });
   const stepInfo = screenStep(screen);
+  // 拍了照、确认了交底或正在核验时，右滑或返回键会把这些都丢掉：先问一下。
+  useLeaveGuard(
+    recordedResult === null &&
+      (sitePhotoPath !== null || safetyReady || validProof || isBusy)
+      ? "这次打卡还没完成，离开后要重新定位和拍照。"
+      : null,
+  );
   const pointRows = (today?.points ?? []).map((point) => ({
     ...point,
     status: pointStatus(
