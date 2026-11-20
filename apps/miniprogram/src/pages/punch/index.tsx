@@ -824,7 +824,12 @@ export default function Punch(): JSX.Element {
   const stepInfo = screenStep(screen);
   const pointRows = (today?.points ?? []).map((point) => ({
     ...point,
-    status: pointStatus(point, selected ?? null, false),
+    status: pointStatus(
+      point,
+      selected ?? null,
+      false,
+      staleDate ? undefined : new Date().toISOString(),
+    ),
   }));
   const openPermissionSettings = async (): Promise<void> => {
     try {

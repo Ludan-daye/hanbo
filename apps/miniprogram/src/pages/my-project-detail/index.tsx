@@ -188,10 +188,14 @@ export default function MyProjectDetailPage(): JSX.Element {
     );
 
   const note = today === null ? null : projectTodayNote(project, today);
+  const nowIso = new Date().toISOString();
   const next =
-    today !== null && canPunch
-      ? projectNextPoint(today, new Date().toISOString())
-      : null;
+    today !== null && canPunch ? projectNextPoint(today, nowIso) : null;
+  // 已过点没打的卡也算待打卡；安排不是今天的就不按时间判断。
+  const pointNow =
+    today !== null && today.attendanceDate === formatChinaDate(nowIso)
+      ? nowIso
+      : undefined;
   const contacts: ReadonlyArray<{
     readonly key: string;
     readonly role: string;
@@ -258,7 +262,7 @@ export default function MyProjectDetailPage(): JSX.Element {
                     sub={pointGrace(point)}
                     status={
                       point.record !== null || canPunch
-                        ? pointStatus(point, next, false)
+                        ? pointStatus(point, next, false, pointNow)
                         : undefined
                     }
                   />

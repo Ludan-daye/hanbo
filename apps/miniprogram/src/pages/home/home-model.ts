@@ -128,12 +128,17 @@ export type HomeTodo = {
   /** 右边的灰字。 */
   readonly note?: string;
   readonly url: string;
+  /** 不用处理、只是告诉一声的行：不带警戒条，排在最后。 */
+  readonly plain?: boolean;
 };
 
 const MY_PROJECTS_URL = "/pages/my-projects/index";
 const TODAY_RECORDS_URL = "/pages/my-records/index?range=TODAY";
 
-/** 班组长自己的卡：该打的、别的项目还有的、没读全的、有异常的。打完且正常就没有这一行。 */
+/**
+ * 班组长自己的卡：该打的、别的项目还有的、没读全的、有异常的。
+ * 打完且正常时是一行不带警戒条的“我今天的卡都打了”，点进去看今天的记录。
+ */
 export const leaderPunchTodos = (
   summary: LeaderPunchSummary,
 ): readonly HomeTodo[] => {
@@ -172,6 +177,16 @@ export const leaderPunchTodos = (
         title: "我的打卡有异常",
         note: "去核对",
         url: TODAY_RECORDS_URL,
+      },
+    ];
+  if (summary.kind === "done" && summary.total > 0)
+    return [
+      {
+        key: "punch-done",
+        title: "我今天的卡都打了",
+        note: `${summary.completed} 张`,
+        url: TODAY_RECORDS_URL,
+        plain: true,
       },
     ];
   return [];

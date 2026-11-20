@@ -14,7 +14,11 @@ import {
   fetchMyAttendanceRecords,
   fetchMyMakeups,
 } from "../../services/me";
-import { chinaToday, formatChinaHm } from "../../services/time";
+import {
+  chinaToday,
+  formatChinaDate,
+  formatChinaHm,
+} from "../../services/time";
 import { fetchAppSettings, type SystemSettings } from "../../services/workflows";
 import {
   summarizeWorkerMonth,
@@ -319,7 +323,14 @@ export const WorkerHome = ({
                 key={point.pointCode}
                 title={point.label}
                 titleNum={point.scheduledTime}
-                status={pointStatus(point, next, blocker !== null)}
+                status={pointStatus(
+                  point,
+                  next,
+                  blocker !== null,
+                  current.today.attendanceDate === formatChinaDate(now)
+                    ? now
+                    : undefined,
+                )}
               />
             ))}
           </Sheet>

@@ -186,14 +186,17 @@ export const TodoSheet = ({
         {todos.length === 0 ? (
           <Row title={incomplete ? "待办没读到" : "没有等你处理的事"} />
         ) : (
-          todos.map((todo) => (
+          [
+            ...todos.filter((todo) => todo.plain !== true),
+            ...todos.filter((todo) => todo.plain === true),
+          ].map((todo) => (
             <Row
               key={todo.key}
               title={todo.title}
               sub={todo.sub}
               value={todo.note}
               mute={todo.time === undefined}
-              hazard
+              hazard={todo.plain !== true}
               chevron
               onClick={() => go(todo.url)}
             >

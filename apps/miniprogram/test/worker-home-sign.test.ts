@@ -259,4 +259,33 @@ describe("pointStatus", () => {
     expect(pointStatus(next, next, true)).toEqual({ kind: "idle", text: "等底照通过" });
     expect(pointStatus(day[1], next, false)).toEqual({ kind: "idle", text: "到点再打" });
   });
+
+  test("an unpunched point whose time has passed is due even if it is not the next one", () => {
+    const morning = point("START", "上班", "08:00");
+    const noon = point("CHECKPOINT", "午间", "12:00");
+    const evening = point("END", "下班", "17:30");
+    const afternoon = "2026-10-31T13:10:00+08:00";
+    // 下一张是 12:00 那张，08:00 那张早就过点没打：也是待打卡，不是“到点再打”。
+    expect(pointStatus(morning, noon, false, afternoon)).toEqual({
+      kind: "warn",
+      text: "待打卡",
+    });
+    expect(pointStatus(morning, noon, true, afternoon)).toEqual({
+      kind: "idle",
+      text: "等底照通过",
+    });
+    expect(pointStatus(evening, noon, false, afternoon)).toEqual({
+      kind: "idle",
+      text: "到点再打",
+    });
+    // 不传 now 时和原来一样。
+    expect(pointStatus(morning, noon, false)).toEqual({
+      kind: "idle",
+      text: "到点再打",
+    });
+    expect(pointStatus(morning, noon, false, NOW)).toEqual({
+      kind: "idle",
+      text: "到点再打",
+    });
+  });
 });

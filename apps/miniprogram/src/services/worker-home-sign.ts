@@ -46,11 +46,16 @@ export const cardDeadline = (
       ? `${point.scheduledTime} 后打`
       : `${point.scheduledTime} 打`;
 
-/** “今天”那张表里每个时点的状态。 */
+/**
+ * “今天”那张表里每个时点的状态。
+ * 没打的卡：是下一张要打的，或者（传了 now）时间已经过了，都算待打卡；还没到点的才是“到点再打”。
+ */
 export const pointStatus = (
   point: AttendanceTodayPoint,
   next: AttendanceTodayPoint | null,
   blocked: boolean,
+  /** ISO 时间。 */
+  now?: string,
 ): { readonly kind: StatusKind; readonly text: string } => {
   if (point.record !== null) {
     const time = formatChinaHm(point.record.occurredAt);
@@ -58,7 +63,8 @@ export const pointStatus = (
       ? { kind: "ok", text: `${time} 已打卡` }
       : { kind: "bad", text: `${time} 异常` };
   }
-  if (point.pointCode !== next?.pointCode)
+  const passed = now !== undefined && point.scheduledTime <= formatChinaHm(now);
+  if (point.pointCode !== next?.pointCode && !passed)
     return { kind: "idle", text: "到点再打" };
   return blocked
     ? { kind: "idle", text: "等底照通过" }

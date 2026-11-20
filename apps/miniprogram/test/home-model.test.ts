@@ -279,7 +279,7 @@ describe("leaderPunchTodos", () => {
     expect(todos[1]?.url).toBe("/pages/my-projects/index");
   });
 
-  test("an unread schedule and an abnormal record still need the leader; a clean day does not", () => {
+  test("an unread schedule and an abnormal record need the leader; a clean day is one plain row", () => {
     expect(leaderPunchTodos({ kind: "unknown" })[0]?.url).toBe(
       "/pages/my-projects/index",
     );
@@ -305,6 +305,17 @@ describe("leaderPunchTodos", () => {
         total: 2,
         abnormal: false,
       }),
+    ).toEqual([
+      {
+        key: "punch-done",
+        title: "我今天的卡都打了",
+        note: "2 张",
+        url: "/pages/my-records/index?range=TODAY",
+        plain: true,
+      },
+    ]);
+    expect(
+      leaderPunchTodos({ kind: "done", completed: 0, total: 0, abnormal: false }),
     ).toEqual([]);
     expect(leaderPunchTodos({ kind: "none" })).toEqual([]);
   });
