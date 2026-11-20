@@ -6,6 +6,7 @@ import {
   maskPhone,
   personInitial,
   personRoleText,
+  roleChoicesFor,
   selectedRoleCodes,
   toggleMemberRole,
 } from "../src/components/member-role-editor/person-text";
@@ -114,5 +115,22 @@ describe("toggleMemberRole", () => {
       worker,
       { roleCode: "PROJECT_ADMIN", teamId: null },
     ]);
+  });
+});
+
+describe("role choices", () => {
+  it("hides a role the user may not grant, unless the person already has it", () => {
+    const worker = [{ roleCode: "WORKER" as const, teamId: null }];
+    expect(roleChoicesFor(worker, ["PROJECT_ADMIN"]).map((c) => c.value)).toEqual([
+      "WORKER",
+      "TEAM_LEADER",
+    ]);
+    expect(
+      roleChoicesFor(
+        [{ roleCode: "PROJECT_ADMIN", teamId: null }],
+        ["PROJECT_ADMIN"],
+      ).map((c) => c.value),
+    ).toEqual(["WORKER", "TEAM_LEADER", "PROJECT_ADMIN"]);
+    expect(roleChoicesFor(worker, [])).toHaveLength(3);
   });
 });

@@ -671,11 +671,14 @@ model AuditLog {
   entityType  String
   entityId    String
   metadata    Json
+  /// Project the action belongs to, when it has one (set since 2026-11-20; older rows are null).
+  projectId   String?
   createdAt   DateTime @default(now())
   actorUser   User?    @relation(fields: [actorUserId], references: [id])
 
   @@index([actorUserId, createdAt])
   @@index([entityType, entityId])
+  @@index([projectId, createdAt])
   @@map("audit_logs")
 }
 

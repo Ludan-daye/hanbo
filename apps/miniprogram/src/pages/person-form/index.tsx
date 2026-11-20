@@ -20,6 +20,7 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { useManagedProjectId } from "../../hooks/use-management-scope";
+import { canGrantProjectAdmin } from "../../routing/projectAdmin";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import {
   memberRoleAssignments,
@@ -239,6 +240,13 @@ export default function PersonFormPage(): JSX.Element {
   // 管理人员档案的岗位不由这里填。
   const asksJob = onlyWorker && form.participantType !== "MANAGER";
   const team = teams.find((row) => row.id === form.teamId);
+  // 项目管理员不能任免别的项目管理员：没有“管理员”可选；
+  // 已经是管理员的人，身份里的管理员和在场状态都由公司管理员调整。
+  const adminLocked = !canGrantProjectAdmin(state.me);
+  const peerAdmin =
+    adminLocked &&
+    Boolean(memberId) &&
+    roles.some((role) => role.roleCode === "PROJECT_ADMIN");
   return (
     <Screen header={header}>
       <Sheet gap>
@@ -283,6 +291,7 @@ export default function PersonFormPage(): JSX.Element {
           teams={teams}
           disabled={busy}
           invalid={checked}
+          locked={adminLocked ? ["PROJECT_ADMIN"] : []}
         />
         {asksJob ? (
           <FormInput
@@ -324,7 +333,7 @@ export default function PersonFormPage(): JSX.Element {
             setForm({ ...form, requiresAttendance })
           }
         />
-        {memberId ? (
+        {memberId && !peerAdmin ? (
           <ChipsRow
             label="状态"
             options={STATUS_OPTIONS}
@@ -357,6 +366,9 @@ export default function PersonFormPage(): JSX.Element {
       </Sheet>
       <Notice>
         <View>身份可以选几个。兼任共用一份档案，考勤和评分不重复统计。</View>
+        {peerAdmin ? (
+          <View>他是项目管理员，管理员身份和在场状态请公司管理员调整。</View>
+        ) : null}
         {memberId ? null : (
           <View>建档后到“邀请绑定”生成邀请码，交给本人用微信绑定。</View>
         )}

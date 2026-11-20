@@ -6,6 +6,9 @@ import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
+import { defaultWorktimeRule } from "@construction/domain";
+
+import { chinaDate } from "../src/attendance/attendance-plans.js";
 import { AppModule } from "../src/app.module.js";
 import { PrismaService } from "../src/infrastructure/database/prisma.service.js";
 import { encryptPersonnelName } from "../src/management/personnel-name.js";
@@ -363,6 +366,159 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
             .expect(200)
         ).body as { items: unknown[] };
         expect(outside.items).toEqual([]);
+      });
+    });
+
+    describe("peer-level role guard and audit", (): void => {
+      const person = (phone: string, role: string) => ({
+        displayName: "测试管理员",
+        phone,
+        participantType: role === "PROJECT_ADMIN" ? "MANAGER" : "WORKER",
+        projectRoleLabel: role,
+        workType: "管理",
+        teamId: role === "TEAM_LEADER" ? teamId : null,
+        requiresAttendance: true,
+        status: "ACTIVE",
+        enteredAt: "2026-10-01T00:00:00+08:00",
+        exitedAt: null,
+        expectedUpdatedAt: null,
+        expectedProfileUpdatedAt: null,
+      });
+      const participants = `/management/projects/${projectId}/participants`;
+
+      test("a project admin cannot appoint, change or remove another project admin", async (): Promise<void> => {
+        const denied = await http()
+          .post(participants)
+          .auth(auth("admin"), { type: "bearer" })
+          .send(person("13900001001", "PROJECT_ADMIN"))
+          .expect(403);
+        expect(denied.body).toMatchObject({
+          message: "MANAGEMENT_ASSIGNMENT_REQUIRES_HIGHER_ROLE",
+          roleCode: "PROJECT_ADMIN",
+        });
+        await http()
+          .post(participants)
+          .auth(auth("admin"), { type: "bearer" })
+          .send(person("13900001002", "TEAM_LEADER"))
+          .expect(201);
+        const peer = (
+          await http()
+            .post(participants)
+            .auth(auth("company"), { type: "bearer" })
+            .send(person("13900001003", "PROJECT_ADMIN"))
+            .expect(201)
+        ).body as {
+          memberId: string;
+          updatedAt: string;
+          profileUpdatedAt: string;
+        };
+        const edit = {
+          ...person("13900001003", "PROJECT_ADMIN"),
+          expectedUpdatedAt: peer.updatedAt,
+          expectedProfileUpdatedAt: peer.profileUpdatedAt,
+        };
+        for (const change of [
+          { projectRoleLabel: "TEAM_LEADER", teamId },
+          { status: "EXITED", exitedAt: new Date().toISOString() },
+        ])
+          expect(
+            (
+              await http()
+                .put(`${participants}/${peer.memberId}`)
+                .auth(auth("admin"), { type: "bearer" })
+                .send({ ...edit, ...change })
+                .expect(403)
+            ).body.message,
+          ).toBe("MANAGEMENT_ASSIGNMENT_REQUIRES_HIGHER_ROLE");
+        // Editing contact details without touching the role stays allowed.
+        await http()
+          .put(`${participants}/${peer.memberId}`)
+          .auth(auth("admin"), { type: "bearer" })
+          .send({ ...edit, workType: "安全员" })
+          .expect(200);
+        const current = (
+          await http()
+            .get(`${participants}/${peer.memberId}`)
+            .auth(auth("company"), { type: "bearer" })
+            .expect(200)
+        ).body as { updatedAt: string; profileUpdatedAt: string };
+        await http()
+          .put(`${participants}/${peer.memberId}`)
+          .auth(auth("company"), { type: "bearer" })
+          .send({
+            ...edit,
+            workType: "安全员",
+            expectedUpdatedAt: current.updatedAt,
+            expectedProfileUpdatedAt: current.profileUpdatedAt,
+            status: "EXITED",
+            exitedAt: new Date().toISOString(),
+          })
+          .expect(200);
+      });
+
+      test("review actions write project audit rows", async (): Promise<void> => {
+        const makeup = await database.makeupRequest.findFirstOrThrow({
+          where: { projectId, status: "PENDING" },
+        });
+        await http()
+          .post(`/makeups/requests/${makeup.id}/reject`)
+          .auth(auth("admin"), { type: "bearer" })
+          .send({ approvalReason: "没有现场记录" })
+          .expect(201);
+        const face = await database.faceProfile.findFirstOrThrow({
+          where: { ownerId: workerIds.get("w1")!, status: "PENDING" },
+        });
+        await http()
+          .post(`/face-profiles/projects/${projectId}/${face.id}/review`)
+          .auth(auth("admin"), { type: "bearer" })
+          .send({ decision: "APPROVED", reason: "清晰" })
+          .expect(201);
+        const violation = await database.safetyViolation.findFirstOrThrow({
+          where: { projectId, status: "PENDING" },
+        });
+        await http()
+          .post(
+            `/safety-credit/projects/${projectId}/violations/${violation.id}/review`,
+          )
+          .auth(auth("admin"), { type: "bearer" })
+          .send({ action: "CONFIRM", reason: "属实" })
+          .expect(201);
+        const appealed = await database.safetyCreditAppeal.findFirstOrThrow({
+          where: { status: "PENDING", violation: { projectId } },
+        });
+        await http()
+          .post(
+            `/safety-credit/projects/${projectId}/violations/${appealed.violationId}/appeals/${appealed.id}/review`,
+          )
+          .auth(auth("admin"), { type: "bearer" })
+          .send({ accept: false, reason: "照片清楚" })
+          .expect(201);
+        const tomorrow = chinaDate(new Date(Date.now() + 86_400_000));
+        await http()
+          .put(`/worktime/projects/${projectId}`)
+          .auth(auth("admin"), { type: "bearer" })
+          .send({
+            expectedVersion: 0,
+            startsOn: tomorrow,
+            config: defaultWorktimeRule,
+          })
+          .expect(200);
+        const rows = await database.auditLog.findMany({
+          where: { projectId, actorUserId: users.admin },
+          orderBy: { createdAt: "asc" },
+        });
+        expect(rows.map((row) => row.action)).toEqual(
+          expect.arrayContaining([
+            "MAKEUP_REJECTED",
+            "FACE_PROFILE_REVIEWED",
+            "SAFETY_VIOLATION_REVIEWED",
+            "SAFETY_APPEAL_REVIEWED",
+            "WORKTIME_RULE_SAVED",
+          ]),
+        );
+        expect(
+          rows.find((row) => row.action === "MAKEUP_REJECTED"),
+        ).toMatchObject({ entityId: makeup.id, entityType: "makeup_request" });
       });
     });
   },

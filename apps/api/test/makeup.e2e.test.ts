@@ -638,6 +638,15 @@ class MakeupPrismaTestDouble {
       )
   };
 
+  readonly auditLogs: Record<string, unknown>[] = [];
+
+  readonly auditLog = {
+    create: async (args: { data: Record<string, unknown> }): Promise<Record<string, unknown>> => {
+      this.auditLogs.push(args.data);
+      return args.data;
+    }
+  };
+
   readonly attendanceResult = {
     upsert: async (args: AttendanceResultUpsertArgs): Promise<AttendanceResultRecord> => {
       const unique = args.where.projectId_attendanceDate_participantType_participantId;
@@ -988,6 +997,14 @@ describe("MakeupModule", (): void => {
       }),
       result: null
     });
+    expect(prisma.auditLogs).toEqual([
+      expect.objectContaining({
+        action: "MAKEUP_REJECTED",
+        actorUserId: "team-leader-user",
+        entityId: "makeup-request-1",
+        projectId: "project-1"
+      })
+    ]);
   });
 
   test("GET /makeups/teams/:teamId/pending returns only PENDING requests for that team", async (): Promise<void> => {

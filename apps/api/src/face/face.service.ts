@@ -196,6 +196,16 @@ export class FaceService {
           data: { faceProfileStatus: decision },
         });
       }
+      await tx.auditLog.create({
+        data: {
+          action: "FACE_PROFILE_REVIEWED",
+          actorUserId: reviewerUserId,
+          entityId: profileId,
+          entityType: "face_profile",
+          metadata: { decision, ...owner },
+          projectId,
+        },
+      });
       return tx.faceProfile.findUniqueOrThrow({ where: { id: profileId } });
     });
     return faceProfileResponse(updated);

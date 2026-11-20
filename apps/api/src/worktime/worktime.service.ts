@@ -54,6 +54,10 @@ export class WorktimeService {
       const created = await tx.projectWorktimeRule.create({ data: {
         projectId, version: latest + 1, startsOn: new Date(input.startsOn), createdByUserId: actorId, ...input.config,
       } });
+      await tx.auditLog.create({ data: {
+        action: "WORKTIME_RULE_SAVED", actorUserId: actorId, entityId: created.id, entityType: "project_worktime_rule",
+        metadata: { startsOn: input.startsOn, version: created.version }, projectId,
+      } });
       return configuration([...rows, created].map(versionFromRow));
     });
   }

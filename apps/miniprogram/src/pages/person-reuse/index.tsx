@@ -29,6 +29,7 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { useManagedProjectId } from "../../hooks/use-management-scope";
+import { canGrantProjectAdmin } from "../../routing/projectAdmin";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { participantPermissionRole } from "../../routing/permissionLevels";
 import { memberRoleFields } from "../../services/member-roles";
@@ -250,6 +251,7 @@ export default function PersonReuse(): JSX.Element {
             teams={teams}
             disabled={busy}
             invalid={checked}
+            locked={canGrantProjectAdmin(state.me) ? [] : ["PROJECT_ADMIN"]}
           />
           {onlyWorker && selected.participantType === "WORKER" ? (
             <FormInput

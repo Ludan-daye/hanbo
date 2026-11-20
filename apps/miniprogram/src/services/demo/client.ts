@@ -209,6 +209,38 @@ const canManageDemoProject = (
         )),
   );
 };
+/** 和服务端一样：只有公司管理员及以上能任免、调整项目管理员。 */
+const assertDemoPeerGrant = (
+  state: DemoState,
+  userId: string,
+  original: Pick<
+    ManagedParticipant,
+    "participantType" | "projectRoleLabel" | "teamId" | "additionalRoles" | "status"
+  > | null,
+  next: Pick<
+    PersonForm,
+    "participantType" | "projectRoleLabel" | "teamId" | "additionalRoles" | "status"
+  >,
+): void => {
+  const holdsAdmin = (
+    person: Pick<
+      PersonForm,
+      "participantType" | "projectRoleLabel" | "teamId" | "additionalRoles" | "status"
+    > | null,
+  ): boolean =>
+    person !== null &&
+    person.status === "ACTIVE" &&
+    memberRoleAssignments(person).some((role) => role.roleCode === "PROJECT_ADMIN");
+  const higher = demoMe(state, userId).roles.assignments.some(
+    (assignment) =>
+      assignment.roleCode === "COMPANY_ADMIN" ||
+      assignment.roleCode === "SYSTEM_ADMIN",
+  );
+  if (!higher && (holdsAdmin(original) || holdsAdmin(next)) && !(holdsAdmin(original) && holdsAdmin(next)))
+    throw new ApiError(403, "项目管理员的任免和调整要由公司管理员办理。", {
+      message: "MANAGEMENT_ASSIGNMENT_REQUIRES_HIGHER_ROLE",
+    });
+};
 const assertDemoScope = (
   state: DemoState,
   userId: string,
@@ -837,6 +869,11 @@ const routeDemo = (
         if (body.teamId !== null && !team)
           throw new ApiError(400, "班组不属于目标项目。", {});
         validateDemoRoles(state, scopeId, body);
+        assertDemoPeerGrant(state, userId, null, {
+          ...body,
+          participantType: source.participantType,
+          status: "ACTIVE",
+        });
         const person: ManagedParticipant = {
           ...source,
           additionalRoles: body.additionalRoles ?? [],
@@ -956,6 +993,7 @@ const routeDemo = (
         );
         const body: PersonForm = { ...input, additionalRoles: input.additionalRoles ?? original?.additionalRoles ?? [] };
         validateDemoRoles(state, scopeId, body);
+        assertDemoPeerGrant(state, userId, original ?? null, body);
         const grantKeys = (person: Pick<PersonForm, "participantType" | "projectRoleLabel" | "teamId" | "additionalRoles">): string => memberRoleAssignments(person).map((role) => `${role.roleCode}:${role.teamId}`).sort().join("|");
         if (original && original.profileId === me.profile.id && (grantKeys(original) !== grantKeys(body) || original.status !== body.status)) throw new ApiError(409, "不能修改自己的管理权限，请由上级处理。", {});
         if (method === "PUT" && !original)

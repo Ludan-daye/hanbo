@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { resolveAdminProjectId } from "../src/routing/projectAdmin";
+import { canGrantProjectAdmin, resolveAdminProjectId } from "../src/routing/projectAdmin";
 
 const me = (assignments: ReadonlyArray<{ roleCode: string; scopeType: string; scopeId: string }>) => ({
   user: { id: "u1", isBound: true, status: "ACTIVE" },
@@ -35,5 +35,13 @@ describe("resolveAdminProjectId", () => {
 
   test("returns null when me is null", () => {
     expect(resolveAdminProjectId(null)).toBeNull();
+  });
+});
+
+describe("canGrantProjectAdmin", () => {
+  test("only company admins and above appoint project admins", () => {
+    expect(canGrantProjectAdmin(me([{ roleCode: "PROJECT_ADMIN", scopeType: "PROJECT", scopeId: "p1" }]) as never)).toBe(false);
+    expect(canGrantProjectAdmin(me([{ roleCode: "COMPANY_ADMIN", scopeType: "COMPANY", scopeId: "c1" }]) as never)).toBe(true);
+    expect(canGrantProjectAdmin(null)).toBe(false);
   });
 });

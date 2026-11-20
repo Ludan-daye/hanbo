@@ -900,6 +900,21 @@ describe("standalone frontend workflows using persistent demo storage", () => {
       }),
     ).rejects.toThrow("没有访问");
   });
+  test("a project admin cannot appoint another project admin; a company admin can", async () => {
+    const person = {
+      displayName: "新管理员", phone: "13800009911", participantType: "MANAGER", projectRoleLabel: "PROJECT_ADMIN",
+      workType: "施工管理", teamId: null, requiresAttendance: true, status: "ACTIVE", enteredAt: new Date().toISOString(),
+      exitedAt: null, expectedUpdatedAt: null, expectedProfileUpdatedAt: null,
+    };
+    await login("dev-project");
+    await expect(
+      client.request("/management/projects/demo-project/participants", { method: "POST", data: person }),
+    ).rejects.toThrow("公司管理员");
+    await login("dev-company");
+    const created = await client.request<{ memberId: string }>("/management/projects/demo-project/participants", { method: "POST", data: person });
+    expect(created.memberId).toBeTruthy();
+  });
+
   test("selected project managers receive access without losing their original project", async () => {
     await login("dev-company");
     const project = await client.request<CompanyProject>("/management/companies/demo-company/projects", {

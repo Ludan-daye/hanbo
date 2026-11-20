@@ -8,7 +8,7 @@ import type {
 
 import { ChipsRow, SelectRow } from "./form-rows";
 import {
-  ROLE_CHOICES,
+  roleChoicesFor,
   selectedRoleCodes,
   toggleMemberRole,
 } from "./person-text";
@@ -21,6 +21,8 @@ type Props = {
   readonly disabled: boolean;
   /** 提交时没通过检查：把没选身份、没选班组的行标出来。 */
   readonly invalid?: boolean;
+  /** 当前用户不能授予或去掉的身份：没有就不出现，已有就锁住。 */
+  readonly locked?: readonly MemberRoleAssignment["roleCode"][];
   readonly onChange: (roles: readonly MemberRoleAssignment[]) => void;
 };
 
@@ -37,6 +39,7 @@ export const MemberRoleEditor = ({
   teams,
   disabled,
   invalid,
+  locked = [],
   onChange,
 }: Props): JSX.Element => {
   const ledCount = value.filter(
@@ -50,10 +53,11 @@ export const MemberRoleEditor = ({
         label="身份"
         required
         error={invalid === true && value.length === 0}
-        options={ROLE_CHOICES}
+        options={roleChoicesFor(value, locked)}
         selected={selectedRoleCodes(value)}
         onToggle={(roleCode) => {
-          if (!disabled) onChange(toggleMemberRole(value, roleCode));
+          if (!disabled && !locked.includes(roleCode))
+            onChange(toggleMemberRole(value, roleCode));
         }}
       />
       {value.map((role, index) =>

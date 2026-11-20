@@ -359,7 +359,11 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
 
     test("binds all duties on a manager profile and can retain that profile after removing management duties", async (): Promise<void> => {
       const phone = "13800000902";
-      let person: ManagedParticipantResponse = (await request(app.getHttpServer()).post(`/management/projects/${projectId}/participants`).auth(adminToken, { type: "bearer" })
+      // Appointing or removing a project admin needs a company admin (peer-level guard).
+      const companyAdmin = await database.user.create({ data: { openid: "workflow-company-admin", nickname: "公司管理员", isBound: true, phone: "13800000903", avatarObjectKey: "test/avatar.jpg", avatarContentType: "image/jpeg", encryptedRealName: encryptPersonnelName("公司管理员", "ab".repeat(32), randomBytes(12)) } });
+      await database.userRole.create({ data: { userId: companyAdmin.id, roleId: (await database.role.findUniqueOrThrow({ where: { code: "COMPANY_ADMIN" } })).id, scopeType: "COMPANY", scopeId: companyId } });
+      const companyToken = await tokenFor(companyAdmin.id);
+      let person: ManagedParticipantResponse = (await request(app.getHttpServer()).post(`/management/projects/${projectId}/participants`).auth(companyToken, { type: "bearer" })
         .send({ ...newPerson(phone), displayName: "管理兼任测试", participantType: "MANAGER", workType: "施工管理", projectRoleLabel: "PROJECT_ADMIN", teamId: null,
           additionalRoles: [{ roleCode: "WORKER", teamId: null }, { roleCode: "TEAM_LEADER", teamId }] }).expect(201)).body;
       const user = await database.user.create({ data: { openid: "manager-multi-role-test", phone, nickname: "管理兼任测试", avatarObjectKey: "test/avatar.jpg", avatarContentType: "image/jpeg", encryptedRealName: encryptPersonnelName("管理兼任测试", "ab".repeat(32), randomBytes(12)) } });
@@ -369,7 +373,8 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       expect(await database.userRole.count({ where: { userId: user.id } })).toBe(3);
       const path = `/management/projects/${projectId}/participants/${person.memberId}`;
       person = (await request(app.getHttpServer()).get(path).auth(adminToken, { type: "bearer" }).expect(200)).body;
-      person = (await request(app.getHttpServer()).put(path).auth(adminToken, { type: "bearer" }).send({ ...editPerson(person), projectRoleLabel: "WORKER", teamId, additionalRoles: [] }).expect(200)).body;
+      await request(app.getHttpServer()).put(path).auth(adminToken, { type: "bearer" }).send({ ...editPerson(person), projectRoleLabel: "WORKER", teamId, additionalRoles: [] }).expect(403);
+      person = (await request(app.getHttpServer()).put(path).auth(companyToken, { type: "bearer" }).send({ ...editPerson(person), projectRoleLabel: "WORKER", teamId, additionalRoles: [] }).expect(200)).body;
       expect(person.participantType).toBe("MANAGER");
       expect(person.additionalRoles).toHaveLength(0);
       const grants = await database.userRole.findMany({ where: { userId: user.id }, include: { role: true } });

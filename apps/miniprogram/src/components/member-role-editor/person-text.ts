@@ -85,3 +85,17 @@ export const toggleMemberRole = (
   roles.some((role) => role.roleCode === roleCode)
     ? roles.filter((role) => role.roleCode !== roleCode)
     : [...roles, { roleCode, teamId: roleCode === "TEAM_LEADER" ? "" : null }];
+
+/**
+ * 身份一行里给哪些选项：当前用户不能授予的身份（如项目管理员不能任命管理员）不出现；
+ * 这个人已经有的话照样显示，但点了没用。
+ */
+export const roleChoicesFor = (
+  roles: ReadonlyArray<MemberRoleAssignment>,
+  locked: ReadonlyArray<RoleCode>,
+): typeof ROLE_CHOICES =>
+  ROLE_CHOICES.filter(
+    (choice) =>
+      !locked.includes(choice.value) ||
+      roles.some((role) => role.roleCode === choice.value),
+  );

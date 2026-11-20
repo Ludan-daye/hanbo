@@ -9,7 +9,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { authorizePermission } from "@construction/domain/roles.js";
+import { authorizePermission, canAssignRole } from "@construction/domain/roles.js";
 import type { Prisma } from "@prisma/client";
 
 import type { AuthorizationData } from "../authorization/authorization.types.js";
@@ -26,6 +26,7 @@ import {
 } from "./personnel-name.js";
 import {
   additionalRoleView,
+  type MembershipGrant,
   membershipGrants,
   replaceAdditionalRoles,
   synchronizeMembershipGrants,
@@ -406,6 +407,17 @@ export class ParticipantsService {
       throw new BadRequestException({
         message: "NEW_MEMBER_MUST_NOT_INCLUDE_VERSION",
       });
+    await this.assertAssignableGrants(
+      projectId,
+      actorUserId,
+      [],
+      membershipGrants(
+        projectId,
+        body.projectRoleLabel,
+        body.teamId,
+        body.additionalRoles ?? [],
+      ),
+    );
     const memberId: string = await this.prisma.$transaction(
       async (transaction): Promise<string> => {
         await this.validateTeam(transaction, projectId, body.teamId);
@@ -488,6 +500,7 @@ export class ParticipantsService {
             action: "project.member.create",
             entityType: "project_member",
             entityId: createdId,
+            projectId,
             metadata: {
               projectId,
               participantType: body.participantType,
@@ -554,6 +567,17 @@ export class ParticipantsService {
       throw new BadRequestException({
         message: "PARTICIPANT_TYPE_CANNOT_CHANGE",
       });
+    await this.assertAssignableGrants(
+      projectId,
+      actorUserId,
+      [],
+      membershipGrants(
+        projectId,
+        body.projectRoleLabel,
+        body.teamId,
+        body.additionalRoles ?? [],
+      ),
+    );
     const memberId = await this.prisma.$transaction(
       async (transaction): Promise<string> => {
         await this.validateTeam(transaction, projectId, body.teamId);
@@ -679,6 +703,7 @@ export class ParticipantsService {
             action: "project.member.reuse",
             entityType: "project_member",
             entityId: createdId,
+            projectId,
             metadata: {
               projectId,
               sourceProjectId: source.projectId,
@@ -692,6 +717,54 @@ export class ParticipantsService {
       },
     );
     return this.get(projectId, memberId);
+  }
+
+  /**
+   * Decision 1 (2026-11-20): granting, changing or removing a role needs a strictly
+   * higher level over the project. Project admins manage workers and team leaders;
+   * only company admins and above manage project admins.
+   */
+  private async assertAssignableGrants(
+    projectId: string,
+    actorUserId: string,
+    previous: readonly MembershipGrant[],
+    next: readonly MembershipGrant[],
+  ): Promise<void> {
+    const same =
+      (grant: MembershipGrant) =>
+      (other: MembershipGrant): boolean =>
+        other.roleCode === grant.roleCode &&
+        other.scopeId === grant.scopeId &&
+        other.scopeType === grant.scopeType;
+    const changed = [
+      ...previous.filter((grant) => !next.some(same(grant))),
+      ...next.filter((grant) => !previous.some(same(grant))),
+    ];
+    if (changed.length === 0) return;
+    const [project, authorization] = await Promise.all([
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { companyId: true },
+      }),
+      this.authorization.loadAuthorizationData(actorUserId),
+    ]);
+    if (project === null)
+      throw new NotFoundException({ message: "PROJECT_NOT_FOUND", projectId });
+    const target = {
+      companyId: project.companyId,
+      projectId,
+      scopeId: projectId,
+      scopeType: "PROJECT" as const,
+    };
+    const denied = changed.find(
+      (grant) =>
+        !canAssignRole(authorization.assignments, target, grant.roleCode),
+    );
+    if (denied !== undefined)
+      throw new ForbiddenException({
+        message: "MANAGEMENT_ASSIGNMENT_REQUIRES_HIGHER_ROLE",
+        roleCode: denied.roleCode,
+      });
   }
 
   private assertProfileWriteScope(
@@ -806,6 +879,13 @@ export class ParticipantsService {
         throw new ConflictException({
           message: "CANNOT_CHANGE_OWN_MANAGEMENT_ASSIGNMENT",
         });
+      // Grants the member holds now and after the change (inactive members hold none).
+      await this.assertAssignableGrants(
+        projectId,
+        actorUserId,
+        previous.status === "ACTIVE" ? oldGrants : [],
+        body.status === "ACTIVE" ? nextGrants : [],
+      );
       await validateAdditionalRoles(
         transaction,
         projectId,
@@ -854,6 +934,7 @@ export class ParticipantsService {
               action: "team.leader.cleared",
               entityType: "team",
               entityId: team.id,
+              projectId,
               metadata: {
                 projectId,
                 memberId,
@@ -871,6 +952,7 @@ export class ParticipantsService {
           action: "project.member.update",
           entityType: "project_member",
           entityId: memberId,
+          projectId,
           metadata: {
             projectId,
             identityChanged:

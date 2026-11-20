@@ -249,3 +249,23 @@ export const getHighestRoleCode = (assignments: readonly RoleAssignment[]): Role
 
   return highest;
 };
+
+/** Highest role level the assignments hold over the target scope; 0 when none covers it. */
+export const roleLevelInScope = (
+  assignments: readonly ScopedRoleAssignment[],
+  targetScope: AuthorizationTargetScope
+): number =>
+  assignments
+    .filter((assignment: ScopedRoleAssignment): boolean => scopeIncludesTarget(assignment.scope, targetScope))
+    .reduce((highest: number, assignment: ScopedRoleAssignment): number => Math.max(highest, ROLE_LEVEL[assignment.roleCode]), 0);
+
+/**
+ * Granting, changing or removing a role needs a strictly higher level over that scope:
+ * a project admin manages workers and team leaders but not other project admins;
+ * company admins and above may manage project admins.
+ */
+export const canAssignRole = (
+  actorAssignments: readonly ScopedRoleAssignment[],
+  targetScope: AuthorizationTargetScope,
+  roleCode: RoleCode
+): boolean => roleLevelInScope(actorAssignments, targetScope) > ROLE_LEVEL[roleCode];

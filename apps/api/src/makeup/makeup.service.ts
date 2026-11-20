@@ -229,6 +229,24 @@ const assertSinglePendingReviewUpdate = (
   }
 };
 
+/** Audit row for an approved or rejected makeup: ids and the decision, no reasons. */
+const makeupReviewAudit = (
+  request: MakeupRequest,
+  approverUserId: string,
+): Prisma.AuditLogUncheckedCreateInput => ({
+  action: request.status === "APPROVED" ? "MAKEUP_APPROVED" : "MAKEUP_REJECTED",
+  actorUserId: approverUserId,
+  entityId: request.id,
+  entityType: "makeup_request",
+  metadata: {
+    attendanceDate: toDateOnly(request.attendanceDate),
+    participantId: request.participantId,
+    participantType: request.participantType,
+    pointCode: request.pointCode,
+  },
+  projectId: request.projectId,
+});
+
 @Injectable()
 export class MakeupService {
   constructor(
@@ -380,6 +398,9 @@ export class MakeupService {
         const updated = await tx.makeupRequest.findUniqueOrThrow({
           where: { id: request.id },
         });
+        await tx.auditLog.create({
+          data: makeupReviewAudit(updated, approverUserId),
+        });
         if (task !== null) {
           await tx.teamTaskAssignment.update({
             where: { id: task.id },
@@ -432,20 +453,26 @@ export class MakeupService {
   ): Promise<ReviewMakeupResponse> {
     const request = await this.getPendingMakeupRequestOrThrow(requestId);
     await this.assertReviewerAuthorized(request, approverUserId);
-    const updateResult = await this.prisma.makeupRequest.updateMany({
-      data: {
-        approvalReason: body.approvalReason,
-        approvedAt: new Date(),
-        approverUserId,
-        status: "REJECTED",
-      },
-      where: {
-        id: request.id,
-        status: "PENDING",
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updateResult = await tx.makeupRequest.updateMany({
+        data: {
+          approvalReason: body.approvalReason,
+          approvedAt: new Date(),
+          approverUserId,
+          status: "REJECTED",
+        },
+        where: {
+          id: request.id,
+          status: "PENDING",
+        },
+      });
+      assertSinglePendingReviewUpdate(updateResult, request.id);
+      const row = await tx.makeupRequest.findUniqueOrThrow({
+        where: { id: request.id },
+      });
+      await tx.auditLog.create({ data: makeupReviewAudit(row, approverUserId) });
+      return row;
     });
-    assertSinglePendingReviewUpdate(updateResult, request.id);
-    const updated = await this.getMakeupRequestOrThrow(request.id);
 
     return {
       request: createMakeupRequestResponse(updated),

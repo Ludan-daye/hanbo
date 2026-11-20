@@ -526,6 +526,16 @@ export class SafetyCreditService {
             reviewReason: reason,
           },
         });
+      await database.auditLog.create({
+        data: {
+          action: "SAFETY_VIOLATION_REVIEWED",
+          actorUserId: userId,
+          entityId: id,
+          entityType: "safety_violation",
+          metadata: { action, status },
+          projectId,
+        },
+      });
     });
   }
   async appeal(
@@ -596,6 +606,16 @@ export class SafetyCreditService {
           },
         });
       }
+      await database.auditLog.create({
+        data: {
+          action: "SAFETY_APPEAL_REVIEWED",
+          actorUserId: userId,
+          entityId: appealId,
+          entityType: "safety_credit_appeal",
+          metadata: { accepted: accept, violationId },
+          projectId,
+        },
+      });
     });
   }
   async createPolicy(

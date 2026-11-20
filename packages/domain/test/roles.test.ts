@@ -4,11 +4,13 @@ import {
   authorizePermission,
   canApproveMakeupRequest,
   canApproveScopedMakeupRequest,
+  canAssignRole,
   getEffectivePermissionCodes,
   getHighestRoleCode,
   getInheritedRoleCodes,
   hasRoleAtLeast,
   roleIncludes,
+  roleLevelInScope,
   scopeIncludesTarget,
   type PermissionsByRoleCode,
   type RoleAssignment,
@@ -172,5 +174,46 @@ describe("getHighestRoleCode", () => {
 
   test("returns null when there are no assignments", () => {
     expect(getHighestRoleCode([])).toBeNull();
+  });
+});
+
+describe("canAssignRole", () => {
+  const project = {
+    companyId: "c-1",
+    projectId: "p-1",
+    scopeId: "p-1",
+    scopeType: "PROJECT"
+  } as const;
+  const projectAdmin: ScopedRoleAssignment = {
+    roleCode: "PROJECT_ADMIN",
+    scope: { scopeId: "p-1", scopeType: "PROJECT" }
+  };
+  const companyAdmin: ScopedRoleAssignment = {
+    roleCode: "COMPANY_ADMIN",
+    scope: { scopeId: "c-1", scopeType: "COMPANY" }
+  };
+
+  test("a project admin manages workers and team leaders but not peers or above", () => {
+    expect(canAssignRole([projectAdmin], project, "WORKER")).toBe(true);
+    expect(canAssignRole([projectAdmin], project, "TEAM_LEADER")).toBe(true);
+    expect(canAssignRole([projectAdmin], project, "PROJECT_ADMIN")).toBe(false);
+    expect(canAssignRole([projectAdmin], project, "COMPANY_ADMIN")).toBe(false);
+  });
+
+  test("company and system admins may manage project admins", () => {
+    expect(canAssignRole([companyAdmin], project, "PROJECT_ADMIN")).toBe(true);
+    expect(
+      canAssignRole([{ roleCode: "SYSTEM_ADMIN", scope: { scopeId: "GLOBAL", scopeType: "GLOBAL" } }], project, "PROJECT_ADMIN")
+    ).toBe(true);
+  });
+
+  test("only assignments covering the target count", () => {
+    const elsewhere: ScopedRoleAssignment = {
+      roleCode: "COMPANY_ADMIN",
+      scope: { scopeId: "c-2", scopeType: "COMPANY" }
+    };
+    expect(roleLevelInScope([projectAdmin, elsewhere], project)).toBe(3);
+    expect(canAssignRole([projectAdmin, elsewhere], project, "PROJECT_ADMIN")).toBe(false);
+    expect(roleLevelInScope([], project)).toBe(0);
   });
 });
