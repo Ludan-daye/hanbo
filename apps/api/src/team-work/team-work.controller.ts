@@ -157,6 +157,15 @@ export class TeamWorkController {
   ): Promise<void> {
     return this.work.confirmTaskExit(teamId, taskId, memberId, actor.userId);
   }
+  @Post("tasks/:taskId/members/:memberId/start-reminder")
+  remindTaskStart(
+    @Param("teamId") teamId: string,
+    @Param("taskId") taskId: string,
+    @Param("memberId") memberId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<TeamTask> {
+    return this.work.remindTaskStart(teamId, taskId, memberId, actor.userId);
+  }
   @Get("tasks/:taskId/invitations")
   @Header("Cache-Control", "no-store")
   invitations(

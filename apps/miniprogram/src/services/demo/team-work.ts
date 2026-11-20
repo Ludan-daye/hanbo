@@ -458,6 +458,42 @@ export const demoTeamWorkRequest = (
         updated,
       );
     }
+    if (
+      parts[5] === "members" &&
+      parts[7] === "start-reminder" &&
+      method === "POST"
+    ) {
+      const assignment = task.assignments.find(
+        (row) => row.memberId === parts[6],
+      );
+      if (!assignment)
+        throw new ApiError(404, "TASK_ASSIGNMENT_NOT_FOUND", {});
+      if (
+        task.status !== "OPEN" ||
+        assignment.taskAttendanceOnly !== true ||
+        assignment.startedAt ||
+        assignment.finishedAt ||
+        assignment.exitConfirmedAt
+      )
+        throw new ApiError(409, "TASK_START_REMINDER_NOT_APPLICABLE", {});
+      if (Date.parse(task.startsAt) > Date.now())
+        throw new ApiError(400, "TASK_START_REMINDER_TOO_EARLY", {});
+      const updated: TeamTask = {
+        ...task,
+        assignments: task.assignments.map((row) =>
+          row.memberId === assignment.memberId
+            ? { ...row, startReminderAt: new Date().toISOString() }
+            : row,
+        ),
+      };
+      return respond(
+        {
+          ...work,
+          tasks: work.tasks.map((row) => (row.id === task.id ? updated : row)),
+        },
+        updated,
+      );
+    }
     if (parts[5] === "members" && parts[7] === "exit" && method === "POST") {
       const assignment = task.assignments.find(
         (row) => row.memberId === parts[6],

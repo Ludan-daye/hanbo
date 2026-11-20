@@ -43,6 +43,7 @@ const legacySnapshot = z.object({
           finishedAt: z.string().nullable().optional(),
           workedMinutes: count.optional(),
           exitConfirmedAt: z.string().nullable().optional(),
+          startReminderAt: z.string().nullable().optional(),
         }),
       ),
     }),

@@ -115,17 +115,23 @@ export type TaskPersonRow = {
   readonly name: string;
   readonly sub: string;
   readonly status: {
-    readonly kind: "ok" | "idle";
+    readonly kind: "ok" | "idle" | "warn";
     readonly text: string;
   } | null;
   /** remove：还没开工，可以撤下。exit：临时工干完了，等班组长确认退场。 */
   readonly action: "remove" | "exit" | null;
+  /**
+   * 临时工过了开始时间还没开工：可以提醒他申请开工补卡。只是提醒，不记工时。
+   * 不能提醒时不写这一项。
+   */
+  readonly remind?: true;
 };
 
 /** 安排详情里每个人一行：是谁、干到哪一步、现在能对他做什么。 */
 export const taskPeople = (
   task: TeamTask,
   workers: readonly TeamTaskWorker[] | null,
+  now: number = Date.now(),
 ): readonly TaskPersonRow[] =>
   task.assignments.map((person) => {
     const timed = person.taskAttendanceOnly === true;
@@ -144,11 +150,20 @@ export const taskPeople = (
         ? ""
         : "还没开工";
     const exit = timed && Boolean(person.finishedAt) && !person.exitConfirmedAt;
+    const missedStart =
+      timed &&
+      task.status === "OPEN" &&
+      !person.startedAt &&
+      !person.finishedAt &&
+      !person.exitConfirmedAt &&
+      now >= Date.parse(task.startsAt);
     const status: TaskPersonRow["status"] =
       timed && person.exitConfirmedAt
         ? { kind: "idle", text: "已退场" }
         : exit
           ? null
+          : missedStart && person.startReminderAt
+            ? { kind: "warn", text: "已提醒补卡" }
           : person.finishedAt
             ? { kind: "ok", text: `${formatChinaHm(person.finishedAt)} 完工` }
             : person.startedAt
@@ -164,6 +179,9 @@ export const taskPeople = (
         : !person.startedAt && task.status === "OPEN"
           ? "remove"
           : null,
+      ...(missedStart && !person.startReminderAt
+        ? { remind: true as const }
+        : {}),
     };
   });
 

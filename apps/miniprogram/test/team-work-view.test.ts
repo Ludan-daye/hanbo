@@ -259,6 +259,30 @@ describe("安排详情里每个人一行", () => {
     ]);
   });
 
+  it("过了开始时间还没开工的临时工可以提醒补开工卡，提醒过就显示已提醒", () => {
+    const base = task({
+      assignments: [
+        person({ memberId: "t1", name: "周强", taskAttendanceOnly: true }),
+        person({
+          memberId: "t2",
+          name: "孙立",
+          taskAttendanceOnly: true,
+          startReminderAt: "2026-11-18T02:00:00.000Z",
+        }),
+        person({ memberId: "m2", name: "赵大勇" }),
+      ],
+    });
+    const later = Date.parse(base.startsAt) + 3600000;
+    const rows = taskPeople(base, null, later);
+    expect(rows.map((row) => [row.remind ?? false, row.status?.text ?? null])).toEqual([
+      [true, null],
+      [false, "已提醒补卡"],
+      [false, null],
+    ]);
+    const early = taskPeople(base, null, Date.parse(base.startsAt) - 60000);
+    expect(early.some((row) => row.remind)).toBe(false);
+  });
+
   it("安排结束以后不能再撤人，但干完的临时工还能确认退场", () => {
     const rows = taskPeople(
       task({

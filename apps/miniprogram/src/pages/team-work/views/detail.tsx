@@ -35,6 +35,7 @@ export const DetailView = ({
   problem,
   onRemove,
   onExit,
+  onRemind,
   onAdd,
   onInvite,
   onReuse,
@@ -53,6 +54,8 @@ export const DetailView = ({
   readonly problem: string | null;
   readonly onRemove: (person: TaskPersonRow) => void;
   readonly onExit: (person: TaskPersonRow) => void;
+  /** 临时工漏打开工卡：提醒他申请开工补卡。 */
+  readonly onRemind: (person: TaskPersonRow) => void;
   readonly onAdd: () => void;
   readonly onInvite: () => void;
   readonly onReuse: () => void;
@@ -84,6 +87,11 @@ export const DetailView = ({
               avatar={person.name.slice(0, 1)}
               status={person.status ?? undefined}
             >
+              {person.remind ? (
+                <TextAction disabled={busy} onClick={() => onRemind(person)}>
+                  漏打开工
+                </TextAction>
+              ) : null}
               {person.action === "remove" ? (
                 <TextAction disabled={busy} onClick={() => onRemove(person)}>
                   撤下

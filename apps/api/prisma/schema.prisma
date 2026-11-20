@@ -838,6 +838,9 @@ model TeamTaskAssignment {
   finishedAt DateTime?
   exitConfirmedAt DateTime?
   exitConfirmedByUserId String?
+  /// A manager marked the start punch as forgotten; the worker applies for a start makeup.
+  startReminderAt       DateTime?
+  startReminderByUserId String?
   records AttendanceRecord[]
   id        String              @id @default(uuid())
   taskId    String

@@ -33,6 +33,7 @@ import { TaskWorkerPicker } from "../../components/task-worker-picker";
 import {
   closeTeamTask,
   confirmTaskExit,
+  remindTaskStart,
   createTaskInvitation,
   createTeamTask,
   fetchTaskInvitations,
@@ -414,6 +415,23 @@ export default function TeamWork(): JSX.Element {
       refresh();
     }, task.id);
   };
+  const remindStart = (
+    task: TeamTask,
+    person: { readonly memberId: string; readonly name: string },
+  ): void => {
+    void perform(async () => {
+      const result = await Taro.showModal({
+        title: `${person.name} 漏打开工卡`,
+        content:
+          "他会在“我的任务”里看到提醒，自己申请开工补卡，审批通过后才算工。这里不记任何时间。",
+        confirmText: "提醒他",
+      });
+      if (!result.confirm) return;
+      await remindTaskStart(teamId, task.id, person.memberId);
+      refresh();
+      await Taro.showToast({ title: "已提醒", icon: "success" });
+    }, task.id);
+  };
   const addMembers = (task: TeamTask): void => {
     void perform(
       async () => {
@@ -590,6 +608,7 @@ export default function TeamWork(): JSX.Element {
           problem={taskProblem}
           onRemove={(person) => removeMember(openTask, person)}
           onExit={(person) => confirmExit(openTask, person)}
+          onRemind={(person) => remindStart(openTask, person)}
           onAdd={() => {
             setAddedMemberIds([]);
             show(taskView("add", openTask));

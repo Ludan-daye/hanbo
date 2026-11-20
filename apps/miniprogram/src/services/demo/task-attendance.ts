@@ -123,11 +123,10 @@ export const demoTaskMakeupTarget = (
   state: DemoState,
   person: ProjectParticipant,
   code: string,
-  finishedAt: string,
+  occurredAt: string,
 ): TaskTarget => {
   const point = parseTaskPoint(code);
-  if (point?.kind !== "END")
-    throw new ApiError(400, "临时任务仅支持已开工后的完工补卡。", {});
+  if (point === null) throw new ApiError(400, "任务补卡时点无效。", {});
   const target = ownTask(state, person, point.taskId);
   const { task, assignment } = target;
   if (
@@ -136,29 +135,48 @@ export const demoTaskMakeupTarget = (
     assignment.finishedAt
   )
     throw new ApiError(409, "任务或人员状态已变化。", {});
+  if (point.kind === "START") {
+    if (assignment.startedAt)
+      throw new ApiError(409, "TASK_START_MAKEUP_ALREADY_STARTED", {});
+    const at: number = Date.parse(occurredAt);
+    if (
+      !Number.isFinite(at) ||
+      at < Date.parse(task.startsAt) ||
+      at >= Date.parse(task.endsAt) ||
+      at > Date.now()
+    )
+      throw new ApiError(400, "TASK_START_MAKEUP_OUTSIDE_TASK_TIME", {});
+    return target;
+  }
   const duration: number =
-    Date.parse(finishedAt) - Date.parse(assignment.startedAt ?? "");
+    Date.parse(occurredAt) - Date.parse(assignment.startedAt ?? "");
   if (
     !Number.isFinite(duration) ||
     duration <= 0 ||
     duration > 86400000 ||
-    Date.parse(finishedAt) > Date.now()
+    Date.parse(occurredAt) > Date.now()
   )
     throw new ApiError(400, "请填写开工后 24 小时内实际发生的完工时间。", {});
   return target;
 };
+/** 批准任务补卡：开工补卡只写开工时间，完工补卡写完工并算出分钟。 */
 export const approveDemoTaskMakeup = (
   state: DemoState,
   person: ProjectParticipant,
   code: string,
-  finishedAt: string,
+  occurredAt: string,
 ): DemoState => {
-  const target = demoTaskMakeupTarget(state, person, code, finishedAt);
+  const target = demoTaskMakeupTarget(state, person, code, occurredAt);
+  if (parseTaskPoint(code)?.kind === "START")
+    return updateTaskAssignment(state, target, {
+      ...target.assignment,
+      startedAt: occurredAt,
+    });
   return updateTaskAssignment(state, target, {
     ...target.assignment,
-    finishedAt,
+    finishedAt: occurredAt,
     workedMinutes: Math.floor(
-      (Date.parse(finishedAt) - Date.parse(target.assignment.startedAt!)) /
+      (Date.parse(occurredAt) - Date.parse(target.assignment.startedAt!)) /
         60000,
     ),
   });

@@ -200,3 +200,14 @@ export const confirmTaskExit = (
     `${taskPath(teamId, taskId)}/members/${encodeURIComponent(memberId)}/exit`,
     { method: "POST" },
   );
+
+/** 告诉临时工他没打开工卡、请他申请开工补卡。不记任何工时。 */
+export const remindTaskStart = (
+  teamId: string,
+  taskId: string,
+  memberId: string,
+): Promise<TeamTask> =>
+  apiClient.request(
+    `${taskPath(teamId, taskId)}/members/${encodeURIComponent(memberId)}/start-reminder`,
+    { method: "POST" },
+  );

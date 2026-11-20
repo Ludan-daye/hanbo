@@ -78,8 +78,11 @@ export default function SubmitMakeup(): JSX.Element {
     date: requestedDate,
     pointCode: requestedPoint,
     recorded: recordedParam,
+    point: pointParam,
   } = useRouter().params;
   const taskMode = Boolean(taskId) || mode === "overtime";
+  // 临时任务漏打开工卡：补的是开工，日期是任务开始那天。
+  const startMode = Boolean(taskId) && pointParam === "start";
   const recordedPoints = (recordedParam ?? "").split(",").filter(Boolean);
   const [projects, setProjects] = useState<
     readonly MyProjectMembership[] | null
@@ -147,6 +150,26 @@ export default function SubmitMakeup(): JSX.Element {
         mode === "overtime"
           ? await fetchOvertimeAttendanceToday(projectId)
           : await fetchTaskAttendanceToday(projectId, taskId!);
+      if (startMode) {
+        const start = task.points.find((row) => row.kind === "START");
+        const end = task.points.find((row) => row.kind === "END");
+        return {
+          name: task.shiftName ?? "临时任务",
+          isWorkday:
+            task.isWorkday && start?.record === null && end?.record === null,
+          points: start
+            ? [
+                {
+                  code: start.pointCode,
+                  label: "任务开工",
+                  kind: "START",
+                  time: start.scheduledTime,
+                  graceMins: 0,
+                },
+              ]
+            : [],
+        };
+      }
       // 任务与加班补卡只针对当天的任务记录；日期以服务端返回为准，不允许改动。
       // 日期变化会重新触发本次读取，这里返回 null 结束当前这一轮。
       if (task.attendanceDate !== date) {
@@ -199,7 +222,7 @@ export default function SubmitMakeup(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [projectId, date, taskId, mode, planRevision]);
+  }, [projectId, date, taskId, mode, startMode, planRevision]);
   const selectPoint = (value: AttendancePointCode): void => {
     if (busyRef.current) return;
     setPoint(value);
@@ -288,8 +311,10 @@ export default function SubmitMakeup(): JSX.Element {
     currentPlan !== null &&
     currentPlan.isWorkday &&
     currentPlan.points.length > 0;
-  const title = taskId
-    ? "申请完工补卡"
+  const title = startMode
+    ? "申请开工补卡"
+    : taskId
+      ? "申请完工补卡"
     : mode === "overtime"
       ? "申请加班补卡"
       : "申请补卡";
@@ -409,7 +434,13 @@ export default function SubmitMakeup(): JSX.Element {
                     }}
                   >
                     <FormRow
-                      label={taskId ? "实际完工时间" : "实际时间"}
+                      label={
+                        startMode
+                          ? "实际开工时间"
+                          : taskId
+                            ? "实际完工时间"
+                            : "实际时间"
+                      }
                       required
                       chevron
                     >
@@ -437,7 +468,11 @@ export default function SubmitMakeup(): JSX.Element {
                 disabled={locked}
                 maxLength={500}
                 placeholder={
-                  taskId ? "说明没打完工卡的实际情况" : "说明漏打卡的实际情况"
+                  startMode
+                    ? "说明什么时候到场开工、为什么没打卡"
+                    : taskId
+                      ? "说明没打完工卡的实际情况"
+                      : "说明漏打卡的实际情况"
                 }
                 onInput={(value) => {
                   if (!busyRef.current) setReason(value);
@@ -460,7 +495,9 @@ export default function SubmitMakeup(): JSX.Element {
             </>
           ) : currentPlan !== null && !canPick ? (
             <Notice tone="warning">
-              {taskId
+              {startMode
+                ? "这个任务已经有开工记录或已经结束，不能补开工卡。"
+                : taskId
                 ? "这个任务不是已开工、还没完工的状态，不能补完工卡。"
                 : mode === "overtime"
                   ? "今天没有已进场、还没退场的加班，不能补加班卡。"
@@ -468,7 +505,9 @@ export default function SubmitMakeup(): JSX.Element {
             </Notice>
           ) : null}
           <Notice>
-            {taskId
+            {startMode
+              ? "开工时间要在任务的计划时间内。审批通过后记下开工，完工还要另外打卡或补卡。"
+              : taskId
               ? "实际完工时间要晚于开工，间隔不超过 24 小时。审批通过后计工。"
               : "提交后由班组长审批，通过后考勤会重新计算。"}
           </Notice>

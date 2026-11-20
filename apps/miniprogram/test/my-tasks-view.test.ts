@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   canApplyFinishMakeup,
+  canApplyStartMakeup,
   canPunchTask,
   primaryTaskId,
+  startReminded,
   startedAtLabel,
   taskProgress,
 } from "../src/pages/my-tasks/task-view";
@@ -72,6 +74,30 @@ describe("我的任务：进度和能做的操作", () => {
     expect(canApplyFinishMakeup(open, me({ startedAt: started }), false)).toBe(
       false,
     );
+  });
+
+  it("被提醒漏打开工卡、或任务时间已过还没开工，才能申请开工补卡", () => {
+    const open = { status: "OPEN", endsAt: "2026-11-18T04:00:00.000Z" } as const;
+    const during = Date.parse("2026-11-18T02:00:00.000Z");
+    const after = Date.parse("2026-11-18T05:00:00.000Z");
+    expect(canApplyStartMakeup(open, me(), during)).toBe(false);
+    expect(
+      canApplyStartMakeup(open, me({ startReminderAt: started }), during),
+    ).toBe(true);
+    expect(canApplyStartMakeup(open, me(), after)).toBe(true);
+    expect(canApplyStartMakeup(open, me({ startedAt: started }), after)).toBe(
+      false,
+    );
+    expect(
+      canApplyStartMakeup(open, me({ exitConfirmedAt: started }), after),
+    ).toBe(false);
+    expect(
+      canApplyStartMakeup({ ...open, status: "CANCELLED" }, me(), after),
+    ).toBe(false);
+    expect(startReminded(me({ startReminderAt: started }))).toBe(true);
+    expect(
+      startReminded(me({ startReminderAt: started, startedAt: started })),
+    ).toBe(false);
   });
 
   it("开工时间：当天只写几点，隔天带日期", () => {

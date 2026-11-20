@@ -1693,7 +1693,7 @@ const routeDemo = (
         throw new ApiError(400, "请按当天有效排班申请已发生的补卡。", {});
       const makeup = {
         ...body,
-        pointLabel: task !== null ? `任务完工 · ${task.task.title}` : overtime !== null ? "加班退场" : point!.label,
+        pointLabel: task !== null ? `${parseTaskPoint(body.pointCode)?.kind === "START" ? "任务开工" : "任务完工"} · ${task.task.title}` : overtime !== null ? "加班退场" : point!.label,
         id: demoId("makeup"),
         projectId: person.projectId,
         participantId: person.profileId,

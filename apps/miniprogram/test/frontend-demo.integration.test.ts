@@ -160,6 +160,39 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     } finally { vi.useRealTimers(); }
   });
 
+  test("a temporary worker who forgot to start is reminded, applies for a start makeup and then a finish makeup", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2030-01-07T07:00:00+08:00"));
+      await login("dev-team");
+      const fixture = readDemoState();
+      Taro.setStorageSync("hanbo.frontend-demo.v1", { ...fixture, people: fixture.people.map((person) => person.memberId === "member-worker" ? { ...person, taskAttendanceOnly: true } : person), memberHistories: fixture.memberHistories?.map((history) => history.person.memberId === "member-worker" ? { ...history, person: { ...history.person, taskAttendanceOnly: true } } : history) });
+      const path: string = "/team-work/teams/demo-team";
+      const task = await client.request<TeamTask>(`${path}/tasks`, { method: "POST", data: { title: "清理楼面", description: "", workType: "普工", startsAt: "2030-01-07T08:00:00+08:00", endsAt: "2030-01-07T12:00:00+08:00", memberIds: ["member-worker"] } });
+      const remind = `${path}/tasks/${task.id}/members/member-worker/start-reminder`;
+      await expect(client.request(remind, { method: "POST" })).rejects.toThrow("TASK_START_REMINDER_TOO_EARLY");
+      vi.setSystemTime(new Date("2030-01-07T10:00:00+08:00"));
+      const reminded = await client.request<TeamTask>(remind, { method: "POST" });
+      expect(reminded.assignments[0]).toMatchObject({ startReminderAt: new Date().toISOString() });
+      expect(reminded.assignments[0]?.startedAt).toBeFalsy();
+      await login("dev-worker");
+      const ask = (code: string, at: string) => client.request<Makeup>("/makeups/projects/demo-project/requests", { method: "POST", data: { attendanceDate: "2030-01-07", requestedOccurredAt: at, pointCode: code, reason: "忘了开工打卡" } });
+      await expect(ask(taskPointCode(task.id, "START"), "2030-01-07T07:30:00+08:00")).rejects.toThrow("TASK_START_MAKEUP_OUTSIDE_TASK_TIME");
+      const startRequest = await ask(taskPointCode(task.id, "START"), "2030-01-07T08:10:00+08:00");
+      expect(startRequest.pointLabel).toContain("任务开工");
+      await login("dev-team");
+      await client.request(`/makeups/requests/${startRequest.id}/approve`, { method: "POST", data: { approvalReason: "核实属实" } });
+      await login("dev-worker");
+      const mine = await client.request<readonly TeamTask[]>("/team-work/me/tasks?date=2030-01-07", { method: "GET" });
+      expect(mine.find((row) => row.id === task.id)?.assignments[0]).toMatchObject({ startedAt: "2030-01-07T08:10:00+08:00" });
+      const finish = await ask(taskPointCode(task.id, "END"), "2030-01-07T09:40:00+08:00");
+      await login("dev-team");
+      await client.request(`/makeups/requests/${finish.id}/approve`, { method: "POST", data: { approvalReason: "核实属实" } });
+      const done = (await client.request<readonly TeamTask[]>(`${path}/tasks?date=2030-01-07`, { method: "GET" })).find((row) => row.id === task.id);
+      expect(done?.assignments[0]).toMatchObject({ workedMinutes: 90 });
+    } finally { vi.useRealTimers(); }
+  });
+
   test("team work connects assignments, worker safety acknowledgement and automatic daily summary", async () => {
     await login("dev-team");
     const path: string = "/team-work/teams/demo-team";

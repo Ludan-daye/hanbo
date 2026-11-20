@@ -38,6 +38,29 @@ export const canApplyFinishMakeup = (
   Boolean(person.startedAt) &&
   !person.finishedAt;
 
+/**
+ * 没打开工卡、可以申请开工补卡：任务还开着，自己没开工、没完工、没退场，
+ * 并且班组长已经提醒过，或者任务的计划时间已经过了（现场打不了开工卡）。
+ */
+export const canApplyStartMakeup = (
+  task: Pick<TeamTask, "status" | "endsAt">,
+  person: Pick<
+    Assignment,
+    "startedAt" | "finishedAt" | "exitConfirmedAt" | "startReminderAt"
+  >,
+  now: number,
+): boolean =>
+  task.status === "OPEN" &&
+  !person.startedAt &&
+  !person.finishedAt &&
+  !person.exitConfirmedAt &&
+  (Boolean(person.startReminderAt) || now >= Date.parse(task.endsAt));
+
+/** 班组长提醒过漏打开工卡、而且还没补上。 */
+export const startReminded = (
+  person: Pick<Assignment, "startedAt" | "startReminderAt">,
+): boolean => Boolean(person.startReminderAt) && !person.startedAt;
+
 const punchable = (task: Task, isToday: boolean): ReadonlyArray<Assignment> =>
   task.assignments.filter(
     (person) =>

@@ -338,7 +338,7 @@ export class MakeupService {
           pointCode: request.pointCode,
           pointLabel:
             overtimePoint !== null ? "加班退场" : assignment !== null
-              ? `任务完工 · ${assignment.task.title}`
+              ? `${taskPoint?.kind === "START" ? "任务开工" : "任务完工"} · ${assignment.task.title}`
               : plan!.points.find((point) => point.code === request.pointCode)!
                   .label,
           projectId,
@@ -366,8 +366,9 @@ export class MakeupService {
           await workerClockLock(tx, request.requesterUserId);
           await resolveOvertimePunch(tx, request.projectId, { participantId: request.participantId, participantType: request.participantType }, request.pointCode, request.requestedOccurredAt);
         }
+        const taskPoint = parseTaskPoint(request.pointCode);
         const task =
-          parseTaskPoint(request.pointCode) === null
+          taskPoint === null
             ? null
             : await resolveTaskMakeup(
                 tx,
@@ -401,6 +402,31 @@ export class MakeupService {
         await tx.auditLog.create({
           data: makeupReviewAudit(updated, approverUserId),
         });
+        if (task !== null && taskPoint?.kind === "START") {
+          // The approved start becomes the assignment's start; the finish is
+          // punched or applied for on its own, so no hours appear yet.
+          const started = await tx.teamTaskAssignment.updateMany({
+            where: { id: task.id, startedAt: null, finishedAt: null },
+            data: { startedAt: updated.requestedOccurredAt },
+          });
+          if (started.count !== 1)
+            throw new ConflictException({
+              message: "TASK_START_MAKEUP_ALREADY_STARTED",
+              taskId: task.taskId,
+            });
+          const result = await recalculateTaskResult(
+            tx,
+            task.memberId,
+            updated.projectId,
+            updated.participantId,
+            toDateOnly(updated.attendanceDate),
+            new Date(),
+          );
+          return {
+            request: createMakeupRequestResponse(updated),
+            result: createAttendanceResultResponse(result),
+          };
+        }
         if (task !== null) {
           await tx.teamTaskAssignment.update({
             where: { id: task.id },

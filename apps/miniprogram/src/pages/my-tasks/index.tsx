@@ -31,11 +31,13 @@ import {
   fetchMyTasks,
   joinTemporaryTask,
 } from "../../services/team-work";
-import { chinaToday } from "../../services/time";
+import { chinaToday, formatChinaDate } from "../../services/time";
 import { useSession } from "../../store/session";
 import {
   canApplyFinishMakeup,
+  canApplyStartMakeup,
   canPunchTask,
+  startReminded,
   primaryTaskId,
   startedAtLabel,
   taskProgress,
@@ -68,12 +70,25 @@ const TaskCard = ({
   readonly busy: boolean;
 }): JSX.Element => {
   const mine = task.assignments.filter((person) => person.taskAttendanceOnly);
-  const puncher = mine.find((person) => canPunchTask(task, person, isToday));
-  const makeup = mine.some((person) =>
-    canApplyFinishMakeup(task, person, isToday),
-  );
-  const detail = task.status !== "CANCELLED";
   const project = encodeURIComponent(task.projectId);
+  // 该补开工卡的人不再显示现场开工打卡，免得补卡和现场卡各记一次。
+  const puncher = mine.find(
+    (person) =>
+      canPunchTask(task, person, isToday) &&
+      !canApplyStartMakeup(task, person, Date.now()),
+  );
+  // 开工补卡和完工补卡不会同时出现：一个要求没开工，一个要求已开工。
+  const startMakeup = mine.some((person) =>
+    canApplyStartMakeup(task, person, Date.now()),
+  );
+  const makeup =
+    startMakeup ||
+    mine.some((person) => canApplyFinishMakeup(task, person, isToday));
+  const startDay = formatChinaDate(task.startsAt);
+  const makeupUrl = startMakeup
+    ? `/pages/submit-makeup/index?projectId=${project}&taskId=${encodeURIComponent(task.id)}&point=start&date=${startDay < chinaToday() ? startDay : chinaToday()}`
+    : `/pages/submit-makeup/index?projectId=${project}&taskId=${encodeURIComponent(task.id)}`;
+  const detail = task.status !== "CANCELLED";
   const detailButton = (variant: "outline" | "text"): JSX.Element => (
     <Button
       variant={variant}
@@ -93,14 +108,20 @@ const TaskCard = ({
             <KV label="我的进度">
               <Status kind={progress.kind}>{progress.text}</Status>
             </KV>
-            <KV
-              label="开工"
-              value={
-                person.startedAt
-                  ? startedAtLabel(person.startedAt, date)
-                  : "到现场后打卡"
-              }
-            />
+            {startReminded(person) ? (
+              <KV label="开工">
+                <Status kind="warn">漏打开工卡</Status>
+              </KV>
+            ) : (
+              <KV
+                label="开工"
+                value={
+                  person.startedAt
+                    ? startedAtLabel(person.startedAt, date)
+                    : "到现场后打卡"
+                }
+              />
+            )}
             <KV
               label="记工"
               value={
@@ -111,6 +132,11 @@ const TaskCard = ({
             />
             {person.exitConfirmedAt ? (
               <CardMeta>班组长已确认退场，记录保留。</CardMeta>
+            ) : null}
+            {startReminded(person) ? (
+              <CardMeta>
+                管理人员发现你没打开工卡。请申请开工补卡，审批通过后从实际开工时间算工。
+              </CardMeta>
             ) : null}
           </View>
         );
@@ -133,13 +159,9 @@ const TaskCard = ({
           {makeup ? (
             <Button
               variant={puncher ? "text" : "outline"}
-              onClick={() =>
-                go(
-                  `/pages/submit-makeup/index?projectId=${project}&taskId=${encodeURIComponent(task.id)}`,
-                )
-              }
+              onClick={() => go(makeupUrl)}
             >
-              申请完工补卡
+              {startMakeup ? "申请开工补卡" : "申请完工补卡"}
             </Button>
           ) : null}
           {/* 一行放不下三个：打卡和补卡都在时，“项目详情”换到下一行。 */}

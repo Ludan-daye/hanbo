@@ -235,19 +235,22 @@ export const applyTaskPunch = async (
   });
 };
 
-/** A missing finish requires supervisor approval; it never substitutes for an unrecorded start. */
+/**
+ * Task makeups need supervisor approval and never invent hours on their own.
+ * END: a missing finish after a recorded start (within 24 hours).
+ * START: a forgotten start inside the planned task time; the finish is then
+ * punched or applied for separately.
+ */
 export const resolveTaskMakeup = async (
   db: Prisma.TransactionClient,
   projectId: string,
   userId: string,
   code: string,
-  finishedAt: Date,
+  occurredAt: Date,
 ): Promise<TaskClockAssignment> => {
   const point = parseTaskPoint(code);
-  if (point === null || point.kind !== "END")
-    throw new BadRequestException({
-      message: "临时任务仅支持已开工后的完工补卡。",
-    });
+  if (point === null)
+    throw new BadRequestException({ message: "任务补卡时点无效。" });
   await workerClockLock(db, userId);
   await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team-task:${point.taskId}`}))`;
   const row = await ownTaskAssignment(db, projectId, userId, point.taskId);
@@ -258,13 +261,46 @@ export const resolveTaskMakeup = async (
     row.finishedAt !== null
   )
     throw new ConflictException({
-      message: "任务或人员状态已变化，不能补完工。",
+      message:
+        point.kind === "START"
+          ? "任务或人员状态已变化，不能补开工。"
+          : "任务或人员状态已变化，不能补完工。",
     });
+  if (point.kind === "START") {
+    if (row.startedAt !== null)
+      throw new ConflictException({
+        message: "TASK_START_MAKEUP_ALREADY_STARTED",
+        taskId: row.taskId,
+      });
+    if (
+      occurredAt < row.task.startsAt ||
+      occurredAt >= row.task.endsAt ||
+      occurredAt.getTime() > Date.now()
+    )
+      throw new BadRequestException({
+        message: "TASK_START_MAKEUP_OUTSIDE_TASK_TIME",
+        taskId: row.taskId,
+      });
+    const overlapping = await db.teamTaskAssignment.findFirst({
+      where: {
+        id: { not: row.id },
+        member: { workerId: row.member.workerId },
+        startedAt: { lte: occurredAt },
+        OR: [{ finishedAt: null }, { finishedAt: { gt: occurredAt } }],
+      },
+    });
+    if (overlapping !== null)
+      throw new ConflictException({
+        message: "TASK_START_MAKEUP_OVERLAPS_OTHER_TASK",
+        taskId: row.taskId,
+      });
+    return row;
+  }
   if (
     row.startedAt === null ||
-    finishedAt <= row.startedAt ||
-    finishedAt.getTime() - row.startedAt.getTime() > 86400000 ||
-    finishedAt.getTime() > Date.now()
+    occurredAt <= row.startedAt ||
+    occurredAt.getTime() - row.startedAt.getTime() > 86400000 ||
+    occurredAt.getTime() > Date.now()
   )
     throw new BadRequestException({
       message:

@@ -28,6 +28,7 @@ const users = {
   admin: "pa-admin",
   company: "pa-company-admin",
   leader: "pa-leader",
+  temp: "pa-temp-worker",
   w1: "pa-worker-1",
   w2: "pa-worker-2",
   w3: "pa-worker-3",
@@ -782,6 +783,118 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       expect(
         (await http().get(`${base}/transfer-sources`).auth(auth("company"), { type: "bearer" }).expect(200)).body,
       ).toEqual([]);
+    });
+    test("a temporary worker who forgot to start is reminded and applies for a start makeup", async (): Promise<void> => {
+      const worker = await database.workerProfile.create({
+        data: {
+          userId: users.temp,
+          encryptedName: encryptPersonnelName("临时工甲", key, randomBytes(12)),
+          phone: "13900000555",
+          registrationCompletedAt: new Date(),
+          workType: "普工",
+          realNameStatus: "PENDING",
+          faceProfileStatus: "PENDING",
+          employmentStatus: "ACTIVE",
+        },
+      });
+      const member = await database.projectWorkerMember.create({
+        data: {
+          projectId,
+          workerId: worker.id,
+          teamId,
+          enteredAt: new Date("2026-10-01T00:00:00+08:00"),
+          projectRoleLabel: "WORKER",
+          status: "ACTIVE",
+          taskAttendanceOnly: true,
+        },
+      });
+      const now = Date.now();
+      const task = await database.teamWorkTask.create({
+        data: {
+          teamId,
+          title: "清理楼面",
+          description: "",
+          workType: "普工",
+          startsAt: new Date(now - 90 * 60000),
+          endsAt: new Date(now + 60 * 60000),
+          createdByUserId: users.leader,
+          assignments: { create: [{ memberId: member.id, source: "ASSIGNED" }] },
+        },
+      });
+      const later = await database.teamWorkTask.create({
+        data: {
+          teamId,
+          title: "明天的活",
+          description: "",
+          workType: "普工",
+          startsAt: new Date(now + 3600000),
+          endsAt: new Date(now + 7200000),
+          createdByUserId: users.leader,
+          assignments: { create: [{ memberId: member.id, source: "ASSIGNED" }] },
+        },
+      });
+      const remind = (taskId: string, user: UserKey) =>
+        http()
+          .post(`/team-work/teams/${teamId}/tasks/${taskId}/members/${member.id}/start-reminder`)
+          .auth(auth(user), { type: "bearer" });
+      expect((await remind(later.id, "admin").expect(400)).body.message).toBe("TASK_START_REMINDER_TOO_EARLY");
+      await remind(task.id, "temp").expect(403);
+      const reminded = (await remind(task.id, "admin").expect(201)).body as {
+        assignments: { memberId: string; startReminderAt: string | null; startedAt: string | null }[];
+      };
+      expect(reminded.assignments[0]).toMatchObject({ memberId: member.id, startedAt: null });
+      expect(reminded.assignments[0]!.startReminderAt).not.toBeNull();
+      expect(
+        await database.auditLog.count({ where: { action: "TEAM_TASK_START_MAKEUP_REMINDED", projectId, entityId: task.id } }),
+      ).toBe(1);
+      // The worker sees the reminder on 我的任务; no hours were created.
+      const mine = (
+        await http().get(`/team-work/me/tasks?date=${chinaDate(new Date())}`).auth(auth("temp"), { type: "bearer" }).expect(200)
+      ).body as { id: string; assignments: { startReminderAt: string | null; startedAt: string | null }[] }[];
+      expect(mine.find((row) => row.id === task.id)?.assignments[0]).toMatchObject({ startedAt: null });
+      expect(mine.find((row) => row.id === task.id)?.assignments[0]?.startReminderAt).not.toBeNull();
+
+      const at = (offsetMinutes: number) => new Date(now + offsetMinutes * 60000);
+      const ask = (code: string, occurredAt: Date) =>
+        http()
+          .post(`/makeups/projects/${projectId}/requests`)
+          .auth(auth("temp"), { type: "bearer" })
+          .send({
+            attendanceDate: chinaDate(occurredAt),
+            pointCode: code,
+            reason: "忘了开工打卡",
+            requestedOccurredAt: occurredAt.toISOString(),
+          });
+      const start = `TASK_${task.id}_START`;
+      expect((await ask(start, at(-120)).expect(400)).body.message).toBe("TASK_START_MAKEUP_OUTSIDE_TASK_TIME");
+      expect((await ask(start, at(5)).expect(400)).body.message).toBeDefined();
+      await ask(`TASK_${task.id}_END`, at(-10)).expect(400);
+      const requested = (await ask(start, at(-60)).expect(201)).body as { id: string; pointLabel: string };
+      expect(requested.pointLabel).toContain("任务开工");
+      await ask(start, at(-50)).expect(409);
+      await http()
+        .post(`/makeups/requests/${requested.id}/approve`)
+        .auth(auth("temp"), { type: "bearer" })
+        .send({ approvalReason: "自己批" })
+        .expect(403);
+      await http()
+        .post(`/makeups/requests/${requested.id}/approve`)
+        .auth(auth("leader"), { type: "bearer" })
+        .send({ approvalReason: "核实属实" })
+        .expect(201);
+      const assignment = await database.teamTaskAssignment.findUniqueOrThrow({
+        where: { taskId_memberId: { taskId: task.id, memberId: member.id } },
+      });
+      expect(assignment.startedAt?.toISOString()).toBe(at(-60).toISOString());
+      expect(assignment.finishedAt).toBeNull();
+      expect(
+        await database.auditLog.count({ where: { action: "MAKEUP_APPROVED", entityId: requested.id, projectId } }),
+      ).toBe(1);
+      expect((await ask(start, at(-40)).expect(409)).body.message).toBe("TASK_START_MAKEUP_ALREADY_STARTED");
+      expect((await remind(task.id, "admin").expect(409)).body.message).toBe("TASK_START_REMINDER_NOT_APPLICABLE");
+      // The existing finish makeup now works on top of the approved start.
+      const finish = (await ask(`TASK_${task.id}_END`, at(-10)).expect(201)).body as { pointLabel: string };
+      expect(finish.pointLabel).toContain("任务完工");
     });
   },
 );

@@ -290,6 +290,7 @@ export class TeamWorkService {
                     60000,
                 ),
           exitConfirmedAt: assignment.exitConfirmedAt?.toISOString() ?? null,
+          startReminderAt: assignment.startReminderAt?.toISOString() ?? null,
         })),
       };
     });
@@ -486,6 +487,77 @@ export class TeamWorkService {
         },
       });
     });
+  }
+
+  /**
+   * Marks that a temporary worker forgot the start punch. It records no time:
+   * the worker sees a reminder and applies for a start makeup, which goes
+   * through the normal approval.
+   */
+  async remindTaskStart(
+    teamId: string,
+    taskId: string,
+    memberId: string,
+    actor: string,
+  ): Promise<TeamTask> {
+    await this.db.$transaction(async (tx) => {
+      const team = await requireActiveTeam(tx, teamId);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team-task:${taskId}`}))`;
+      const row = await tx.teamTaskAssignment.findFirst({
+        where: { taskId, memberId, task: { teamId } },
+        include: { task: true, member: true },
+      });
+      if (row === null)
+        throw new NotFoundException({
+          message: "TASK_ASSIGNMENT_NOT_FOUND",
+          memberId,
+          taskId,
+        });
+      if (
+        row.task.status !== "OPEN" ||
+        !row.member.taskAttendanceOnly ||
+        row.startedAt !== null ||
+        row.finishedAt !== null ||
+        row.exitConfirmedAt !== null
+      )
+        throw new ConflictException({
+          message: "TASK_START_REMINDER_NOT_APPLICABLE",
+          memberId,
+          taskId,
+        });
+      const now: Date = new Date();
+      if (now < row.task.startsAt)
+        throw new BadRequestException({
+          message: "TASK_START_REMINDER_TOO_EARLY",
+          taskId,
+        });
+      const updated = await tx.teamTaskAssignment.updateMany({
+        where: {
+          id: row.id,
+          startedAt: null,
+          finishedAt: null,
+          exitConfirmedAt: null,
+        },
+        data: { startReminderAt: now, startReminderByUserId: actor },
+      });
+      if (updated.count !== 1)
+        throw new ConflictException({
+          message: "TASK_START_REMINDER_NOT_APPLICABLE",
+          memberId,
+          taskId,
+        });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor,
+          action: "TEAM_TASK_START_MAKEUP_REMINDED",
+          entityType: "TeamWorkTask",
+          entityId: taskId,
+          metadata: { teamId, memberId, assignmentId: row.id },
+          projectId: team.projectId,
+        },
+      });
+    });
+    return (await this.tasks({ id: taskId, teamId }))[0]!;
   }
 
   async closeTask(

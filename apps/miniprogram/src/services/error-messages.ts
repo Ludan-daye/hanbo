@@ -1,4 +1,10 @@
 export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  TASK_ASSIGNMENT_NOT_FOUND: "这项任务里没有这个人，请刷新。",
+  TASK_START_REMINDER_NOT_APPLICABLE: "他已经开工、完工或退场，或者任务已结束，不用再提醒。",
+  TASK_START_REMINDER_TOO_EARLY: "任务还没到开始时间，到点后再看他有没有开工。",
+  TASK_START_MAKEUP_ALREADY_STARTED: "这项任务已经有开工记录，不用再补开工卡。",
+  TASK_START_MAKEUP_OUTSIDE_TASK_TIME: "开工时间要在任务的计划时间内，而且不能晚于现在。",
+  TASK_START_MAKEUP_OVERLAPS_OTHER_TASK: "这个时间你还有别的任务在计时，请核对开工时间。",
   TRANSFER_SOURCE_NOT_ALLOWED: "只能从本公司别的项目申请调人。",
   TRANSFER_REQUEST_ALREADY_PENDING: "已经申请过这个人，请等公司管理员处理。",
   TRANSFER_REQUEST_NOT_FOUND: "这条调人申请不存在，请返回刷新。",

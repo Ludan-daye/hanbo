@@ -59,6 +59,8 @@ export type TeamTask = Omit<TeamTaskInput, "memberIds"> & {
     readonly finishedAt?: string | null | undefined;
     readonly workedMinutes?: number | undefined;
     readonly exitConfirmedAt?: string | null | undefined;
+    /** A manager marked the start punch as forgotten; the worker should apply for a start makeup. */
+    readonly startReminderAt?: string | null | undefined;
   }[];
 };
 export type TaskInvitationInput = {

@@ -637,7 +637,8 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
             requestedOccurredAt,
             reason: "现场完工后忘记打卡，请核实",
           });
-      await apply(start, "2030-01-09T11:00:00+08:00").expect(400);
+      // The task has already started, so a start makeup is refused.
+      await apply(start, "2030-01-09T11:00:00+08:00").expect(409);
       await apply(end, "2030-01-09T07:00:00+08:00").expect(400);
       const submitted = await apply(end, "2030-01-09T11:00:00+08:00").expect(
         201,
