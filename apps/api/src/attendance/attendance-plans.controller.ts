@@ -389,6 +389,7 @@ export class AttendancePlansController {
           action: "attendance.plan.inherit",
           entityType: "attendance_plan",
           entityId: saved.id,
+          projectId,
           metadata: { projectId, scopeType, scopeId, startsOn: input.startsOn },
         },
       });

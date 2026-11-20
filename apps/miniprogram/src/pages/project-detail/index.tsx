@@ -65,6 +65,7 @@ const ENTRY_ICONS: Readonly<Record<string, LineIconName>> = {
   "/pages/invitation/index": "key",
   "/pages/project-management/index": "grid",
   "/pages/schedules/index": "calendar",
+  "/pages/audit-log/index": "doc",
 };
 
 /** “2026年3月1日”。 */

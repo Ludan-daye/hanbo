@@ -227,6 +227,7 @@ export class TeamWorkService {
       await tx.auditLog.create({
         data: {
           actorUserId: actor,
+          projectId: team.projectId,
           action: "TEAM_TASK_MEMBERS_ADDED",
           entityType: "TeamWorkTask",
           entityId: taskId,
@@ -362,6 +363,7 @@ export class TeamWorkService {
       await tx.auditLog.create({
         data: {
           actorUserId: actor,
+          projectId: team.projectId,
           action: "TEAM_TASK_CREATED",
           entityType: "TeamWorkTask",
           entityId: task.id,
@@ -380,7 +382,7 @@ export class TeamWorkService {
     input: TeamTaskDetails,
   ): Promise<TeamTask> {
     await this.db.$transaction(async (tx) => {
-      await requireActiveTeam(tx, teamId);
+      const team = await requireActiveTeam(tx, teamId);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team-task:${taskId}`}))`;
       const task = await tx.teamWorkTask.findFirst({
         where: { id: taskId, teamId },
@@ -418,6 +420,7 @@ export class TeamWorkService {
       await tx.auditLog.create({
         data: {
           actorUserId: actor,
+          projectId: team.projectId,
           action: "TEAM_TASK_UPDATED",
           entityType: "TeamWorkTask",
           entityId: taskId,
@@ -445,7 +448,7 @@ export class TeamWorkService {
     actor: string,
   ): Promise<void> {
     await this.db.$transaction(async (tx) => {
-      await requireActiveTeam(tx, teamId);
+      const team = await requireActiveTeam(tx, teamId);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team-task:${taskId}`}))`;
       const row = await tx.teamTaskAssignment.findFirst({
         where: { taskId, memberId, task: { teamId } },
@@ -480,6 +483,7 @@ export class TeamWorkService {
       await tx.auditLog.create({
         data: {
           actorUserId: actor,
+          projectId: team.projectId,
           action: "TEAM_TASK_MEMBER_REMOVED",
           entityType: "TeamWorkTask",
           entityId: taskId,
@@ -567,7 +571,7 @@ export class TeamWorkService {
     status: "COMPLETED" | "CANCELLED",
   ): Promise<void> {
     await this.db.$transaction(async (tx) => {
-      await requireActiveTeam(tx, teamId);
+      const team = await requireActiveTeam(tx, teamId);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team-task:${taskId}`}))`;
       const running = await tx.teamTaskAssignment.count({
         where: {
@@ -598,6 +602,7 @@ export class TeamWorkService {
       await tx.auditLog.create({
         data: {
           actorUserId: actor,
+          projectId: team.projectId,
           action: "TEAM_TASK_CLOSED",
           entityType: "TeamWorkTask",
           entityId: taskId,
@@ -698,6 +703,7 @@ export class TeamWorkService {
       await tx.auditLog.create({
         data: {
           actorUserId: actor,
+          projectId: row.member.projectId,
           action: "TEMPORARY_WORKER_EXIT_CONFIRMED",
           entityType: "ProjectWorkerMember",
           entityId: memberId,
@@ -780,7 +786,7 @@ export class TeamWorkService {
     input: SafetyBriefingInput,
   ): Promise<void> {
     await this.db.$transaction(async (tx) => {
-      await requireActiveTeam(tx, teamId);
+      const team = await requireActiveTeam(tx, teamId);
       await lockSafetyDay(tx, teamId, input.workDate);
       const row = await tx.teamSafetyBriefing.create({
         data: {
@@ -794,6 +800,7 @@ export class TeamWorkService {
       await tx.auditLog.create({
         data: {
           actorUserId: actor,
+          projectId: team.projectId,
           action: "TEAM_SAFETY_PUBLISHED",
           entityType: "TeamSafetyBriefing",
           entityId: row.id,
@@ -912,7 +919,7 @@ export class TeamWorkService {
     input: SafetyIssueInput,
   ): Promise<void> {
     await this.db.$transaction(async (tx) => {
-      await requireActiveTeam(tx, teamId);
+      const team = await requireActiveTeam(tx, teamId);
       if (
         input.memberId !== null &&
         !(await tx.projectWorkerMember.findFirst({
@@ -936,6 +943,7 @@ export class TeamWorkService {
       await tx.auditLog.create({
         data: {
           actorUserId: actor,
+          projectId: team.projectId,
           action: "TEAM_SAFETY_ISSUE_CREATED",
           entityType: "TeamSafetyIssue",
           entityId: issue.id,
@@ -952,7 +960,7 @@ export class TeamWorkService {
     resolution: string,
   ): Promise<void> {
     await this.db.$transaction(async (tx) => {
-      await requireActiveTeam(tx, teamId);
+      const team = await requireActiveTeam(tx, teamId);
       const result = await tx.teamSafetyIssue.updateMany({
         where: { id: issueId, teamId, resolvedAt: null },
         data: { resolution, resolvedAt: new Date(), resolvedByUserId: actor },
@@ -964,6 +972,7 @@ export class TeamWorkService {
       await tx.auditLog.create({
         data: {
           actorUserId: actor,
+          projectId: team.projectId,
           action: "TEAM_SAFETY_ISSUE_RESOLVED",
           entityType: "TeamSafetyIssue",
           entityId: issueId,

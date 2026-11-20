@@ -1,0 +1,21 @@
+// 操作记录：一条一句话，句子可以折行，下面一行灰字写时间和项目。
+.audit-log__item {
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid var(--hair);
+}
+.audit-log__item:last-child {
+  border-bottom: none;
+}
+.audit-log__text {
+  font-size: 32rpx;
+  line-height: 1.5;
+  color: var(--k);
+}
+.audit-log__meta {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  color: var(--muted);
+}
+.audit-log__pick {
+  display: block;
+}

@@ -276,6 +276,20 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     await expect(client.request(`/reports/projects/demo-project/daily?date=${date}&teamId=nope`, { method: "GET" })).rejects.toThrow("REPORT_TEAM_OUT_OF_SCOPE");
   });
 
+  test("the operation log turns demo writes into sentences, scoped to the project and filterable by type", async () => {
+    await login("dev-project");
+    const team = await client.request<ManagedTeam>("/management/projects/demo-project/teams/demo-team", { method: "GET" });
+    await client.request("/management/projects/demo-project/teams/demo-team", { method: "PUT", data: {
+      name: team.name, workType: team.workType, remark: team.remark, status: "ACTIVE",
+      leader: team.leader === null ? null : { memberId: team.leader.memberId, participantType: team.leader.participantType }, expectedUpdatedAt: team.updatedAt,
+    } });
+    const page = await client.request<{ items: readonly { sentence: string; category: string | null; projectId: string | null }[]; nextCursor: string | null }>("/management/projects/demo-project/audit-logs", { method: "GET" });
+    expect(page.items[0]?.sentence).toContain(`修改了班组“${team.name}”的资料`);
+    expect(page.items.every((row) => row.projectId === "demo-project")).toBe(true);
+    const attendance = await client.request<{ items: readonly { category: string | null }[] }>("/management/projects/demo-project/audit-logs?type=ATTENDANCE", { method: "GET" });
+    expect(attendance.items.every((row) => row.category === "ATTENDANCE")).toBe(true);
+  });
+
   test("shows a member's project, duties and designated contacts without granting management access", async () => {
     await login("dev-project");
     const team = await client.request<ManagedTeam>("/management/projects/demo-project/teams/demo-team", { method: "GET" });

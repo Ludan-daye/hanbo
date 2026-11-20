@@ -42,6 +42,7 @@ export default defineAppConfig({
     "pages/person-registration/index",
     "pages/team-site/index",
     "pages/transfer-approvals/index",
+    "pages/audit-log/index",
     "pages/project-detail/index",
     "pages/team-detail/index",
     "pages/person-reuse/index",

@@ -965,5 +965,56 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         await database.team.update({ where: { id: teamId }, data: { leaderWorkerMemberId: null } });
       }
     });
+    test("operation log lists a project's audit entries as sentences, newest first, with paging and a type filter", async (): Promise<void> => {
+      type Page = {
+        items: { id: string; createdAt: string; sentence: string; category: string | null; projectId: string | null; action: string }[];
+        nextCursor: string | null;
+      };
+      const get = async (path: string, user: UserKey, expected = 200) =>
+        (await http().get(path).auth(auth(user), { type: "bearer" }).expect(expected)).body as Page & { message?: string };
+      const base = `/management/projects/${projectId}/audit-logs`;
+      const page = await get(base, "admin");
+      expect(page.items.length).toBeGreaterThan(0);
+      expect(page.items.every((row) => row.projectId === projectId)).toBe(true);
+      const times = page.items.map((row) => row.createdAt);
+      expect([...times].sort().reverse()).toEqual(times);
+      expect(page.items.map((row) => row.sentence)).toContain("测试leader 批准了 临时工甲 的补卡申请");
+      expect(page.items.map((row) => row.sentence)).toContain("测试admin 提醒任务“清理楼面”里漏打开工卡的临时工申请补卡");
+      const attendance = await get(`${base}?type=ATTENDANCE`, "admin");
+      expect(attendance.items.length).toBeGreaterThan(0);
+      expect(attendance.items.every((row) => row.category === "ATTENDANCE")).toBe(true);
+      await get(base, "leader", 403);
+      expect((await get(`${base}?type=NOPE`, "admin", 400)).message).toBe("INVALID_AUDIT_LOG_QUERY");
+      expect((await get(`${base}?cursor=bm9wZQ`, "admin", 400)).message).toBe("INVALID_AUDIT_LOG_QUERY");
+
+      // Paging over the other project, seen by the company admin only.
+      const start = Date.parse("2026-01-01T00:00:00Z");
+      await database.auditLog.createMany({
+        data: Array.from({ length: 35 }, (_, index) => ({
+          action: "project.update",
+          actorUserId: users.company,
+          entityId: otherProjectId,
+          entityType: "project",
+          metadata: {},
+          projectId: otherProjectId,
+          createdAt: new Date(start + Math.floor(index / 2) * 1000),
+        })),
+      });
+      const companyBase = `/management/companies/${companyId}/audit-logs?projectId=${otherProjectId}&type=PROJECT`;
+      const first = await get(companyBase, "company");
+      expect(first.items).toHaveLength(30);
+      expect(first.nextCursor).not.toBeNull();
+      const second = await get(`${companyBase}&cursor=${first.nextCursor}`, "company");
+      const seen = [...first.items, ...second.items].map((row) => row.id);
+      expect(new Set(seen).size).toBe(seen.length);
+      expect(seen.length).toBeGreaterThanOrEqual(35);
+      expect(second.nextCursor).toBeNull();
+      expect(first.items[0]!.sentence).toBe("测试company 修改了项目设置");
+      expect((await get(base, "admin")).items.some((row) => row.projectId === otherProjectId)).toBe(false);
+      await get(`/management/companies/${companyId}/audit-logs`, "admin", 403);
+      expect(
+        (await get(`/management/companies/${companyId}/audit-logs?projectId=nope`, "company", 400)).message,
+      ).toBe("AUDIT_PROJECT_OUT_OF_SCOPE");
+    });
   },
 );

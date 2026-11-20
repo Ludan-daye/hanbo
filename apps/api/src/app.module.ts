@@ -2,6 +2,7 @@ import { TeamWorkModule } from "./team-work/team-work.module.js";
 import { Module } from "@nestjs/common";
 
 import { AccountModule } from "./account/account.module.js";
+import { AuditLogModule } from "./audit/audit-log.module.js";
 import { AttendanceModule } from "./attendance/attendance.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { AuthorizationModule } from "./authorization/authorization.module.js";
@@ -31,6 +32,7 @@ import { SafetyCreditModule } from "./safety-credit/safety-credit.module.js";
     MakeupModule,
     MeModule,
     ReportsModule,
+    AuditLogModule,
     ProjectOverviewModule,
     TeamWorkModule,
     WorktimeModule,

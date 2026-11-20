@@ -1,5 +1,5 @@
 import { confirmDemoSafety, demoSafetyNotice, requireDemoSafety } from "./attendance-safety";
-import { parseOvertimePoint, parseTaskPoint, type ConfirmAttendanceSafety } from "@construction/domain";
+import { parseOvertimePoint, parseTaskPoint, type AuditCategory, type ConfirmAttendanceSafety } from "@construction/domain";
 import { approveDemoTaskMakeup, demoTaskMakeupTarget, demoTaskToday, punchDemoTask } from "./task-attendance";
 import { demoTeamWorkRequest } from "./team-work";
 import { demoWorktimeRequest } from "./worktime";
@@ -45,6 +45,7 @@ import type { UploadResult } from "../uploads";
 import { chinaToday, chinaDaysAgo } from "../time";
 import { checkAttendanceGeofence } from "../geofence";
 import { managedDemoTeam } from "./teams";
+import { demoAuditLog } from "./audit-log";
 import type { TransferRequestForm } from "../transfers";
 import { demoDaySummary, demoReport, dailyPerson } from "./reports";
 import {
@@ -879,6 +880,23 @@ const routeDemo = (
     const scope = parts[1];
     const scopeId = parts[2];
     const resource = parts[3];
+    if (resource === "audit-logs" && method === "GET") {
+      const projectIds =
+        scope === "companies"
+          ? state.projects
+              .filter((row) => row.companyId === scopeId)
+              .map((row) => row.id)
+          : [scopeId];
+      return response(
+        state,
+        demoAuditLog(
+          state,
+          projectIds,
+          (query.type as AuditCategory | undefined) ?? null,
+          query.cursor ?? null,
+        ),
+      );
+    }
     if (scope === "companies") {
       if (resource === "project-manager-candidates") {
         const search = (query.search ?? "").trim().toLowerCase();

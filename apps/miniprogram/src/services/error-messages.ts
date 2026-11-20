@@ -1,4 +1,6 @@
 export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  INVALID_AUDIT_LOG_QUERY: "操作记录的筛选条件不对，请重新打开。",
+  AUDIT_PROJECT_OUT_OF_SCOPE: "这个项目不在你能看的范围里。",
   INVALID_REPORT_TEAM_FILTER: "班组和组长只能选一个，请重新选择。",
   REPORT_TEAM_OUT_OF_SCOPE: "这个班组不在当前报表范围里，请重新选择。",
   REPORT_LEADER_OUT_OF_SCOPE: "这个组长不在当前报表范围里，请重新选择。",

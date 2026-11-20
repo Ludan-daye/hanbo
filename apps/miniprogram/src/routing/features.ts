@@ -99,6 +99,12 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       url: "/pages/schedules/index",
     },
     {
+      title: "操作记录",
+      sub: "谁在什么时候做了什么",
+      icon: "doc",
+      url: "/pages/audit-log/index",
+    },
+    {
       title: "项目设置",
       sub: "管理项目状态与考勤位置",
       icon: "gear",
@@ -137,6 +143,12 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       sub: "汇总公司的出勤与工时",
       icon: "chart",
       url: "/pages/company-reports/index",
+    },
+    {
+      title: "操作记录",
+      sub: "各项目里谁在什么时候做了什么",
+      icon: "doc",
+      url: "/pages/audit-log/index",
     },
   ],
   systemAdmin: [

@@ -271,6 +271,7 @@ export class ManagementService {
             action: "project.update",
             entityType: "project",
             entityId: projectId,
+            projectId,
             metadata: {
               previousStatus: previous.status,
               status: body.status,
