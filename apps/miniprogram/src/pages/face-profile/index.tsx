@@ -41,6 +41,7 @@ import { faceStage, faceTime, stampDay } from "./face-profile-view";
 import {
   ApprovedView,
   CaptureView,
+  ConsentReader,
   PendingView,
   PreviewView,
   RetakeView,
@@ -295,6 +296,13 @@ export default function FaceProfilePage(): JSX.Element {
     onConsent: (): void => setConsented(!consented),
     onConsentText: (): void => setConsentOpen(!consentOpen),
   };
+  const consentReader = (
+    <ConsentReader
+      open={consentOpen}
+      text={consent.consentText}
+      onToggle={consent.onConsentText}
+    />
+  );
   const shoot = (): void => {
     void choose();
   };
@@ -378,6 +386,7 @@ export default function FaceProfilePage(): JSX.Element {
           onReplace={shoot}
           onRefresh={refresh}
         >
+          {consentReader}
           {tail}
         </PendingView>
       ) : stage === "approved" ? (
@@ -396,6 +405,7 @@ export default function FaceProfilePage(): JSX.Element {
           onReplace={shoot}
           onRefresh={refresh}
         >
+          {consentReader}
           {tail}
         </ApprovedView>
       ) : (
@@ -410,6 +420,7 @@ export default function FaceProfilePage(): JSX.Element {
           onShoot={shoot}
           onRefresh={refresh}
         >
+          {consentReader}
           {tail}
         </RetakeView>
       )}

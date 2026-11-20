@@ -1,6 +1,6 @@
 import { View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   joinText,
@@ -69,6 +69,9 @@ export default function Invitation(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // 请求回来时拿它核对：返回的码必须属于此刻选中的人。
+  const selectionRef = useRef({ profileId: selectedProfileId, target });
+  selectionRef.current = { profileId: selectedProfileId, target };
 
   useEffect(() => {
     if (projectId === null) {
@@ -111,15 +114,32 @@ export default function Invitation(): JSX.Element {
     if (selectedProfileId === null || busy) {
       return;
     }
+    const requested = { profileId: selectedProfileId, target };
     setBusy(true);
     setError(null);
     try {
       const r = await createInvitation(projectId, {
-        profileId: selectedProfileId,
-        targetType: target,
+        profileId: requested.profileId,
+        targetType: requested.target,
       });
+      // 生成期间换了人（或换了类型），这张码不属于当前选中的人，不显示。
+      const current = selectionRef.current;
+      if (
+        r.profileId !== current.profileId ||
+        requested.profileId !== current.profileId ||
+        requested.target !== current.target
+      ) {
+        return;
+      }
       setInvitation(r);
     } catch (e) {
+      const current = selectionRef.current;
+      if (
+        requested.profileId !== current.profileId ||
+        requested.target !== current.target
+      ) {
+        return;
+      }
       const message = errorMessage(e, "邀请码生成未完成，请重试。");
       setError(message);
       await Taro.showToast({ icon: "none", title: message });
@@ -162,6 +182,9 @@ export default function Invitation(): JSX.Element {
         repeated.has(personName(p)) ? `尾号 ${p.phone.slice(-4)}` : null,
       ])}
       onClick={() => {
+        if (busy) {
+          return;
+        }
         setSelectedProfileId(p.profileId);
         setInvitation(null);
         setError(null);
@@ -177,6 +200,9 @@ export default function Invitation(): JSX.Element {
         options={TARGET_OPTIONS}
         value={target}
         onChange={(v) => {
+          if (busy) {
+            return;
+          }
           setTarget(v);
           setSelectedProfileId(null);
           setInvitation(null);

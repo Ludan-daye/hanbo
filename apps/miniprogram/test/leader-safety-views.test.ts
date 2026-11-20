@@ -16,9 +16,12 @@ import {
   reportText,
 } from "../src/pages/team-log/log-view";
 import {
+  ALL_SCOPES,
   arrangePending,
+  inScope,
   makeupDay,
   pointName,
+  projectScope,
   scopeLabel,
 } from "../src/pages/team-makeups/makeup-view";
 import {
@@ -323,5 +326,31 @@ describe("补卡审批", () => {
       open: null,
       after: [],
     });
+  });
+
+  it("从项目首页带 projectId 进来：多一项“某项目，全部班组”，只算这个项目的申请", () => {
+    const items = [
+      { projectId: "p1", projectName: "滨江花园一期", teamName: "钢筋一班" },
+      { projectId: "p1", projectName: "滨江花园一期", teamName: null },
+      { projectId: "p2", projectName: "城西学校", teamName: "木工班" },
+    ];
+    const project = projectScope(items, "p1");
+    expect(project).toEqual({
+      projectId: "p1",
+      label: "滨江花园一期，全部班组",
+    });
+    expect(
+      items.filter((item) => inScope(item, project!.label, project)),
+    ).toHaveLength(2);
+    expect(
+      items.filter((item) => inScope(item, ALL_SCOPES, project)),
+    ).toHaveLength(3);
+    expect(
+      items.filter((item) =>
+        inScope(item, "城西学校，木工班", project),
+      ),
+    ).toEqual([items[2]]);
+    expect(projectScope(items, null)).toBeNull();
+    expect(projectScope(items, "p9")).toBeNull();
   });
 });

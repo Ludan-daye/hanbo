@@ -37,8 +37,10 @@ import { errorMessage } from "../../services/error-messages";
 import {
   ALL_SCOPES,
   arrangePending,
+  inScope,
   makeupDay,
   pointName,
+  projectScope,
   scopeLabel,
 } from "./makeup-view";
 
@@ -122,8 +124,13 @@ export default function TeamMakeups(): JSX.Element {
   const requestedTeamName: string | null = router.params.teamName
     ? decodeURIComponent(router.params.teamName)
     : null;
+  const requestedProjectId: string | null = router.params.projectId
+    ? decodeURIComponent(router.params.projectId)
+    : null;
   const [scope, setScope] = useState<string | null>(
-    requestedTeamName === null ? ALL_SCOPES : null,
+    requestedTeamName === null && requestedProjectId === null
+      ? ALL_SCOPES
+      : null,
   );
   const [error, setError] = useState<string | null>(null);
   /** 出错的是“加载更多”：原因写在那个按钮旁边，而不是展开的那条申请下面。 */
@@ -186,7 +193,12 @@ export default function TeamMakeups(): JSX.Element {
       setBusy(null);
     }
   };
-  const scopes = [ALL_SCOPES, ...new Set((items ?? []).map(scopeLabel))];
+  const forProject = projectScope(items ?? [], requestedProjectId);
+  const scopes = [
+    ALL_SCOPES,
+    ...(forProject === null ? [] : [forProject.label]),
+    ...new Set((items ?? []).map(scopeLabel)),
+  ];
   const requestedItem: InboxMakeup | undefined =
     requestedTeamName === null
       ? undefined
@@ -197,13 +209,15 @@ export default function TeamMakeups(): JSX.Element {
             item.teamName === requestedTeamName,
         );
   const requestedScope: string | null =
-    requestedItem === undefined ? null : scopeLabel(requestedItem);
+    requestedItem === undefined
+      ? (forProject?.label ?? null)
+      : scopeLabel(requestedItem);
   const activeScope: string =
     scope !== null && scopes.includes(scope)
       ? scope
       : (requestedScope ?? ALL_SCOPES);
-  const visibleItems: readonly InboxMakeup[] = (items ?? []).filter(
-    (item) => activeScope === ALL_SCOPES || scopeLabel(item) === activeScope,
+  const visibleItems: readonly InboxMakeup[] = (items ?? []).filter((item) =>
+    inScope(item, activeScope, forProject),
   );
   const loadMore = async (): Promise<void> => {
     if (nextCursor === null || busy !== null) return;

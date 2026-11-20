@@ -131,7 +131,7 @@ export const CompanyAdminHome = ({
                     chevron
                     onClick={() =>
                       go(
-                        `/pages/project-detail/index?projectId=${encodeURIComponent(line.projectId)}`,
+                        `/pages/project-detail/index?projectId=${encodeURIComponent(line.projectId)}&view=hub`,
                       )
                     }
                   />

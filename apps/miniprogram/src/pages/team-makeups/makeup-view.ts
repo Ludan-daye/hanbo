@@ -14,6 +14,38 @@ export const scopeLabel = (
   item: Pick<InboxMakeup, "projectName" | "teamName">,
 ): string => `${item.projectName}，${item.teamName ?? "项目直属"}`;
 
+/** 一个项目下所有班组（含项目直属）合在一起的范围。 */
+export type ProjectScope = {
+  readonly projectId: string;
+  readonly label: string;
+};
+
+/**
+ * 带 projectId 进来（项目首页的“补卡申请 N 条”）时，范围里多一项“某项目，全部班组”，
+ * 默认选它，和首页数的是同一批申请。列表里还没有这个项目的申请时没有这一项。
+ */
+export const projectScope = (
+  items: readonly Pick<InboxMakeup, "projectId" | "projectName">[],
+  projectId: string | null,
+): ProjectScope | null => {
+  if (projectId === null) return null;
+  const found = items.find((item) => item.projectId === projectId);
+  return found === undefined
+    ? null
+    : { projectId, label: `${found.projectName}，全部班组` };
+};
+
+/** 这条申请在不在选中的范围里。 */
+export const inScope = (
+  item: Pick<InboxMakeup, "projectId" | "projectName" | "teamName">,
+  scope: string,
+  project: ProjectScope | null,
+): boolean =>
+  scope === ALL_SCOPES ||
+  (project !== null && scope === project.label
+    ? item.projectId === project.projectId
+    : scopeLabel(item) === scope);
+
 /** 补的是哪张卡。 */
 export const pointName = (
   item: Pick<InboxMakeup, "pointLabel" | "pointCode">,

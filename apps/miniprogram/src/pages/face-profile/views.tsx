@@ -8,6 +8,7 @@ import {
   CardMeta,
   Check,
   KV,
+  Links,
   Notice,
   Photo,
   Row,
@@ -67,6 +68,36 @@ const ConsentTextButton = ({
     {open ? "收起说明" : "查看说明"}
   </Button>
 );
+
+/**
+ * 交了底照以后（审核中、已通过、要重拍）也能再看一遍采集说明：
+ * 一个文字按钮，点开是和勾选同意时一样的说明卡片。
+ */
+export const ConsentReader = ({
+  open,
+  text,
+  onToggle,
+}: {
+  readonly open: boolean;
+  readonly text: string;
+  readonly onToggle: () => void;
+}): JSX.Element | null =>
+  text ? (
+    <>
+      <Links>
+        <Button variant="text" onClick={onToggle}>
+          {open ? "收起采集说明" : "查看采集说明"}
+        </Button>
+      </Links>
+      {open ? (
+        <View className="m-fade">
+          <Card gap>
+            <CardMeta>{text}</CardMeta>
+          </Card>
+        </View>
+      ) : null}
+    </>
+  ) : null;
 
 const RefreshButton = ({
   busy,

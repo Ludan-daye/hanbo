@@ -112,7 +112,10 @@ export default function PersonReuse(): JSX.Element {
   }, [projectId, sourcesAttempt]);
   useEffect(() => {
     const timer = setTimeout((): void => {
-      setSearch(searchInput.trim());
+      const next = searchInput.trim();
+      // 名单换了，原来选的人可能已经不在眼前：不能让“下一步”对着看不见的人。
+      if (next !== search || page !== 1) setSelected(null);
+      setSearch(next);
       setPage(1);
     }, 350);
     return (): void => clearTimeout(timer);
@@ -401,12 +404,24 @@ export default function PersonReuse(): JSX.Element {
           {hasPrevious || hasNext ? (
             <Links>
               {hasPrevious ? (
-                <Button variant="text" onClick={() => setPage(page - 1)}>
+                <Button
+                  variant="text"
+                  onClick={() => {
+                    setSelected(null);
+                    setPage(page - 1);
+                  }}
+                >
                   上一页
                 </Button>
               ) : null}
               {hasNext ? (
-                <Button variant="text" onClick={() => setPage(page + 1)}>
+                <Button
+                  variant="text"
+                  onClick={() => {
+                    setSelected(null);
+                    setPage(page + 1);
+                  }}
+                >
                   下一页
                 </Button>
               ) : null}
