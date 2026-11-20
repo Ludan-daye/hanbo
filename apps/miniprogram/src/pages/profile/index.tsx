@@ -20,6 +20,7 @@ import {
 import { FRONTEND_DEMO, TEST_LOGIN_ENABLED } from "../../config/env";
 import { useAccountProfile } from "../../hooks/use-account-profile";
 import { useCachedRead } from "../../hooks/use-cached-read";
+import { useLeaveGuard } from "../../hooks/use-leave-guard";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { roleHomePanel } from "../../routing/roleHome";
@@ -68,6 +69,12 @@ export default function Profile(): JSX.Element {
   const [editingProfile, setEditingProfile] = useState<boolean>(false);
   const me = state.me;
   const panel = roleHomePanel(me?.roles.highestRoleCode ?? null);
+  // 改本人资料是同一页里的子视图：系统返回会关掉整页，先问一下。
+  useLeaveGuard(
+    editingProfile && account !== null
+      ? "本人资料还没保存，离开后改动不保留。"
+      : null,
+  );
   useEffect(() => {
     if (state.me === null) return;
     let cancelled = false;

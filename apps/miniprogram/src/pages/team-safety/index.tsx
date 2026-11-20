@@ -12,6 +12,7 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { WorkDate, workDateLabel } from "../../components/team-work-fields";
+import { useLeaveGuard } from "../../hooks/use-leave-guard";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { useManagedTeamId } from "../../hooks/use-management-scope";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
@@ -72,7 +73,17 @@ export default function TeamSafety(): JSX.Element {
   const [resolving, setResolving] = useState<string | null>(null);
   const [resolution, setResolution] = useState<string>("");
   const [memberSearch, setMemberSearch] = useState<string>("");
+  // 记录隐患的“发现日期”自己存一份：改它不影响列表看的是哪一天。
+  const [recordDate, setRecordDate] = useState<string>(date);
   const busy: boolean = doing !== null;
+  // 发布、记录是同一页里的子视图：系统返回会关掉整页，填了东西先问一下。
+  useLeaveGuard(
+    view === "publish" && (title.trim() !== "" || content.trim() !== "")
+      ? "交底还没发布，离开后填的内容不保留。"
+      : view === "record" && description.trim() !== ""
+        ? "隐患还没保存，离开后填的内容不保留。"
+        : null,
+  );
   const today: string = chinaToday();
   const pickableMembers: readonly ProjectParticipant[] = members.filter(
     (person) =>
@@ -146,6 +157,7 @@ export default function TeamSafety(): JSX.Element {
   const openView = (next: ViewName): void => {
     if (busy) return;
     setError(null);
+    if (next === "record") setRecordDate(date);
     setView(next);
   };
   const backToList = (): void => openView("list");
@@ -186,7 +198,7 @@ export default function TeamSafety(): JSX.Element {
     perform("record", async () => {
       if (!description.trim()) throw new Error("请填写隐患内容。");
       await recordSafetyIssue(teamId, {
-        workDate: date,
+        workDate: recordDate,
         memberId,
         description,
         severity,
@@ -246,7 +258,7 @@ export default function TeamSafety(): JSX.Element {
               ?.displayName ?? "班组现场"
           }
           severity={severity}
-          date={date}
+          date={recordDate}
           description={description}
           error={error}
           busy={busy}
@@ -258,7 +270,7 @@ export default function TeamSafety(): JSX.Element {
             )
           }
           onSeverity={setSeverity}
-          onDate={setDate}
+          onDate={setRecordDate}
           onDescription={setDescription}
           onSave={() => {
             void record();

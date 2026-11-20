@@ -23,6 +23,7 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { workTimestamp } from "../../components/team-work-fields";
+import { useLeaveGuard } from "../../hooks/use-leave-guard";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { useManagedTeamId } from "../../hooks/use-management-scope";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
@@ -174,6 +175,12 @@ export default function TeamWork(): JSX.Element {
   useEffect(() => {
     if (gone) setView(LIST);
   }, [gone]);
+  // 列表以外的视图都在同一个页面里：系统返回会关掉整页，先问一下。
+  useLeaveGuard(
+    view.name !== "list" && !gone
+      ? "离开工作安排，这一步填的内容不保留。"
+      : null,
+  );
 
   const workTypes: readonly string[] = [
     ...new Set(

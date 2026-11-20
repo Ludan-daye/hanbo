@@ -22,6 +22,7 @@ import {
   type EntryItem,
   type LineIconName,
 } from "../../components/ui/index";
+import { useLeaveGuard } from "../../hooks/use-leave-guard";
 import { useManagedProjectId } from "../../hooks/use-management-scope";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { FEATURES } from "../../routing/features";
@@ -73,6 +74,17 @@ const dayText = (value: string): string => {
 };
 
 type DetailView = "hub" | "settings";
+
+/** 逐个字段比较，字段顺序不同不算改动。 */
+const sameProject = (a: ManagedProject, b: ManagedProject): boolean => {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const left = a as unknown as Record<string, unknown>;
+  const right = b as unknown as Record<string, unknown>;
+  return [...keys].every(
+    (key) =>
+      JSON.stringify(left[key] ?? null) === JSON.stringify(right[key] ?? null),
+  );
+};
 
 /**
  * 同一个页面两个视图：
@@ -136,9 +148,23 @@ export default function ProjectDetail(): JSX.Element {
       setBusy(false);
     }
   };
-  // 从“项目设置”退回“进入项目”：没保存的改动不留。
-  const backToHub = (): void => {
+  const dirty =
+    project !== null && saved !== null && !sameProject(project, saved);
+  useLeaveGuard(
+    view === "settings" && dirty ? "项目设置还没保存，离开后改动不保留。" : null,
+  );
+  // 从“项目设置”退回“进入项目”：没保存的改动不留，有改动先问一下。
+  const backToHub = async (): Promise<void> => {
     if (busy) return;
+    if (dirty) {
+      const answer = await Taro.showModal({
+        title: "放弃修改？",
+        content: "项目设置还没保存，返回后改动不保留。",
+        confirmText: "放弃修改",
+        cancelText: "继续编辑",
+      }).catch(() => ({ confirm: false }));
+      if (!answer.confirm) return;
+    }
     setProject(saved);
     setFormError(null);
     setView("hub");
@@ -148,7 +174,16 @@ export default function ProjectDetail(): JSX.Element {
     view === "hub" ? (
       <PageHeader title={saved?.name ?? "进入项目"} />
     ) : (
-      <PageHeader title="项目设置" onBack={fromHub ? backToHub : undefined} />
+      <PageHeader
+        title="项目设置"
+        onBack={
+          fromHub
+            ? () => {
+                void backToHub();
+              }
+            : undefined
+        }
+      />
     );
 
   if (!projectId)

@@ -23,6 +23,7 @@ import {
   Weekdays,
 } from "../../components/ui/index";
 import { WorkTime, workDateLabel } from "../../components/team-work-fields";
+import { useLeaveGuard } from "../../hooks/use-leave-guard";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import {
@@ -143,6 +144,12 @@ export default function Schedules(): JSX.Element {
   useEffect(() => {
     void Taro.pageScrollTo({ scrollTop: 0, duration: 0 });
   }, [editingCode]);
+  // 改某一张卡是同一页里的子视图：系统返回会关掉整页，先问一下。
+  useLeaveGuard(
+    editingCode !== null && configuration !== null
+      ? "打卡安排还没保存，离开后改动不保留。"
+      : null,
+  );
   const touch = (): void => {
     setSaved(null);
     setDirty(true);

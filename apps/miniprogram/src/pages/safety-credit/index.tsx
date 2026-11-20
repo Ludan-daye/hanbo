@@ -20,6 +20,7 @@ import {
   SafetyPolicySummary,
   SafetyViolationCard,
 } from "../../components/safety-credit-cards";
+import { useLeaveGuard } from "../../hooks/use-leave-guard";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { useManagedTeamId } from "../../hooks/use-management-scope";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
@@ -60,6 +61,16 @@ export default function TeamSafetyCredit(): JSX.Element {
   >([]);
   const [workerSearch, setWorkerSearch] = useState<string>("");
   const busy: boolean = doing !== null;
+  // 表单是同一页里的子视图：系统返回会关掉整页，填了东西先问一下。
+  useLeaveGuard(
+    view === "form" &&
+      (Boolean(memberId) ||
+        category.trim() !== "" ||
+        description.trim() !== "" ||
+        evidence.length > 0)
+      ? "违规登记还没提交，离开后填的内容不保留。"
+      : null,
+  );
   const pickableWorkers = (board?.workers ?? []).filter(
     (row) =>
       workerSearch.trim().length === 0 ||
