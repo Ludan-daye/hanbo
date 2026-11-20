@@ -40,6 +40,7 @@ import { fetchMyProjectAttendance, hasAttendanceToday, projectAttendanceProgress
 import { locationFromMapSelection, locationFromMapBoundary, projectMapBounds } from "../src/services/project-location";
 import { checkAttendanceGeofence } from "../src/services/geofence";
 import type { FaceProfile, MyFace } from "../src/services/face";
+import type { MemberRegistration } from "../src/services/registration-review";
 import type {
   Account,
   Company,
@@ -913,6 +914,30 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     await login("dev-company");
     const created = await client.request<{ memberId: string }>("/management/projects/demo-project/participants", { method: "POST", data: person });
     expect(created.memberId).toBeTruthy();
+  });
+
+  test("a project admin reads a worker's registration unmasked and marks it", async () => {
+    await login("dev-worker");
+    await client.request("/account/worker-registration", { method: "PUT", data: {
+      idNumber: "320106199003071234", residentialAddress: "测试市测试路 8 号", emergencyContactName: "王测试",
+      emergencyContactPhone: "13900002001", hasLongTermMedication: false, medicationDetails: "",
+      hasPersonalInsurance: false, insuranceDetails: "", payrollBankCard: "6222020200112233445",
+    } });
+    await login("dev-project");
+    const path = "/management/projects/demo-project/participants/member-worker/registration";
+    const before = await client.request<MemberRegistration>(path, { method: "GET" });
+    expect(before.registration?.idNumber).toMatch(/^\d{17}[\dX]$/);
+    expect(before.verification.status).toBe("PENDING");
+    const marked = await client.request<MemberRegistration>(`${path}/verification`, {
+      method: "POST",
+      data: { status: "VERIFIED", expectedVersion: before.verification.version },
+    });
+    expect(marked.verification).toMatchObject({ status: "VERIFIED", version: before.verification.version + 1 });
+    await expect(
+      client.request(`${path}/verification`, { method: "POST", data: { status: "NEEDS_UPDATE", expectedVersion: before.verification.version } }),
+    ).rejects.toThrow("重新打开");
+    await login("dev-team");
+    await expect(client.request(path, { method: "GET" })).rejects.toThrow();
   });
 
   test("selected project managers receive access without losing their original project", async () => {

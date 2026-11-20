@@ -72,6 +72,16 @@ export type DemoState = {
   readonly boundProfileId: string | null;
   readonly accountProfiles?: Readonly<Record<string, AccountProfile>>;
   readonly workerRegistrations?: Readonly<Record<string, WorkerRegistration>>;
+  /** 管理员对用工登记的核实，按工人档案编号。 */
+  readonly registrationReviews?: Readonly<Record<string, DemoRegistrationReview>>;
+};
+
+export type DemoRegistrationReview = {
+  readonly status: "PENDING" | "VERIFIED" | "NEEDS_UPDATE";
+  readonly submittedAt: string | null;
+  readonly verifiedAt: string | null;
+  readonly verifiedByName: string | null;
+  readonly version: number;
 };
 
 export type LegacyDemoState = Omit<

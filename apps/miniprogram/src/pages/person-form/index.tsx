@@ -14,6 +14,7 @@ import {
   FormSwitch,
   Notice,
   PageHeader,
+  Row,
   Screen,
   SectionTitle,
   Sheet,
@@ -39,6 +40,12 @@ import {
   type PersonForm,
 } from "../../services/workflows";
 import { chinaToday, formatChinaDate } from "../../services/time";
+import {
+  fetchMemberRegistration,
+  type MemberRegistration,
+} from "../../services/registration-review";
+import { usePageRefresh } from "../../hooks/use-page-refresh";
+import { verificationLabel } from "../person-registration/registration-review-view";
 import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
 
@@ -87,6 +94,24 @@ export default function PersonFormPage(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   // 点过保存、没通过检查之后，把有问题的行标出来。
   const [checked, setChecked] = useState<boolean>(false);
+  // 工人的用工资料核实状态；没读到时那一行只是不写状态，不挡表单。
+  const [registration, setRegistration] = useState<MemberRegistration | null>(
+    null,
+  );
+  const { revision } = usePageRefresh();
+  useEffect(() => {
+    if (!projectId || !memberId || form.participantType !== "WORKER") return;
+    let cancelled = false;
+    void fetchMemberRegistration(projectId, memberId).then(
+      (value) => {
+        if (!cancelled) setRegistration(value);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, memberId, form.participantType, revision]);
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
@@ -282,6 +307,22 @@ export default function PersonFormPage(): JSX.Element {
           }}
         />
       </Sheet>
+
+      {memberId && form.participantType === "WORKER" ? (
+        <Sheet gap>
+          <Row
+            title="用工资料"
+            sub="身份证、住址、紧急联系人、健康、保险、工资卡"
+            status={registration === null ? undefined : verificationLabel(registration)}
+            chevron
+            onClick={() =>
+              void Taro.navigateTo({
+                url: `/pages/person-registration/index?projectId=${encodeURIComponent(projectId)}&memberId=${encodeURIComponent(memberId)}`,
+              })
+            }
+          />
+        </Sheet>
+      ) : null}
 
       <SectionTitle>在本项目</SectionTitle>
       <Sheet>

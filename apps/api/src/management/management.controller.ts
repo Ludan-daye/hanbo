@@ -1,4 +1,4 @@
-import { Body, Controller, GoneException, Get, Inject, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, GoneException, Get, Header, Inject, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { GLOBAL_SCOPE_ID } from "@construction/domain/roles.js";
 
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
@@ -22,6 +22,9 @@ import { ParticipantsService } from "./participants.service.js";
 import { parseParticipantPage, parseParticipantWrite, parseReuseParticipant } from "./participants.parsers.js";
 import type { ReuseProjectResponse } from "./participants.types.js";
 import { TeamsService } from "./teams.service.js";
+import { parseRegistrationVerification } from "./registration-review.parsers.js";
+import { RegistrationReviewService } from "./registration-review.service.js";
+import type { MemberRegistrationResponse } from "./registration-review.types.js";
 import type { ManagedTeamResponse } from "./teams.types.js";
 import type { ManagedParticipantResponse, ParticipantPageResponse } from "./participants.types.js";
 import type { BindingInvitationListItem } from "./management-invitation.types.js";
@@ -43,7 +46,8 @@ export class ManagementController {
   constructor(
     @Inject(ManagementService) private readonly managementService: ManagementService,
     @Inject(ParticipantsService) private readonly participants: ParticipantsService,
-    @Inject(TeamsService) private readonly teams: TeamsService
+    @Inject(TeamsService) private readonly teams: TeamsService,
+    @Inject(RegistrationReviewService) private readonly registrations: RegistrationReviewService
   ) {}
 
   @Get("my-role-scopes")
@@ -113,6 +117,22 @@ export class ManagementController {
   @UseGuards(AccessTokenGuard, PermissionsGuard)
   async participant(@Param("projectId") projectId: string, @Param("memberId") memberId: string): Promise<ManagedParticipantResponse> {
     return this.participants.get(projectId, memberId);
+  }
+
+  @Get("projects/:projectId/participants/:memberId/registration")
+  @Header("Cache-Control", "no-store")
+  @RequirePermission({ permissionCode: "worker.sensitive.view", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async participantRegistration(@Param("projectId") projectId: string, @Param("memberId") memberId: string): Promise<MemberRegistrationResponse> {
+    return this.registrations.get(projectId, memberId);
+  }
+
+  @Post("projects/:projectId/participants/:memberId/registration/verification")
+  @Header("Cache-Control", "no-store")
+  @RequirePermission({ permissionCode: "worker.sensitive.view", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async verifyParticipantRegistration(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string, @Param("memberId") memberId: string, @Body() body: unknown): Promise<MemberRegistrationResponse> {
+    return this.registrations.verify(projectId, memberId, actor.userId, parseRegistrationVerification(body));
   }
 
   @Post("projects/:projectId/participants")

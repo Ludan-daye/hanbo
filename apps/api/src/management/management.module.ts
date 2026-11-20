@@ -7,12 +7,13 @@ import { PrismaModule } from "../infrastructure/database/prisma.module.js";
 import { ManagementController } from "./management.controller.js";
 import { ManagementService } from "./management.service.js";
 import { ParticipantsService } from "./participants.service.js";
+import { RegistrationReviewService } from "./registration-review.service.js";
 import { TeamsService } from "./teams.service.js";
 
 @Module({
   imports: [AuthModule, AuthorizationModule, PrismaModule],
   controllers: [ManagementController],
-  providers: [ManagementService, ParticipantsService, TeamsService],
+  providers: [ManagementService, ParticipantsService, RegistrationReviewService, TeamsService],
   exports: [ManagementService]
 })
 export class ManagementModule {}

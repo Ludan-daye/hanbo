@@ -521,5 +521,148 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         ).toMatchObject({ entityId: makeup.id, entityType: "makeup_request" });
       });
     });
+
+    describe("worker registration verification", (): void => {
+      const registration = {
+        idNumber: "320106199003071234",
+        residentialAddress: "测试市测试路 8 号",
+        emergencyContactName: "王测试",
+        emergencyContactPhone: "13900002001",
+        hasLongTermMedication: true,
+        medicationDetails: "高血压，每天服药",
+        hasPersonalInsurance: true,
+        insuranceDetails: "意外险，2027 年到期",
+        payrollBankCard: "6222020200112233445",
+      };
+      const path = () =>
+        `/management/projects/${projectId}/participants/${memberIds.get("w2")}/registration`;
+
+      test("only project admins and above in scope read it, unmasked", async (): Promise<void> => {
+        const empty = (
+          await http()
+            .get(path())
+            .auth(auth("admin"), { type: "bearer" })
+            .expect(200)
+        ).body;
+        expect(empty).toMatchObject({
+          registration: null,
+          submittedAt: null,
+          verification: { status: "PENDING", version: 0 },
+        });
+        await http()
+          .put("/account/worker-registration")
+          .auth(auth("w2"), { type: "bearer" })
+          .send(registration)
+          .expect(200);
+        const read = (
+          await http()
+            .get(path())
+            .auth(auth("admin"), { type: "bearer" })
+            .expect(200)
+        ).body;
+        expect(read.registration).toEqual(registration);
+        expect(read.displayName).toBe("工人w2");
+        expect(read.verification).toMatchObject({ status: "PENDING", version: 1 });
+        await http()
+          .get(path())
+          .auth(auth("leader"), { type: "bearer" })
+          .expect(403);
+        await http()
+          .get(
+            `/management/projects/${otherProjectId}/participants/${memberIds.get("w3")}/registration`,
+          )
+          .auth(auth("admin"), { type: "bearer" })
+          .expect(403);
+        // A member of another project is not reachable through this project.
+        await http()
+          .get(
+            `/management/projects/${projectId}/participants/${memberIds.get("w3")}/registration`,
+          )
+          .auth(auth("admin"), { type: "bearer" })
+          .expect(404);
+        await http()
+          .get(path())
+          .auth(auth("company"), { type: "bearer" })
+          .expect(200);
+      });
+
+      test("marks 已核实 or 需更正 with a version check and an audit row; resubmission resets it", async (): Promise<void> => {
+        const verify = (user: UserKey, body: object) =>
+          http()
+            .post(`${path()}/verification`)
+            .auth(auth(user), { type: "bearer" })
+            .send(body);
+        const before = await database.workerProfile.findUniqueOrThrow({
+          where: { id: workerIds.get("w2")! },
+        });
+        expect(
+          (await verify("admin", { status: "VERIFIED", expectedVersion: 1, note: "x" }).expect(400))
+            .body.message,
+        ).toBe("INVALID_REGISTRATION_VERIFICATION_REQUEST");
+        await verify("leader", { status: "VERIFIED", expectedVersion: 1 }).expect(403);
+        const verified = (
+          await verify("admin", { status: "VERIFIED", expectedVersion: 1 }).expect(201)
+        ).body;
+        expect(verified.verification).toMatchObject({
+          status: "VERIFIED",
+          verifiedByName: "测试admin",
+          version: 2,
+        });
+        expect(
+          (await verify("admin", { status: "NEEDS_UPDATE", expectedVersion: 1 }).expect(409))
+            .body.message,
+        ).toBe("REGISTRATION_CHANGED_RELOAD_BEFORE_SAVING");
+        const after = await database.workerProfile.findUniqueOrThrow({
+          where: { id: workerIds.get("w2")! },
+        });
+        expect(after.realNameStatus).toBe("VERIFIED");
+        // Marking is not a profile edit: open person forms keep their version.
+        expect(after.updatedAt.toISOString()).toBe(before.updatedAt.toISOString());
+        const audit = await database.auditLog.findFirstOrThrow({
+          where: { action: "WORKER_REGISTRATION_VERIFIED", entityId: after.id },
+        });
+        expect(audit).toMatchObject({ actorUserId: users.admin, projectId });
+        expect(audit.metadata).toMatchObject({ previousStatus: "PENDING", status: "VERIFIED" });
+        await verify("admin", { status: "NEEDS_UPDATE", expectedVersion: 2 }).expect(201);
+        await http()
+          .put("/account/worker-registration")
+          .auth(auth("w2"), { type: "bearer" })
+          .send({ ...registration, residentialAddress: "测试市新路 9 号" })
+          .expect(200);
+        const reset = (
+          await http().get(path()).auth(auth("admin"), { type: "bearer" }).expect(200)
+        ).body;
+        expect(reset.verification).toMatchObject({
+          status: "PENDING",
+          verifiedAt: null,
+          verifiedByName: null,
+          version: 4,
+        });
+        // Nobody marks their own registration.
+        await database.userRole.create({
+          data: {
+            userId: users.w1,
+            roleId: (await database.role.findUniqueOrThrow({ where: { code: "PROJECT_ADMIN" } })).id,
+            scopeType: "PROJECT",
+            scopeId: projectId,
+          },
+        });
+        await database.workerProfile.update({
+          where: { id: workerIds.get("w1")! },
+          data: { registrationCompletedAt: new Date() },
+        });
+        expect(
+          (
+            await http()
+              .post(
+                `/management/projects/${projectId}/participants/${memberIds.get("w1")}/registration/verification`,
+              )
+              .auth(auth("w1"), { type: "bearer" })
+              .send({ status: "VERIFIED", expectedVersion: 0 })
+              .expect(403)
+          ).body.message,
+        ).toBe("REGISTRATION_SELF_VERIFY_FORBIDDEN");
+      });
+    });
   },
 );

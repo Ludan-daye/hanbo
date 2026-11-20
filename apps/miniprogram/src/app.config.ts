@@ -39,6 +39,7 @@ export default defineAppConfig({
     "pages/face-profile/index",
     "pages/face-review/index",
     "pages/person-form/index",
+    "pages/person-registration/index",
     "pages/project-detail/index",
     "pages/team-detail/index",
     "pages/person-reuse/index",

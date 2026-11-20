@@ -152,6 +152,11 @@ model WorkerProfile {
   encryptedInsuranceDetails String?
   encryptedPayrollBankCard String?
   registrationCompletedAt DateTime?
+  /// When and by whom a project admin last marked the registration VERIFIED or NEEDS_UPDATE (status in realNameStatus).
+  registrationVerifiedAt DateTime?
+  registrationVerifiedByUserId String?
+  /// Bumped by every submission and verification; guards concurrent verification.
+  registrationVersion Int @default(0)
   remark                String?
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt

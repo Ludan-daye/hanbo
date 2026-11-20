@@ -105,6 +105,11 @@ export class WorkerRegistrationService {
               : null,
             encryptedPayrollBankCard: encrypt(value.payrollBankCard),
             registrationCompletedAt: new Date(),
+            // New details need checking again.
+            realNameStatus: "PENDING",
+            registrationVerifiedAt: null,
+            registrationVerifiedByUserId: null,
+            registrationVersion: { increment: 1 },
           },
         });
         await transaction.auditLog.create({

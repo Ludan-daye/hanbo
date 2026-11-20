@@ -1,4 +1,10 @@
 export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  REGISTRATION_SELF_VERIFY_FORBIDDEN: "不能核实自己的用工资料，请其他管理员办理。",
+  REGISTRATION_NOT_SUBMITTED: "他还没填用工登记，不能核实。",
+  REGISTRATION_CHANGED_RELOAD_BEFORE_SAVING:
+    "资料刚有变化，请返回后重新打开再核实。",
+  REGISTRATION_ONLY_FOR_WORKERS: "管理人员没有用工登记。",
+  INVALID_REGISTRATION_VERIFICATION_REQUEST: "核实请求不完整，请重新打开再试。",
   MANAGEMENT_ASSIGNMENT_REQUIRES_HIGHER_ROLE:
     "项目管理员的任免和调整要由公司管理员办理。",
   INVALID_OVERVIEW_QUERY: "日期不对，请返回首页重新打开。",

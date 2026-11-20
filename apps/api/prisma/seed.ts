@@ -46,7 +46,8 @@ const permissionSeeds: readonly PermissionSeed[] = [
   { code: "project.manage", name: "Manage projects" },
   { code: "system.manage", name: "Manage system configuration" },
   { code: "team.manage", name: "Manage teams" },
-  { code: "worker.manage", name: "Manage worker profiles" }
+  { code: "worker.manage", name: "Manage worker profiles" },
+  { code: "worker.sensitive.view", name: "View worker registration details" }
 ];
 
 const rolePermissionSeeds: readonly RolePermissionSeed[] = [
@@ -60,6 +61,7 @@ const rolePermissionSeeds: readonly RolePermissionSeed[] = [
   { permissionCode: "project.manage", roleCode: "PROJECT_ADMIN" },
   { permissionCode: "team.manage", roleCode: "PROJECT_ADMIN" },
   { permissionCode: "worker.manage", roleCode: "PROJECT_ADMIN" },
+  { permissionCode: "worker.sensitive.view", roleCode: "PROJECT_ADMIN" },
   { permissionCode: "attendance.view", roleCode: "TEAM_LEADER" },
   { permissionCode: "makeup.approve", roleCode: "TEAM_LEADER" },
   { permissionCode: "attendance.submit", roleCode: "WORKER" },

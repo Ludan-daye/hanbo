@@ -209,6 +209,61 @@ const canManageDemoProject = (
         )),
   );
 };
+/** 管理员看工人的用工登记原文并标记核实（与服务端同口径）。 */
+const demoMemberRegistration = (
+  state: DemoState,
+  userId: string,
+  projectId: string,
+  memberId: string,
+  action: string | undefined,
+  method: string,
+  data: unknown,
+): DemoResponse => {
+  const person = state.people.find((row) => row.projectId === projectId && row.memberId === memberId);
+  if (!person) throw new ApiError(404, "成员不存在。", { memberId });
+  if (person.participantType !== "WORKER") throw new ApiError(400, "管理人员没有用工登记。", { memberId });
+  const registration = state.workerRegistrations?.[person.profileId] ?? null;
+  const read = (current: DemoState): unknown => {
+    const review = current.registrationReviews?.[person.profileId];
+    return {
+      displayName: person.displayName,
+      memberId,
+      phone: person.phone,
+      registration,
+      submittedAt: registration === null ? null : (review?.submittedAt ?? person.updatedAt),
+      verification: {
+        status: review?.status ?? "PENDING",
+        verifiedAt: review?.verifiedAt ?? null,
+        verifiedByName: review?.verifiedByName ?? null,
+        version: review?.version ?? 0,
+      },
+    };
+  };
+  if (method === "GET" && action === undefined) return response(state, read(state));
+  if (method !== "POST" || action !== "verification") throw new ApiError(405, "用工资料接口不支持此操作。", { memberId });
+  const body = data as { readonly status?: unknown; readonly expectedVersion?: unknown };
+  if ((body.status !== "VERIFIED" && body.status !== "NEEDS_UPDATE") || typeof body.expectedVersion !== "number")
+    throw new ApiError(400, "INVALID_REGISTRATION_VERIFICATION_REQUEST", {});
+  const me = demoMe(state, userId);
+  if (me.profile.id === person.profileId) throw new ApiError(403, "不能核实自己的用工资料。", {});
+  if (registration === null) throw new ApiError(409, "他还没填用工登记，不能核实。", {});
+  const review = state.registrationReviews?.[person.profileId];
+  if ((review?.version ?? 0) !== body.expectedVersion) throw new ApiError(409, "资料刚有变化，请重新打开再核实。", {});
+  const next: DemoState = {
+    ...state,
+    registrationReviews: {
+      ...state.registrationReviews,
+      [person.profileId]: {
+        status: body.status,
+        submittedAt: review?.submittedAt ?? person.updatedAt,
+        verifiedAt: new Date().toISOString(),
+        verifiedByName: state.accountProfiles?.[userId]?.realName ?? "管理员",
+        version: (review?.version ?? 0) + 1,
+      },
+    },
+  };
+  return response(next, read(next));
+};
 /** 和服务端一样：只有公司管理员及以上能任免、调整项目管理员。 */
 const assertDemoPeerGrant = (
   state: DemoState,
@@ -413,7 +468,16 @@ const routeDemo = (
     const previous: WorkerRegistration | undefined = state.workerRegistrations?.[profileId];
     if (previous && previous.idNumber !== value.idNumber) throw new ApiError(409, "身份证号与已有档案不一致，请联系管理员核实。", { path });
     if (Object.entries(state.workerRegistrations ?? {}).some(([id, item]) => id !== profileId && item.idNumber === value.idNumber)) throw new ApiError(409, "该身份证号已有人员档案。", { path });
-    const updated: DemoState = { ...state, workerRegistrations: { ...state.workerRegistrations, [profileId]: value } };
+    // 资料改了要重新核实，和服务端一样回到待核实。
+    const review = state.registrationReviews?.[profileId];
+    const updated: DemoState = {
+      ...state,
+      workerRegistrations: { ...state.workerRegistrations, [profileId]: value },
+      registrationReviews: {
+        ...state.registrationReviews,
+        [profileId]: { status: "PENDING", submittedAt: new Date().toISOString(), verifiedAt: null, verifiedByName: null, version: (review?.version ?? 0) + 1 },
+      },
+    };
     return routeDemo(updated, userId, "/account/profile", { method: "GET" });
   }
   if (path === "/management/my-role-scopes") return response(state, me.roles.assignments.map((assignment): WorkRoleScope => {
@@ -972,6 +1036,8 @@ const routeDemo = (
           total: rows.length,
         });
       }
+      if (resource === "participants" && parts[5] === "registration")
+        return demoMemberRegistration(state, userId, scopeId, parts[4], parts[6], method, options.data);
       if (resource === "participants") {
         if (method === "GET") {
           if (parts[4]) {
