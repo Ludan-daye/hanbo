@@ -9,6 +9,7 @@ import {
   ReportFilterRows,
   ReportPeople,
   ReportProjects,
+  ReportTeamFilterRows,
   filterReportRows,
   personName,
   reportClipboardText,
@@ -34,7 +35,15 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { errorMessage } from "../../services/error-messages";
-import type { DailyReport, RangeReport } from "../../services/management.types";
+import {
+  NO_REPORT_TEAM_FILTER,
+  type ReportTeamFilter,
+} from "../../services/management";
+import type {
+  DailyReport,
+  RangeReport,
+  ReportTeamOption,
+} from "../../services/management.types";
 import type { ExportScope } from "../../services/report-exports";
 import { mondayForDate } from "../../services/time";
 
@@ -43,6 +52,7 @@ import {
   groupReportProjects,
   monthLabel,
   rangeLabel,
+  reportExportTarget,
   reportNumbers,
   reportSummary,
   shiftDate,
@@ -95,6 +105,9 @@ export const ReportView = ({
   onWeekStart,
   onMonth,
   onRefresh,
+  teamOptions,
+  teamFilter = NO_REPORT_TEAM_FILTER,
+  onTeamFilter,
 }: {
   readonly title: string;
   /** 月度 Excel 归谁。 */
@@ -115,7 +128,16 @@ export const ReportView = ({
   readonly onWeekStart: (value: string) => void;
   readonly onMonth: (value: string) => void;
   readonly onRefresh: () => void;
+  /**
+   * 项目、公司报表：可按班组或组长筛（服务端筛）。没读到时为 null，不显示筛选；
+   * 班组考勤不传。
+   */
+  readonly teamOptions?: readonly ReportTeamOption[] | null;
+  readonly teamFilter?: ReportTeamFilter;
+  readonly onTeamFilter?: (filter: ReportTeamFilter) => void;
 }): JSX.Element => {
+  // 服务端按班组筛的报表，页面里不再给“班组”本地筛选。
+  const serverTeams = teamOptions !== undefined;
   const [filters, setFilters] = useState<ReportFilters>(INITIAL_REPORT_FILTERS);
   const [allStats, setAllStats] = useState<boolean>(false);
   // 公司报表里点进了哪个项目。
@@ -190,7 +212,7 @@ export const ReportView = ({
       from: report.startDate,
       to: report.endDate,
       period,
-      teamId: teamId ?? (filters.team || null),
+      teamId: teamId ?? teamFilter.teamId ?? (filters.team || null),
       rows: group.rows,
     };
     enter(() => setPerson(opened));
@@ -249,7 +271,7 @@ export const ReportView = ({
       <>
         <ReportFilterRows
           filters={filters}
-          teams={teamId === null ? reportTeams(source) : []}
+          teams={teamId === null && !serverTeams ? reportTeams(source) : []}
           showType={
             filters.type !== "ALL" ||
             new Set(source.map((row) => row.participantType)).size > 1
@@ -353,14 +375,19 @@ export const ReportView = ({
           period,
           byProject ? groupReportProjects(all).length : null,
         );
+  const exportTarget = reportExportTarget(scope, scopeId, teamFilter);
   const excel =
     period === "MONTHLY" && report !== null ? (
-      <MonthlyExport
-        key={`${scopeId}:${month}`}
-        scope={scope}
-        scopeId={scopeId}
-        month={month}
-      />
+      exportTarget === null ? (
+        <Notice>按组长筛的结果不单独导出 Excel。要导出请改选班组。</Notice>
+      ) : (
+        <MonthlyExport
+          key={`${exportTarget.scope}:${exportTarget.scopeId}:${month}`}
+          scope={exportTarget.scope}
+          scopeId={exportTarget.scopeId}
+          month={month}
+        />
+      )
     ) : null;
   return (
     <Screen header={<PageHeader title={title} />}>
@@ -417,6 +444,14 @@ export const ReportView = ({
         />
       )}
 
+      {teamOptions && onTeamFilter ? (
+        <ReportTeamFilterRows
+          teams={teamOptions}
+          filter={teamFilter}
+          withProject={Boolean(byProject)}
+          onChange={(next) => changeRange(() => onTeamFilter(next))}
+        />
+      ) : null}
       {error !== null ? (
         <StateView
           kind="error"

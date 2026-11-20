@@ -6,11 +6,18 @@ import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { errorMessage } from "../../services/error-messages";
 import {
+  NO_REPORT_TEAM_FILTER,
+  fetchReportTeamOptions,
+  type ReportTeamFilter,
   fetchDailyReport,
   fetchMonthlyReport,
   fetchWeeklyReport,
 } from "../../services/management";
-import type { DailyReport, RangeReport } from "../../services/management.types";
+import type {
+  DailyReport,
+  RangeReport,
+  ReportTeamOption,
+} from "../../services/management.types";
 import { chinaMonday, chinaMonth, chinaToday } from "../../services/time";
 import { useSession } from "../../store/session";
 
@@ -30,6 +37,31 @@ export default function Reports(): JSX.Element {
   const [month, setMonth] = useState<string>(chinaMonth());
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [teamFilter, setTeamFilter] = useState<ReportTeamFilter>(
+    NO_REPORT_TEAM_FILTER,
+  );
+  const [teamOptions, setTeamOptions] = useState<
+    readonly ReportTeamOption[] | null
+  >(null);
+
+  // 班组和组长的选项读不到也不挡报表：只是不显示筛选。
+  useEffect(() => {
+    if (projectId === null) return;
+    let cancelled = false;
+    setTeamOptions(null);
+    setTeamFilter(NO_REPORT_TEAM_FILTER);
+    fetchReportTeamOptions("PROJECT", projectId).then(
+      (rows) => {
+        if (!cancelled) setTeamOptions(rows);
+      },
+      () => {
+        if (!cancelled) setTeamOptions(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   useEffect(() => {
     if (projectId === null) {
@@ -42,10 +74,10 @@ export default function Reports(): JSX.Element {
       try {
         const data =
           period === "DAILY"
-            ? await fetchDailyReport(projectId, date)
+            ? await fetchDailyReport(projectId, date, teamFilter)
             : period === "WEEKLY"
-              ? await fetchWeeklyReport(projectId, weekStart)
-              : await fetchMonthlyReport(projectId, month);
+              ? await fetchWeeklyReport(projectId, weekStart, teamFilter)
+              : await fetchMonthlyReport(projectId, month, teamFilter);
         if (!cancelled) {
           setReport(data);
         }
@@ -58,7 +90,7 @@ export default function Reports(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [projectId, period, date, weekStart, month, revision]);
+  }, [projectId, period, date, weekStart, month, teamFilter, revision]);
 
   if (projectId === null) {
     return (
@@ -89,6 +121,9 @@ export default function Reports(): JSX.Element {
       onWeekStart={setWeekStart}
       onMonth={setMonth}
       onRefresh={refresh}
+      teamOptions={teamOptions}
+      teamFilter={teamFilter}
+      onTeamFilter={setTeamFilter}
     />
   );
 }

@@ -299,7 +299,7 @@ export const demoReport = (
   period: string,
   start: string,
   end: string,
-  teamId: string | null,
+  teamIds: readonly string[] | null,
 ): DailyReport | RangeReport => {
   const dates: readonly string[] = Array.from(
     {
@@ -321,7 +321,7 @@ export const demoReport = (
       ...new Set(dates.map((date) => demoMemberOn(state, person, date).teamId)),
     ];
     return teamIds
-      .filter((id) => teamId === null || id === teamId)
+      .filter((id) => teamIds === null || (id !== null && teamIds.includes(id)))
       .map((id) => ({ person, id }));
   });
   const participants = scoped
@@ -417,8 +417,8 @@ export const demoReport = (
         participants: people
           .filter(
             (person) =>
-              (teamId === null ||
-                demoMemberOn(state, person, start).teamId === teamId) &&
+              (teamIds === null ||
+                teamIds.includes(demoMemberOn(state, person, start).teamId ?? "")) &&
               start <= chinaToday() &&
               demoMemberEligible(demoMemberOn(state, person, start), start),
           )

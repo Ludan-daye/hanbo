@@ -743,7 +743,7 @@ export const demoTeamWorkRequest = (
       "DAILY",
       day,
       day,
-      teamId,
+      [teamId],
     ) as DailyReport;
     const briefings = work.briefings.filter(
       (row) => row.teamId === teamId && row.workDate === day,

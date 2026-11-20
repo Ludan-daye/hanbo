@@ -99,7 +99,20 @@ export type ReportParticipantBase = {
   readonly requiresAttendance: boolean;
   readonly teamId: string | null;
   readonly teamName: string | null;
+  /** 这个人所在班组现在的组长。 */
+  readonly teamLeaderName?: string | null;
   readonly workType: string | null;
+};
+
+/** 报表筛选里的一个班组，带上它现在的组长。 */
+export type ReportTeamOption = {
+  readonly teamId: string;
+  readonly teamName: string;
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly status: string;
+  readonly leaderMemberId: string | null;
+  readonly leaderName: string | null;
 };
 
 export type DailyReportParticipant = ReportParticipantBase & {

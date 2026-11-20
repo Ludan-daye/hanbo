@@ -1780,6 +1780,31 @@ const routeDemo = (
       ),
     );
   }
+  if (parts[0] === "reports" && parts[3] === "team-options") {
+    const projectIds = state.projects
+      .filter((p) =>
+        parts[1] === "projects" ? p.id === parts[2] : p.companyId === parts[2],
+      )
+      .map((p) => p.id);
+    return response(
+      state,
+      state.teams
+        .filter((team) => projectIds.includes(team.projectId))
+        .map((team) => {
+          const leader = managedDemoTeam(state, team).leader;
+          return {
+            teamId: team.id,
+            teamName: team.name,
+            projectId: team.projectId,
+            projectName:
+              state.projects.find((p) => p.id === team.projectId)?.name ?? "",
+            status: team.status,
+            leaderMemberId: leader?.memberId ?? null,
+            leaderName: leader?.displayName ?? null,
+          };
+        }),
+    );
+  }
   if (parts[0] === "reports") {
     const scopeId = parts[2];
     const people = state.people.filter((row) =>
@@ -1806,18 +1831,69 @@ const routeDemo = (
               .toISOString()
               .slice(0, 10)
           : start;
-    return response(
-      state,
-      demoReport(
-        state,
-        people,
-        scopeId,
-        parts[3],
-        start,
-        end,
-        parts[1] === "teams" ? scopeId : null,
-      ),
+    const scopeProjects = new Set(people.map((row) => row.projectId));
+    const scopeTeams = state.teams.filter((team) =>
+      parts[1] === "teams"
+        ? team.id === scopeId
+        : parts[1] === "projects"
+          ? team.projectId === scopeId
+          : state.projects.some(
+              (p) => p.id === team.projectId && p.companyId === scopeId,
+            ),
     );
+    if (query.teamId !== undefined && query.leaderMemberId !== undefined)
+      throw new ApiError(400, "INVALID_REPORT_TEAM_FILTER", {});
+    if (
+      query.teamId !== undefined &&
+      !scopeTeams.some((team) => team.id === query.teamId)
+    )
+      throw new ApiError(400, "REPORT_TEAM_OUT_OF_SCOPE", {});
+    if (
+      query.leaderMemberId !== undefined &&
+      !state.people.some(
+        (row) =>
+          row.memberId === query.leaderMemberId &&
+          scopeProjects.has(row.projectId),
+      )
+    )
+      throw new ApiError(400, "REPORT_LEADER_OUT_OF_SCOPE", {});
+    const teamIds =
+      parts[1] === "teams"
+        ? [scopeId]
+        : query.teamId !== undefined
+          ? [query.teamId]
+          : query.leaderMemberId !== undefined
+            ? scopeTeams
+                .filter(
+                  (team) =>
+                    managedDemoTeam(state, team).leader?.memberId ===
+                    query.leaderMemberId,
+                )
+                .map((team) => team.id)
+            : null;
+    const leaders = new Map(
+      state.teams.map((team) => [
+        team.id,
+        managedDemoTeam(state, team).leader?.displayName ?? null,
+      ]),
+    );
+    const built = demoReport(
+      state,
+      people,
+      scopeId,
+      parts[3],
+      start,
+      end,
+      teamIds,
+    );
+    return response(state, {
+      ...built,
+      participants: built.participants.map((row) => ({
+        ...row,
+        teamLeaderName:
+          row.teamId === null ? null : (leaders.get(row.teamId) ?? null),
+      })),
+    });
   }
   if (parts[0] === "face-profiles") {
     if (parts[1] === "me")

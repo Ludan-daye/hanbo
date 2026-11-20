@@ -19,7 +19,12 @@ import {
   type ScheduledAttendancePoint,
 } from "@construction/domain/attendance.js";
 import { ROLE_LEVEL } from "@construction/domain/roles.js";
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import {
   loadPlanningData,
   resolveAttendancePlan,
@@ -36,6 +41,11 @@ import type { ApiEnv } from "../config/env.js";
 import { decryptPersonnelName } from "../management/personnel-name.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import { evaluationView } from "./project-evaluations.service.js";
+import {
+  NO_TEAM_FILTER,
+  type ReportTeamFilter,
+  type ReportTeamOption,
+} from "./reports.types.js";
 import type {
   ReportPersonDetail,
   AttendanceReportParticipantBase,
@@ -48,7 +58,11 @@ import type {
 
 type ReportMember = Omit<
   AttendanceReportParticipantBase,
-  "projectKind" | "isTemporary" | "safetyCreditScore" | "safetyCreditAsOf"
+  | "projectKind"
+  | "isTemporary"
+  | "safetyCreditScore"
+  | "safetyCreditAsOf"
+  | "teamLeaderName"
 > &
   MemberState & {
     readonly userId: string | null;
@@ -305,19 +319,27 @@ export class ReportsService {
   async getDailyReport(
     projectId: string,
     date: string,
+    filter: ReportTeamFilter = NO_TEAM_FILTER,
   ): Promise<DailyAttendanceReportResponse> {
     await this.requireProject(projectId);
-    return this.daily(projectId, [projectId], null, null, date);
+    return this.daily(
+      projectId,
+      [projectId],
+      await this.filteredTeams([projectId], filter),
+      null,
+      date,
+    );
   }
   async getWeeklyReport(
     projectId: string,
     date: string,
+    filter: ReportTeamFilter = NO_TEAM_FILTER,
   ): Promise<RangeAttendanceReportResponse> {
     await this.requireProject(projectId);
     return this.range(
       projectId,
       [projectId],
-      null,
+      await this.filteredTeams([projectId], filter),
       "WEEKLY",
       dateOnlyToDate(date),
       addDays(dateOnlyToDate(date), 6),
@@ -326,12 +348,13 @@ export class ReportsService {
   async getMonthlyReport(
     projectId: string,
     month: string,
+    filter: ReportTeamFilter = NO_TEAM_FILTER,
   ): Promise<RangeAttendanceReportResponse> {
     await this.requireProject(projectId);
     return this.range(
       projectId,
       [projectId],
-      null,
+      await this.filteredTeams([projectId], filter),
       "MONTHLY",
       getMonthStartDate(month),
       getMonthEndDate(month),
@@ -342,7 +365,7 @@ export class ReportsService {
     date: string,
   ): Promise<DailyAttendanceReportResponse> {
     const projectId = await this.teamProject(teamId);
-    return this.daily(projectId, [projectId], teamId, null, date);
+    return this.daily(projectId, [projectId], [teamId], null, date);
   }
   async getTeamWeeklyReport(
     teamId: string,
@@ -352,7 +375,7 @@ export class ReportsService {
     return this.range(
       projectId,
       [projectId],
-      teamId,
+      [teamId],
       "WEEKLY",
       dateOnlyToDate(date),
       addDays(dateOnlyToDate(date), 6),
@@ -366,7 +389,7 @@ export class ReportsService {
     return this.range(
       projectId,
       [projectId],
-      teamId,
+      [teamId],
       "MONTHLY",
       getMonthStartDate(month),
       getMonthEndDate(month),
@@ -375,11 +398,13 @@ export class ReportsService {
   async getCompanyDailyReport(
     companyId: string,
     date: string,
+    filter: ReportTeamFilter = NO_TEAM_FILTER,
   ): Promise<DailyAttendanceReportResponse> {
+    const projects = await this.companyProjects(companyId);
     return this.daily(
       companyId,
-      await this.companyProjects(companyId),
-      null,
+      projects,
+      await this.filteredTeams(projects, filter),
       null,
       date,
     );
@@ -387,11 +412,13 @@ export class ReportsService {
   async getCompanyWeeklyReport(
     companyId: string,
     date: string,
+    filter: ReportTeamFilter = NO_TEAM_FILTER,
   ): Promise<RangeAttendanceReportResponse> {
+    const projects = await this.companyProjects(companyId);
     return this.range(
       companyId,
-      await this.companyProjects(companyId),
-      null,
+      projects,
+      await this.filteredTeams(projects, filter),
       "WEEKLY",
       dateOnlyToDate(date),
       addDays(dateOnlyToDate(date), 6),
@@ -400,11 +427,13 @@ export class ReportsService {
   async getCompanyMonthlyReport(
     companyId: string,
     month: string,
+    filter: ReportTeamFilter = NO_TEAM_FILTER,
   ): Promise<RangeAttendanceReportResponse> {
+    const projects = await this.companyProjects(companyId);
     return this.range(
       companyId,
-      await this.companyProjects(companyId),
-      null,
+      projects,
+      await this.filteredTeams(projects, filter),
       "MONTHLY",
       getMonthStartDate(month),
       getMonthEndDate(month),
@@ -446,7 +475,7 @@ export class ReportsService {
         const rows = await this.days(
           database,
           [projectId],
-          teamId,
+          teamId === null ? null : [teamId],
           null,
           dateOnlyToDate(from),
           dateOnlyToDate(to),
@@ -538,6 +567,113 @@ export class ReportsService {
       { isolationLevel: "RepeatableRead", timeout: 30000 },
     );
   }
+  /** Teams in scope a report may filter on, with each team's current leader. */
+  async teamOptions(
+    projectIds: readonly string[],
+  ): Promise<readonly ReportTeamOption[]> {
+    const teams = await this.prisma.team.findMany({
+      where: { projectId: { in: [...projectIds] } },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        projectId: true,
+        project: { select: { name: true } },
+        leaderWorkerMemberId: true,
+        leaderManagerMemberId: true,
+        leaderWorkerMember: {
+          select: { worker: { select: { encryptedName: true } } },
+        },
+        leaderManagerMember: {
+          select: { manager: { select: { name: true } } },
+        },
+      },
+      orderBy: [{ projectId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
+    return teams.map((team) => ({
+      leaderMemberId: team.leaderWorkerMemberId ?? team.leaderManagerMemberId,
+      leaderName: this.leaderName(team),
+      projectId: team.projectId,
+      projectName: team.project.name,
+      status: team.status,
+      teamId: team.id,
+      teamName: team.name,
+    }));
+  }
+  async projectTeamOptions(
+    projectId: string,
+  ): Promise<readonly ReportTeamOption[]> {
+    await this.requireProject(projectId);
+    return this.teamOptions([projectId]);
+  }
+  async companyTeamOptions(
+    companyId: string,
+  ): Promise<readonly ReportTeamOption[]> {
+    return this.teamOptions(await this.companyProjects(companyId));
+  }
+  private leaderName(team: {
+    readonly leaderWorkerMember?: {
+      readonly worker: { readonly encryptedName: string };
+    } | null;
+    readonly leaderManagerMember?: {
+      readonly manager: { readonly name: string | null };
+    } | null;
+  }): string | null {
+    const encrypted = team.leaderWorkerMember?.worker.encryptedName;
+    if (encrypted !== undefined)
+      return encrypted.startsWith("name-v1:")
+        ? decryptPersonnelName(encrypted, this.env.PERSONNEL_ENCRYPTION_KEY)
+        : null;
+    return team.leaderManagerMember?.manager.name ?? null;
+  }
+  /**
+   * Resolves a team or 组长 filter to the team ids a report keeps, or null for
+   * no filter. A leader resolves to the teams that member leads now.
+   */
+  private async filteredTeams(
+    projectIds: readonly string[],
+    filter: ReportTeamFilter,
+  ): Promise<readonly string[] | null> {
+    if (filter.teamId !== null) {
+      const team = await this.prisma.team.findUnique({
+        where: { id: filter.teamId },
+        select: { projectId: true },
+      });
+      if (team === null || !projectIds.includes(team.projectId))
+        throw new BadRequestException({
+          message: "REPORT_TEAM_OUT_OF_SCOPE",
+          teamId: filter.teamId,
+        });
+      return [filter.teamId];
+    }
+    if (filter.leaderMemberId !== null) {
+      const id = filter.leaderMemberId;
+      const [worker, manager] = await Promise.all([
+        this.prisma.projectWorkerMember.findFirst({
+          where: { id, projectId: { in: [...projectIds] } },
+          select: { id: true },
+        }),
+        this.prisma.projectManagerMember.findFirst({
+          where: { id, projectId: { in: [...projectIds] } },
+          select: { id: true },
+        }),
+      ]);
+      if (worker === null && manager === null)
+        throw new BadRequestException({
+          message: "REPORT_LEADER_OUT_OF_SCOPE",
+          leaderMemberId: id,
+        });
+      const teams = await this.prisma.team.findMany({
+        where: {
+          projectId: { in: [...projectIds] },
+          OR: [{ leaderWorkerMemberId: id }, { leaderManagerMemberId: id }],
+        },
+        select: { id: true },
+      });
+      return teams.map((team) => team.id);
+    }
+    return null;
+  }
   private async requireProject(projectId: string): Promise<void> {
     if (
       (await this.prisma.project.findUnique({ where: { id: projectId } })) ===
@@ -573,14 +709,14 @@ export class ReportsService {
   private async daily(
     reportId: string,
     projects: readonly string[],
-    teamId: string | null,
+    teamIds: readonly string[] | null,
     userId: string | null,
     date: string,
   ): Promise<DailyAttendanceReportResponse> {
     const rows = await this.days(
       this.prisma,
       projects,
-      teamId,
+      teamIds,
       userId,
       dateOnlyToDate(date),
       dateOnlyToDate(date),
@@ -604,7 +740,7 @@ export class ReportsService {
   private async range(
     reportId: string,
     projects: readonly string[],
-    teamId: string | null,
+    teamIds: readonly string[] | null,
     periodType: "WEEKLY" | "MONTHLY",
     start: Date,
     end: Date,
@@ -612,7 +748,7 @@ export class ReportsService {
     const rows = await this.days(
       this.prisma,
       projects,
-      teamId,
+      teamIds,
       null,
       start,
       end,
@@ -641,7 +777,7 @@ export class ReportsService {
         const rows = await this.days(
           transaction,
           projectIds,
-          teamId,
+          teamId === null ? null : [teamId],
           null,
           start,
           end,
@@ -690,7 +826,7 @@ export class ReportsService {
     database: Prisma.TransactionClient,
     projectIds: readonly string[],
     userId: string | null,
-    teamId: string | null,
+    teamIds: readonly string[] | null,
     memberId: string | null,
   ): Promise<readonly ReportMember[]> {
     const where = {
@@ -702,9 +838,14 @@ export class ReportsService {
         where: {
           ...where,
           ...(userId === null ? {} : { worker: { userId } }),
-          ...(teamId === null
+          ...(teamIds === null
             ? {}
-            : { OR: [{ teamId }, { history: { some: { teamId } } }] }),
+            : {
+                OR: [
+                  { teamId: { in: [...teamIds] } },
+                  { history: { some: { teamId: { in: [...teamIds] } } } },
+                ],
+              }),
         },
         include: {
           worker: true,
@@ -720,12 +861,12 @@ export class ReportsService {
         where: {
           ...where,
           ...(userId === null ? {} : { manager: { userId } }),
-          ...(teamId === null
+          ...(teamIds === null
             ? {}
             : {
                 OR: [
-                  { teamScopeId: teamId },
-                  { history: { some: { teamId } } },
+                  { teamScopeId: { in: [...teamIds] } },
+                  { history: { some: { teamId: { in: [...teamIds] } } } },
                 ],
               }),
         },
@@ -804,7 +945,7 @@ export class ReportsService {
   private async days(
     database: Prisma.TransactionClient,
     projectIds: readonly string[],
-    teamId: string | null,
+    teamIds: readonly string[] | null,
     userId: string | null,
     start: Date,
     end: Date,
@@ -815,7 +956,7 @@ export class ReportsService {
       database,
       projectIds,
       userId,
-      teamId,
+      teamIds,
       memberId,
     );
     if (members.length === 0) return [];
@@ -858,7 +999,16 @@ export class ReportsService {
       database.attendanceResult.findMany({ where }),
       database.team.findMany({
         where: { projectId: { in: ids } },
-        select: { id: true, name: true },
+        select: {
+          id: true,
+          name: true,
+          leaderWorkerMember: {
+            select: { worker: { select: { encryptedName: true } } },
+          },
+          leaderManagerMember: {
+            select: { manager: { select: { name: true } } },
+          },
+        },
       }),
       this.worktime.rulesForProjectsIn(database, ids),
       this.safety.summariesIn(database, workerIds, asOf, now),
@@ -910,6 +1060,9 @@ export class ReportsService {
             include: { task: true },
           });
     const names = new Map(teams.map((t) => [t.id, t.name]));
+    const leaders = new Map(
+      teams.map((t) => [t.id, this.leaderName(t)] as const),
+    );
     const inputs = new Map<string, readonly ReportEvidence[]>();
     for (const record of records) {
       const key = createResultKey(
@@ -1024,7 +1177,11 @@ export class ReportsService {
       for (const date of dates) {
         const text = toDateOnly(date);
         const state = memberStateOn(member, data.histories, text);
-        if (teamId !== null && state.teamId !== teamId) continue;
+        if (
+          teamIds !== null &&
+          (state.teamId === null || !teamIds.includes(state.teamId))
+        )
+          continue;
         const key = createResultKey(
           member.projectId,
           member.participantType,
@@ -1142,6 +1299,8 @@ export class ReportsService {
           teamId: state.teamId,
           teamName:
             state.teamId === null ? null : (names.get(state.teamId) ?? null),
+          teamLeaderName:
+            state.teamId === null ? null : (leaders.get(state.teamId) ?? null),
           memberStatus: state.status,
           requiresAttendance: state.requiresAttendance,
           projectRoleLabel: state.projectRoleLabel,

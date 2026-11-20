@@ -1,4 +1,7 @@
 export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  INVALID_REPORT_TEAM_FILTER: "班组和组长只能选一个，请重新选择。",
+  REPORT_TEAM_OUT_OF_SCOPE: "这个班组不在当前报表范围里，请重新选择。",
+  REPORT_LEADER_OUT_OF_SCOPE: "这个组长不在当前报表范围里，请重新选择。",
   TASK_ASSIGNMENT_NOT_FOUND: "这项任务里没有这个人，请刷新。",
   TASK_START_REMINDER_NOT_APPLICABLE: "他已经开工、完工或退场，或者任务已结束，不用再提醒。",
   TASK_START_REMINDER_TOO_EARLY: "任务还没到开始时间，到点后再看他有没有开工。",

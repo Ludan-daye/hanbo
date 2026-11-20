@@ -608,6 +608,7 @@ describe("ReportsModule", (): void => {
           requiresAttendance: true,
           teamId: "team-1",
           teamName: "Steel Team",
+          teamLeaderName: null,
           workType: "Steel",
           workedMinutes: 480,
           normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: 480, confirmedViolationCount: 0
@@ -634,6 +635,7 @@ describe("ReportsModule", (): void => {
           requiresAttendance: true,
           teamId: "team-1",
           teamName: "Steel Team",
+          teamLeaderName: null,
           workType: "Woodwork",
           workedMinutes: 0,
           normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: 0, confirmedViolationCount: 0
@@ -660,6 +662,7 @@ describe("ReportsModule", (): void => {
           requiresAttendance: true,
           teamId: "team-1",
           teamName: "Steel Team",
+          teamLeaderName: null,
           workType: null,
           workedMinutes: 515,
           normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: 515, confirmedViolationCount: 0

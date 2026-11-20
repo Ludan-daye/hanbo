@@ -6,11 +6,18 @@ import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { errorMessage } from "../../services/error-messages";
 import {
+  NO_REPORT_TEAM_FILTER,
+  fetchReportTeamOptions,
+  type ReportTeamFilter,
   fetchCompanyDailyReport,
   fetchCompanyMonthlyReport,
   fetchCompanyWeeklyReport,
 } from "../../services/management";
-import type { DailyReport, RangeReport } from "../../services/management.types";
+import type {
+  DailyReport,
+  RangeReport,
+  ReportTeamOption,
+} from "../../services/management.types";
 import { chinaMonday, chinaMonth, chinaToday } from "../../services/time";
 import { useSession } from "../../store/session";
 
@@ -30,6 +37,31 @@ export default function CompanyReports(): JSX.Element {
   const [month, setMonth] = useState<string>(chinaMonth());
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [teamFilter, setTeamFilter] = useState<ReportTeamFilter>(
+    NO_REPORT_TEAM_FILTER,
+  );
+  const [teamOptions, setTeamOptions] = useState<
+    readonly ReportTeamOption[] | null
+  >(null);
+
+  // 班组和组长的选项读不到也不挡报表：只是不显示筛选。
+  useEffect(() => {
+    if (companyId === null) return;
+    let cancelled = false;
+    setTeamOptions(null);
+    setTeamFilter(NO_REPORT_TEAM_FILTER);
+    fetchReportTeamOptions("COMPANY", companyId).then(
+      (rows) => {
+        if (!cancelled) setTeamOptions(rows);
+      },
+      () => {
+        if (!cancelled) setTeamOptions(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   useEffect(() => {
     if (companyId === null) return;
@@ -40,10 +72,10 @@ export default function CompanyReports(): JSX.Element {
       try {
         const data =
           period === "DAILY"
-            ? await fetchCompanyDailyReport(companyId, date)
+            ? await fetchCompanyDailyReport(companyId, date, teamFilter)
             : period === "WEEKLY"
-              ? await fetchCompanyWeeklyReport(companyId, weekStart)
-              : await fetchCompanyMonthlyReport(companyId, month);
+              ? await fetchCompanyWeeklyReport(companyId, weekStart, teamFilter)
+              : await fetchCompanyMonthlyReport(companyId, month, teamFilter);
         if (!cancelled) setReport(data);
       } catch (e) {
         if (!cancelled) setError(errorMessage(e, "操作未完成，请稍后重试。"));
@@ -52,7 +84,7 @@ export default function CompanyReports(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [companyId, period, date, weekStart, month, revision]);
+  }, [companyId, period, date, weekStart, month, teamFilter, revision]);
 
   if (companyId === null) {
     return (
@@ -84,6 +116,9 @@ export default function CompanyReports(): JSX.Element {
       onWeekStart={setWeekStart}
       onMonth={setMonth}
       onRefresh={refresh}
+      teamOptions={teamOptions}
+      teamFilter={teamFilter}
+      onTeamFilter={setTeamFilter}
     />
   );
 }

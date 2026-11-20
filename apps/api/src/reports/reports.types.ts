@@ -38,6 +38,8 @@ export type AttendanceReportParticipantBase = {
   readonly requiresAttendance: boolean;
   readonly teamId: string | null;
   readonly teamName: string | null;
+  /** Current leader of the person's team on that day's team, when it has one. */
+  readonly teamLeaderName: string | null;
   readonly workType: string | null;
 };
 
@@ -132,4 +134,23 @@ export type ReportPersonDetail = {
   readonly startDate: string;
   readonly endDate: string;
   readonly days: readonly ReportPersonDay[];
+};
+
+/** Optional team or 组长 filter on project and company reports (at most one). */
+export type ReportTeamFilter = {
+  readonly leaderMemberId: string | null;
+  readonly teamId: string | null;
+};
+export const NO_TEAM_FILTER: ReportTeamFilter = {
+  leaderMemberId: null,
+  teamId: null,
+};
+export type ReportTeamOption = {
+  readonly leaderMemberId: string | null;
+  readonly leaderName: string | null;
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly status: string;
+  readonly teamId: string;
+  readonly teamName: string;
 };

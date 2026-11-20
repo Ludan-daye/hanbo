@@ -256,6 +256,24 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     await expect(client.request(`${path}/task-templates`, { method: "GET" })).rejects.toThrow("权限");
   });
 
+  test("project reports filter by team or by the team's current leader", async () => {
+    await login("dev-project");
+    const team = await client.request<ManagedTeam>("/management/projects/demo-project/teams/demo-team", { method: "GET" });
+    await client.request("/management/projects/demo-project/teams/demo-team", { method: "PUT", data: {
+      name: team.name, workType: team.workType, remark: team.remark, status: "ACTIVE",
+      leader: { memberId: "member-team", participantType: "MANAGER" }, expectedUpdatedAt: team.updatedAt,
+    } });
+    const options = await client.request<readonly { teamId: string; leaderMemberId: string | null }[]>("/reports/projects/demo-project/team-options", { method: "GET" });
+    expect(options.find((row) => row.teamId === "demo-team")).toMatchObject({ leaderMemberId: "member-team" });
+    const date = chinaToday();
+    const byTeam = await client.request<DailyReport>(`/reports/projects/demo-project/daily?date=${date}&teamId=demo-team`, { method: "GET" });
+    expect(byTeam.participants.every((row) => row.teamId === "demo-team")).toBe(true);
+    const byLeader = await client.request<DailyReport>(`/reports/projects/demo-project/daily?date=${date}&leaderMemberId=member-team`, { method: "GET" });
+    expect(byLeader.participants.map((row) => row.memberId)).toEqual(byTeam.participants.map((row) => row.memberId));
+    expect(byTeam.participants.every((row) => row.teamLeaderName === "王师傅（演示）")).toBe(true);
+    await expect(client.request(`/reports/projects/demo-project/daily?date=${date}&teamId=nope`, { method: "GET" })).rejects.toThrow("REPORT_TEAM_OUT_OF_SCOPE");
+  });
+
   test("shows a member's project, duties and designated contacts without granting management access", async () => {
     await login("dev-project");
     const team = await client.request<ManagedTeam>("/management/projects/demo-project/teams/demo-team", { method: "GET" });

@@ -382,3 +382,50 @@ export const personNumbers = (
     ],
   };
 };
+
+type TeamOption = {
+  readonly teamId: string;
+  readonly teamName: string;
+  readonly projectName: string;
+  readonly leaderMemberId: string | null;
+  readonly leaderName: string | null;
+};
+
+/** 班组筛选的一项。公司报表里班组可能重名，带上项目。 */
+export const teamFilterLabel = (team: TeamOption, withProject: boolean): string =>
+  withProject ? `${team.teamName}（${team.projectName}）` : team.teamName;
+
+/** 组长筛选：每个组长一项，后面写他带的班组。没有组长的班组不出现。 */
+export const reportLeaderOptions = (
+  teams: readonly TeamOption[],
+): ReadonlyArray<{ readonly memberId: string; readonly label: string }> => {
+  const leaders = new Map<string, { name: string; teams: string[] }>();
+  for (const team of teams) {
+    if (team.leaderMemberId === null) continue;
+    const current = leaders.get(team.leaderMemberId) ?? {
+      name: team.leaderName ?? "姓名待补录",
+      teams: [],
+    };
+    current.teams.push(team.teamName);
+    leaders.set(team.leaderMemberId, current);
+  }
+  return [...leaders.entries()].map(([memberId, leader]) => ({
+    memberId,
+    label: `${leader.name}（${leader.teams.join("、")}）`,
+  }));
+};
+
+/**
+ * 月度 Excel 导哪个范围：选了班组就导这个班组；按组长筛的结果没有单独的
+ * Excel（一个组长可能带几个班组），返回 null；没筛就是整个项目或公司。
+ */
+export const reportExportTarget = <S extends string>(
+  scope: S,
+  scopeId: string,
+  filter: { readonly teamId: string | null; readonly leaderMemberId: string | null },
+): { readonly scope: S | "TEAM"; readonly scopeId: string } | null =>
+  filter.teamId !== null
+    ? { scope: "TEAM", scopeId: filter.teamId }
+    : filter.leaderMemberId !== null
+      ? null
+      : { scope, scopeId };

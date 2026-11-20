@@ -896,5 +896,74 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       const finish = (await ask(`TASK_${task.id}_END`, at(-10)).expect(201)).body as { pointLabel: string };
       expect(finish.pointLabel).toContain("任务完工");
     });
+    test("project and company reports filter by team or by the team's current leader", async (): Promise<void> => {
+      const date = chinaDate(new Date());
+      const spare = await database.team.create({
+        data: { projectId, name: "空班组", status: "ACTIVE" },
+      });
+      await database.team.update({
+        where: { id: teamId },
+        data: { leaderWorkerMemberId: memberIds.get("w1")! },
+      });
+      try {
+        const daily = async (query: string, user: UserKey = "admin", expected = 200) =>
+          (
+            await http()
+              .get(`/reports/projects/${projectId}/daily?date=${date}${query}`)
+              .auth(auth(user), { type: "bearer" })
+              .expect(expected)
+          ).body as DailyAttendanceReportResponse & { message?: string };
+        const all = await daily("");
+        const byTeam = await daily(`&teamId=${teamId}`);
+        expect(byTeam.participants.length).toBeGreaterThan(0);
+        expect(byTeam.participants.every((row) => row.teamId === teamId)).toBe(true);
+        expect(byTeam.participants[0]!.teamLeaderName).toBe("工人w1");
+        expect(all.participants.length).toBeGreaterThanOrEqual(byTeam.participants.length);
+        const byLeader = await daily(`&leaderMemberId=${memberIds.get("w1")}`);
+        expect(byLeader.participants.map((row) => row.memberId).sort()).toEqual(
+          byTeam.participants.map((row) => row.memberId).sort(),
+        );
+        expect((await daily(`&teamId=${spare.id}`)).participants).toEqual([]);
+        // w2 leads no team: the filter is valid and keeps nobody.
+        expect((await daily(`&leaderMemberId=${memberIds.get("w2")}`)).participants).toEqual([]);
+        expect((await daily(`&teamId=${otherTeamId}`, "admin", 400)).message).toBe("REPORT_TEAM_OUT_OF_SCOPE");
+        expect((await daily(`&leaderMemberId=${memberIds.get("w3")}`, "admin", 400)).message).toBe(
+          "REPORT_LEADER_OUT_OF_SCOPE",
+        );
+        expect((await daily(`&teamId=${teamId}&leaderMemberId=${memberIds.get("w1")}`, "admin", 400)).message).toBe(
+          "INVALID_REPORT_TEAM_FILTER",
+        );
+        const month = date.slice(0, 7);
+        const monthly = (
+          await http()
+            .get(`/reports/projects/${projectId}/monthly?month=${month}&teamId=${teamId}`)
+            .auth(auth("admin"), { type: "bearer" })
+            .expect(200)
+        ).body as DailyAttendanceReportResponse;
+        expect(monthly.participants.every((row) => row.teamId === teamId)).toBe(true);
+        const options = (
+          await http().get(`/reports/projects/${projectId}/team-options`).auth(auth("admin"), { type: "bearer" }).expect(200)
+        ).body as { teamId: string; leaderMemberId: string | null; leaderName: string | null }[];
+        expect(options.find((row) => row.teamId === teamId)).toMatchObject({
+          leaderMemberId: memberIds.get("w1"),
+          leaderName: "工人w1",
+        });
+        expect(options.map((row) => row.teamId)).not.toContain(otherTeamId);
+        await http().get(`/reports/projects/${projectId}/team-options`).auth(auth("leader"), { type: "bearer" }).expect(403);
+        const company = (
+          await http()
+            .get(`/reports/companies/${companyId}/weekly?weekStartDate=${date}&teamId=${otherTeamId}`)
+            .auth(auth("company"), { type: "bearer" })
+            .expect(200)
+        ).body as DailyAttendanceReportResponse;
+        expect(company.participants.every((row) => row.teamId === otherTeamId)).toBe(true);
+        const companyOptions = (
+          await http().get(`/reports/companies/${companyId}/team-options`).auth(auth("company"), { type: "bearer" }).expect(200)
+        ).body as { teamId: string }[];
+        expect(companyOptions.map((row) => row.teamId)).toEqual(expect.arrayContaining([teamId, otherTeamId]));
+      } finally {
+        await database.team.update({ where: { id: teamId }, data: { leaderWorkerMemberId: null } });
+      }
+    });
   },
 );

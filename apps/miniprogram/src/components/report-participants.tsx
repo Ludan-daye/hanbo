@@ -1,12 +1,16 @@
 import { Picker, Text, View } from "@tarojs/components";
 
 import {
+  reportLeaderOptions,
   rowSummary,
+  teamFilterLabel,
   type ReportPersonGroup,
   type ReportProjectGroup,
   type ReportRow,
 } from "../pages/reports/view-model";
 import { displayProjectRole } from "../routing/features";
+import type { ReportTeamFilter } from "../services/management";
+import type { ReportTeamOption } from "../services/management.types";
 import { Button, FormRow, Row, Sheet, StateView } from "./ui/index";
 
 import "../pages/reports/report.scss";
@@ -166,13 +170,86 @@ export const ReportFilterRows = ({
   );
 };
 
-/** 一个人的副行：工种、岗位、是不是临时工；项目报表再带上班组。 */
+/**
+ * 按班组、按组长筛（服务端筛）：两行二选一，选了一个另一个回到“全部”。
+ * 组长是各班组现在的组长。
+ */
+export const ReportTeamFilterRows = ({
+  teams,
+  filter,
+  withProject,
+  onChange,
+}: {
+  readonly teams: readonly ReportTeamOption[];
+  readonly filter: ReportTeamFilter;
+  /** 公司报表：班组名后带项目。 */
+  readonly withProject: boolean;
+  readonly onChange: (filter: ReportTeamFilter) => void;
+}): JSX.Element | null => {
+  if (teams.length === 0) return null;
+  const leaders = reportLeaderOptions(teams);
+  const team = teams.find((item) => item.teamId === filter.teamId);
+  const leader = leaders.find((item) => item.memberId === filter.leaderMemberId);
+  return (
+    <Sheet gap>
+      <View className="rpt-pick">
+        <Picker
+          mode="selector"
+          range={["全部班组", ...teams.map((item) => teamFilterLabel(item, withProject))]}
+          value={team === undefined ? 0 : teams.indexOf(team) + 1}
+          onChange={(event) =>
+            onChange({
+              teamId: teams[Number(event.detail.value) - 1]?.teamId ?? null,
+              leaderMemberId: null,
+            })
+          }
+        >
+          <FormRow
+            label="班组"
+            value={team === undefined ? "全部班组" : teamFilterLabel(team, withProject)}
+            chevron
+          />
+        </Picker>
+      </View>
+      {leaders.length > 0 ? (
+        <View className="rpt-pick">
+          <Picker
+            mode="selector"
+            range={["全部组长", ...leaders.map((item) => item.label)]}
+            value={leader === undefined ? 0 : leaders.indexOf(leader) + 1}
+            onChange={(event) =>
+              onChange({
+                teamId: null,
+                leaderMemberId:
+                  leaders[Number(event.detail.value) - 1]?.memberId ?? null,
+              })
+            }
+          >
+            <FormRow
+              label="组长"
+              value={leader?.label ?? "全部组长"}
+              chevron
+            />
+          </Picker>
+        </View>
+      ) : null}
+    </Sheet>
+  );
+};
+
+/** 班组名，有组长时带上组长：“钢筋一班（组长 张建国）”。 */
+export const teamWithLeader = (row: ReportRow): string =>
+  row.teamName === null
+    ? "项目直属"
+    : row.teamLeaderName
+      ? `${row.teamName}（组长 ${row.teamLeaderName}）`
+      : row.teamName;
+
+/** 一个人的副行：工种、岗位、是不是临时工；项目报表再带上班组和组长。 */
 const personSub = (person: ReportPersonGroup, showTeam: boolean): string => {
   const first = person.rows[0];
   const role = displayProjectRole(first.projectRoleLabel);
-  const teams = [
-    ...new Set(person.rows.map((row) => row.teamName ?? "项目直属")),
-  ];
+  const teams = [...new Set(person.rows.map(teamWithLeader))];
   // 岗位和工种写的是同一个词时只说一遍。
   return [
     ...new Set([

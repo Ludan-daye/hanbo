@@ -1,6 +1,8 @@
 import { BadRequestException } from "@nestjs/common";
 import { z } from "zod";
 
+import type { ReportTeamFilter } from "./reports.types.js";
+
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 const monthPattern = /^\d{4}-\d{2}$/;
 
@@ -80,4 +82,31 @@ export const parseMonthlyReportMonth = (query: unknown): string => {
   }
 
   return result.data.month;
+};
+
+const idSchema = z.string().trim().min(1).max(64);
+const teamFilterSchema = z
+  .object({
+    leaderMemberId: idSchema.optional(),
+    teamId: idSchema.optional(),
+  })
+  .refine((value) => value.leaderMemberId === undefined || value.teamId === undefined, {
+    message: "Filter by team or by leader, not both",
+  });
+
+/** Optional `teamId` or `leaderMemberId` on project and company reports. */
+export const parseReportTeamFilter = (query: unknown): ReportTeamFilter => {
+  const result = teamFilterSchema.safeParse(query);
+
+  if (!result.success) {
+    throw new BadRequestException({
+      issues: result.error.issues,
+      message: "INVALID_REPORT_TEAM_FILTER"
+    });
+  }
+
+  return {
+    leaderMemberId: result.data.leaderMemberId ?? null,
+    teamId: result.data.teamId ?? null
+  };
 };

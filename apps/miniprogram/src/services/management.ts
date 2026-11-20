@@ -14,6 +14,7 @@ import type {
   ProjectTeam,
   WorkRoleScope,
   RangeReport,
+  ReportTeamOption,
 } from "./management.types";
 
 export const fetchMyRoleScopes = (): Promise<readonly WorkRoleScope[]> =>
@@ -37,30 +38,59 @@ export const fetchProjectOverview = async (
     { method: "GET" },
   );
 
+/** 报表按班组或按组长筛选（只能二选一）；都为 null 是全部。 */
+export type ReportTeamFilter = {
+  readonly teamId: string | null;
+  readonly leaderMemberId: string | null;
+};
+export const NO_REPORT_TEAM_FILTER: ReportTeamFilter = {
+  teamId: null,
+  leaderMemberId: null,
+};
+const teamFilterQuery = (filter: ReportTeamFilter): string =>
+  filter.teamId !== null
+    ? `&teamId=${encodeURIComponent(filter.teamId)}`
+    : filter.leaderMemberId !== null
+      ? `&leaderMemberId=${encodeURIComponent(filter.leaderMemberId)}`
+      : "";
+
+/** 报表可选的班组和各班组现在的组长。 */
+export const fetchReportTeamOptions = async (
+  scope: "PROJECT" | "COMPANY",
+  scopeId: string,
+): Promise<readonly ReportTeamOption[]> =>
+  apiClient.request<readonly ReportTeamOption[]>(
+    `/reports/${scope === "PROJECT" ? "projects" : "companies"}/${encodeURIComponent(scopeId)}/team-options`,
+    { method: "GET" },
+  );
+
 export const fetchDailyReport = async (
   projectId: string,
   date: string,
+  filter: ReportTeamFilter = NO_REPORT_TEAM_FILTER,
 ): Promise<DailyReport> =>
   apiClient.request<DailyReport>(
-    `/reports/projects/${projectId}/daily?date=${date}`,
+    `/reports/projects/${projectId}/daily?date=${date}${teamFilterQuery(filter)}`,
     { method: "GET" },
   );
 
 export const fetchWeeklyReport = async (
   projectId: string,
   weekStartDate: string,
+  filter: ReportTeamFilter = NO_REPORT_TEAM_FILTER,
 ): Promise<RangeReport> =>
   apiClient.request<RangeReport>(
-    `/reports/projects/${projectId}/weekly?weekStartDate=${weekStartDate}`,
+    `/reports/projects/${projectId}/weekly?weekStartDate=${weekStartDate}${teamFilterQuery(filter)}`,
     { method: "GET" },
   );
 
 export const fetchMonthlyReport = async (
   projectId: string,
   month: string,
+  filter: ReportTeamFilter = NO_REPORT_TEAM_FILTER,
 ): Promise<RangeReport> =>
   apiClient.request<RangeReport>(
-    `/reports/projects/${projectId}/monthly?month=${month}`,
+    `/reports/projects/${projectId}/monthly?month=${month}${teamFilterQuery(filter)}`,
     { method: "GET" },
   );
 
@@ -179,27 +209,30 @@ export const fetchProjectManagerCandidates = async (
 export const fetchCompanyDailyReport = async (
   companyId: string,
   date: string,
+  filter: ReportTeamFilter = NO_REPORT_TEAM_FILTER,
 ): Promise<DailyReport> =>
   apiClient.request<DailyReport>(
-    `/reports/companies/${companyId}/daily?date=${date}`,
+    `/reports/companies/${companyId}/daily?date=${date}${teamFilterQuery(filter)}`,
     { method: "GET" },
   );
 
 export const fetchCompanyWeeklyReport = async (
   companyId: string,
   weekStartDate: string,
+  filter: ReportTeamFilter = NO_REPORT_TEAM_FILTER,
 ): Promise<RangeReport> =>
   apiClient.request<RangeReport>(
-    `/reports/companies/${companyId}/weekly?weekStartDate=${weekStartDate}`,
+    `/reports/companies/${companyId}/weekly?weekStartDate=${weekStartDate}${teamFilterQuery(filter)}`,
     { method: "GET" },
   );
 
 export const fetchCompanyMonthlyReport = async (
   companyId: string,
   month: string,
+  filter: ReportTeamFilter = NO_REPORT_TEAM_FILTER,
 ): Promise<RangeReport> =>
   apiClient.request<RangeReport>(
-    `/reports/companies/${companyId}/monthly?month=${month}`,
+    `/reports/companies/${companyId}/monthly?month=${month}${teamFilterQuery(filter)}`,
     { method: "GET" },
   );
 

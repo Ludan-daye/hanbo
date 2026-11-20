@@ -4,9 +4,18 @@ import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import { PermissionsGuard } from "../authorization/permissions.guard.js";
 import { RequirePermission } from "../authorization/require-permission.decorator.js";
 
-import { parseDailyReportDate, parseMonthlyReportMonth, parseWeeklyReportStartDate } from "./reports-query.parsers.js";
+import {
+  parseDailyReportDate,
+  parseMonthlyReportMonth,
+  parseReportTeamFilter,
+  parseWeeklyReportStartDate
+} from "./reports-query.parsers.js";
 import { ReportsService } from "./reports.service.js";
-import type { DailyAttendanceReportResponse, RangeAttendanceReportResponse } from "./reports.types.js";
+import type {
+  DailyAttendanceReportResponse,
+  RangeAttendanceReportResponse,
+  ReportTeamOption
+} from "./reports.types.js";
 
 @Controller("reports")
 export class ReportsController {
@@ -25,7 +34,7 @@ export class ReportsController {
     @Param("projectId") projectId: string,
     @Query() query: unknown
   ): Promise<DailyAttendanceReportResponse> {
-    return this.reportsService.getDailyReport(projectId, parseDailyReportDate(query));
+    return this.reportsService.getDailyReport(projectId, parseDailyReportDate(query), parseReportTeamFilter(query));
   }
 
   @Get("projects/:projectId/weekly")
@@ -41,7 +50,7 @@ export class ReportsController {
     @Param("projectId") projectId: string,
     @Query() query: unknown
   ): Promise<RangeAttendanceReportResponse> {
-    return this.reportsService.getWeeklyReport(projectId, parseWeeklyReportStartDate(query));
+    return this.reportsService.getWeeklyReport(projectId, parseWeeklyReportStartDate(query), parseReportTeamFilter(query));
   }
 
   @Get("projects/:projectId/monthly")
@@ -57,7 +66,21 @@ export class ReportsController {
     @Param("projectId") projectId: string,
     @Query() query: unknown
   ): Promise<RangeAttendanceReportResponse> {
-    return this.reportsService.getMonthlyReport(projectId, parseMonthlyReportMonth(query));
+    return this.reportsService.getMonthlyReport(projectId, parseMonthlyReportMonth(query), parseReportTeamFilter(query));
+  }
+
+  @Get("projects/:projectId/team-options")
+  @RequirePermission({ permissionCode: "attendance.view", target: { paramName: "projectId", source: "projectParam" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async getProjectTeamOptions(@Param("projectId") projectId: string): Promise<readonly ReportTeamOption[]> {
+    return this.reportsService.projectTeamOptions(projectId);
+  }
+
+  @Get("companies/:companyId/team-options")
+  @RequirePermission({ permissionCode: "attendance.view", target: { paramName: "companyId", source: "companyParam" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async getCompanyTeamOptions(@Param("companyId") companyId: string): Promise<readonly ReportTeamOption[]> {
+    return this.reportsService.companyTeamOptions(companyId);
   }
 
   @Get("teams/:teamId/daily")
@@ -97,7 +120,7 @@ export class ReportsController {
     @Param("companyId") companyId: string,
     @Query() query: unknown
   ): Promise<DailyAttendanceReportResponse> {
-    return this.reportsService.getCompanyDailyReport(companyId, parseDailyReportDate(query));
+    return this.reportsService.getCompanyDailyReport(companyId, parseDailyReportDate(query), parseReportTeamFilter(query));
   }
 
   @Get("companies/:companyId/weekly")
@@ -107,7 +130,7 @@ export class ReportsController {
     @Param("companyId") companyId: string,
     @Query() query: unknown
   ): Promise<RangeAttendanceReportResponse> {
-    return this.reportsService.getCompanyWeeklyReport(companyId, parseWeeklyReportStartDate(query));
+    return this.reportsService.getCompanyWeeklyReport(companyId, parseWeeklyReportStartDate(query), parseReportTeamFilter(query));
   }
 
   @Get("companies/:companyId/monthly")
@@ -117,6 +140,6 @@ export class ReportsController {
     @Param("companyId") companyId: string,
     @Query() query: unknown
   ): Promise<RangeAttendanceReportResponse> {
-    return this.reportsService.getCompanyMonthlyReport(companyId, parseMonthlyReportMonth(query));
+    return this.reportsService.getCompanyMonthlyReport(companyId, parseMonthlyReportMonth(query), parseReportTeamFilter(query));
   }
 }
