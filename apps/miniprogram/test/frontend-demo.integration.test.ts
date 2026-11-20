@@ -263,6 +263,8 @@ describe("standalone frontend workflows using persistent demo storage", () => {
       name: team.name, workType: team.workType, remark: team.remark, status: "ACTIVE",
       leader: { memberId: "member-team", participantType: "MANAGER" }, expectedUpdatedAt: team.updatedAt,
     } });
+    const history = await client.request<readonly { reason: string; leaderName: string | null }[]>("/management/projects/demo-project/teams/demo-team/leader-history", { method: "GET" });
+    expect(history[0]).toMatchObject({ reason: "TEAM_UPDATED", leaderName: "王师傅（演示）" });
     const options = await client.request<readonly { teamId: string; leaderMemberId: string | null }[]>("/reports/projects/demo-project/team-options", { method: "GET" });
     expect(options.find((row) => row.teamId === "demo-team")).toMatchObject({ leaderMemberId: "member-team" });
     const date = chinaToday();

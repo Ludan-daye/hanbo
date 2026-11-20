@@ -43,7 +43,18 @@ export type DemoTeam = ProjectTeam & {
   readonly updatedAt?: string;
   readonly leader?: TeamLeaderReference | null;
 };
+/** 演示里的负责人变更记录：只记班组资料里的更换。 */
+export type DemoLeaderChange = {
+  readonly id: string;
+  readonly teamId: string;
+  readonly changedAt: string;
+  readonly reason: "TEAM_UPDATED" | "MEMBER_INACTIVE" | "MEMBER_TRANSFERRED";
+  readonly previousLeaderName: string | null;
+  readonly leaderName: string | null;
+  readonly changedByName: string | null;
+};
 export type DemoState = {
+  readonly teamLeaderChanges?: readonly DemoLeaderChange[];
   readonly safetyCredit?: DemoSafetyCredit;
   readonly worktimeRules?: readonly (WorktimeRuleVersion & { readonly projectId: string })[];
   readonly safetyConfirmations?: readonly DemoSafetyConfirmation[];

@@ -37,8 +37,11 @@ import type {
 import {
   fetchManagedTeam,
   fetchParticipantPage,
+  fetchTeamLeaderHistory,
   updateTeam,
+  type TeamLeaderChange,
 } from "../../services/workflows";
+import { leaderChangeLine } from "./leader-history";
 import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
 
@@ -65,6 +68,11 @@ export default function TeamDetail(): JSX.Element {
   const [searchInput, setSearchInput] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   const [page, setPage] = useState<number>(1);
+  // 负责人变更记录；读不到就不显示这一段，不挡班组资料。
+  const [history, setHistory] = useState<readonly TeamLeaderChange[] | null>(
+    null,
+  );
+  const [allHistory, setAllHistory] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -87,6 +95,21 @@ export default function TeamDetail(): JSX.Element {
       },
       (failure: unknown): void => {
         if (!cancelled) setError(errorMessage(failure, "读取班组失败"));
+      },
+    );
+    return (): void => {
+      cancelled = true;
+    };
+  }, [projectId, teamId, revision]);
+  useEffect(() => {
+    if (!projectId || !teamId) return;
+    let cancelled: boolean = false;
+    void fetchTeamLeaderHistory(projectId, teamId).then(
+      (rows): void => {
+        if (!cancelled) setHistory(rows);
+      },
+      (): void => {
+        if (!cancelled) setHistory(null);
       },
     );
     return (): void => {
@@ -331,6 +354,32 @@ export default function TeamDetail(): JSX.Element {
       <Notice>
         负责人管联络，审批补卡需要班组长权限。负责人转组、暂停或退场后会自动取消。
       </Notice>
+      {history !== null ? (
+        <>
+          <SectionTitle
+            {...(history.length > 3
+              ? {
+                  action: allHistory ? "收起" : `全部 ${history.length} 条`,
+                  onAction: (): void => setAllHistory((value) => !value),
+                }
+              : {})}
+          >
+            负责人变更
+          </SectionTitle>
+          {history.length === 0 ? (
+            <Notice>还没有变更记录。2026年11月20日以后的变更才有记录。</Notice>
+          ) : (
+            <Sheet>
+              {(allHistory ? history : history.slice(0, 3)).map((change) => {
+                const line = leaderChangeLine(change);
+                return (
+                  <Row key={change.id} title={line.title} sub={line.sub} />
+                );
+              })}
+            </Sheet>
+          )}
+        </>
+      ) : null}
 
       <Sheet gap>
         <Row

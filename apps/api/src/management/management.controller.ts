@@ -28,7 +28,7 @@ import type { MemberRegistrationResponse } from "./registration-review.types.js"
 import { parseTransferCandidates, parseTransferListStatus, parseTransferRequest, parseTransferReview } from "./transfer-requests.parsers.js";
 import { TransferRequestsService } from "./transfer-requests.service.js";
 import type { TransferRequestResponse } from "./transfer-requests.types.js";
-import type { ManagedTeamResponse } from "./teams.types.js";
+import type { ManagedTeamResponse, TeamLeaderChangeResponse } from "./teams.types.js";
 import type { ManagedParticipantResponse, ParticipantPageResponse } from "./participants.types.js";
 import type { BindingInvitationListItem } from "./management-invitation.types.js";
 import type {
@@ -72,6 +72,13 @@ export class ManagementController {
   @UseGuards(AccessTokenGuard, PermissionsGuard)
   async managedTeam(@Param("projectId") projectId: string, @Param("teamId") teamId: string): Promise<ManagedTeamResponse> {
     return this.teams.get(projectId, teamId);
+  }
+
+  @Get("projects/:projectId/teams/:teamId/leader-history")
+  @RequirePermission({ permissionCode: "team.manage", target: { source: "projectParam", paramName: "projectId" } })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async teamLeaderHistory(@Param("projectId") projectId: string, @Param("teamId") teamId: string): Promise<readonly TeamLeaderChangeResponse[]> {
+    return this.teams.leaderHistory(projectId, teamId);
   }
 
   @Put("projects/:projectId/teams/:teamId")

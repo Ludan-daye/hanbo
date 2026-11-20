@@ -224,3 +224,4 @@
 
 - 决定 5 已实现：补卡支持任务开工点 `TASK_<id>_START`（申请时间须在任务计划时间内、不晚于现在、不与本人其他计时任务重叠；审批通过后写 `startedAt` 并重算当天结果，完工另行打卡或补卡）。管理员在班组“工作安排”详情里对过了开始时间仍未开工的临时工点“漏打开工”，只写 `team_task_assignments.startReminderAt` 和 AuditLog，不生成工时；工人在“我的任务”看到提醒和“申请开工补卡”。完工补卡的规则不变。
 - 报表按班组、按组长筛（服务端）：项目、公司的日报、周报、月报接受 `teamId` 或 `leaderMemberId`（二选一），组长解析为他现在带的班组；新增 `GET /reports/{projects|companies}/:id/team-options`（`attendance.view`）。人员行带 `teamLeaderName`（当前组长）。选班组时月度 Excel 按班组导出；按组长筛的结果不单独导出。
+- 组长变更记录：新表 `team_leader_changes`（不回填，迁移注释已说明），在班组资料更换负责人、人员编辑（调组、取消班组长职务、暂停、退场）导致负责人自动取消时写入；`GET /management/projects/:projectId/teams/:teamId/leader-history`（`team.manage`），班组资料页显示最近的变更。

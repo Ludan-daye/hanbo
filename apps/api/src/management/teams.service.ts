@@ -11,7 +11,12 @@ import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import { decryptPersonnelName } from "./personnel-name.js";
-import type { ManagedTeamResponse, TeamWriteRequest } from "./teams.types.js";
+import { recordTeamLeaderChange } from "./team-leader-history.js";
+import type {
+  ManagedTeamResponse,
+  TeamLeaderChangeResponse,
+  TeamWriteRequest,
+} from "./teams.types.js";
 
 const teamRelations = {
   leaderWorkerMember: { include: { worker: true } },
@@ -89,6 +94,91 @@ export class TeamsService {
         teamId,
       });
     return this.response(team);
+  }
+
+  /** Newest first; at most the last 50 changes. */
+  async leaderHistory(
+    projectId: string,
+    teamId: string,
+  ): Promise<readonly TeamLeaderChangeResponse[]> {
+    const team = await this.prisma.team.findFirst({
+      where: { id: teamId, projectId },
+      select: { id: true },
+    });
+    if (team === null)
+      throw new NotFoundException({
+        message: "PROJECT_TEAM_NOT_FOUND",
+        projectId,
+        teamId,
+      });
+    const rows = await this.prisma.teamLeaderChange.findMany({
+      where: { teamId },
+      orderBy: [{ changedAt: "desc" }, { id: "desc" }],
+      take: 50,
+    });
+    const workerIds = rows.flatMap((row) =>
+      [row.previousLeaderWorkerMemberId, row.leaderWorkerMemberId].filter(
+        (id): id is string => id !== null,
+      ),
+    );
+    const managerIds = rows.flatMap((row) =>
+      [row.previousLeaderManagerMemberId, row.leaderManagerMemberId].filter(
+        (id): id is string => id !== null,
+      ),
+    );
+    const userIds = rows
+      .map((row) => row.changedByUserId)
+      .filter((id): id is string => id !== null);
+    const [workers, managers, users] = await Promise.all([
+      this.prisma.projectWorkerMember.findMany({
+        where: { id: { in: [...new Set(workerIds)] } },
+        select: { id: true, worker: { select: { encryptedName: true } } },
+      }),
+      this.prisma.projectManagerMember.findMany({
+        where: { id: { in: [...new Set(managerIds)] } },
+        select: { id: true, manager: { select: { name: true } } },
+      }),
+      this.prisma.user.findMany({
+        where: { id: { in: [...new Set(userIds)] } },
+        select: { id: true, encryptedRealName: true, nickname: true },
+      }),
+    ]);
+    const decrypt = (value: string | null): string | null =>
+      value !== null && value.startsWith("name-v1:")
+        ? decryptPersonnelName(value, this.env.PERSONNEL_ENCRYPTION_KEY)
+        : null;
+    const names = new Map<string, string | null>([
+      ...workers.map(
+        (row) => [`W:${row.id}`, decrypt(row.worker.encryptedName)] as const,
+      ),
+      ...managers.map((row) => [`M:${row.id}`, row.manager.name] as const),
+    ]);
+    const leader = (
+      worker: string | null,
+      manager: string | null,
+    ): string | null =>
+      worker !== null
+        ? (names.get(`W:${worker}`) ?? "姓名待补录")
+        : manager !== null
+          ? (names.get(`M:${manager}`) ?? "姓名待补录")
+          : null;
+    return rows.map((row) => {
+      const user = users.find((item) => item.id === row.changedByUserId);
+      return {
+        id: row.id,
+        changedAt: row.changedAt.toISOString(),
+        reason: row.reason as TeamLeaderChangeResponse["reason"],
+        previousLeaderName: leader(
+          row.previousLeaderWorkerMemberId,
+          row.previousLeaderManagerMemberId,
+        ),
+        leaderName: leader(row.leaderWorkerMemberId, row.leaderManagerMemberId),
+        changedByName:
+          user === undefined
+            ? null
+            : (decrypt(user.encryptedRealName) ?? user.nickname ?? null),
+      };
+    });
   }
 
   async update(
@@ -169,12 +259,30 @@ export class TeamsService {
             message: "TEAM_CHANGED_RELOAD_BEFORE_SAVING",
             teamId,
           });
+        await recordTeamLeaderChange(transaction, {
+          teamId,
+          projectId,
+          previous: previous,
+          next: {
+            leaderWorkerMemberId:
+              body.leader?.participantType === "WORKER"
+                ? body.leader.memberId
+                : null,
+            leaderManagerMemberId:
+              body.leader?.participantType === "MANAGER"
+                ? body.leader.memberId
+                : null,
+          },
+          reason: "TEAM_UPDATED",
+          changedByUserId: actorUserId,
+        });
         await transaction.auditLog.create({
           data: {
             actorUserId,
             action: "team.update",
             entityType: "team",
             entityId: teamId,
+            projectId,
             metadata: {
               projectId,
               previousLeaderWorkerMemberId: previous.leaderWorkerMemberId,

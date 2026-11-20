@@ -17,6 +17,7 @@ import { AuthorizationContextService } from "../authorization/authorization-cont
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
+import { recordTeamLeaderChange } from "./team-leader-history.js";
 
 import {
   decryptPersonnelName,
@@ -923,10 +924,24 @@ export class ParticipantsService {
               ? { id: { notIn: eligibleTeams } }
               : {}),
           },
-          select: { id: true },
+          select: {
+            id: true,
+            leaderWorkerMemberId: true,
+            leaderManagerMemberId: true,
+          },
         });
         for (const team of cleared)
           await transaction.$executeRaw`UPDATE "teams" SET "leaderWorkerMemberId" = NULL, "leaderManagerMemberId" = NULL, "updatedAt" = GREATEST(CURRENT_TIMESTAMP, "updatedAt" + interval '1 millisecond') WHERE "id" = ${team.id}`;
+        for (const team of cleared)
+          await recordTeamLeaderChange(transaction, {
+            teamId: team.id,
+            projectId,
+            previous: team,
+            next: { leaderWorkerMemberId: null, leaderManagerMemberId: null },
+            reason:
+              body.status !== "ACTIVE" ? "MEMBER_INACTIVE" : "MEMBER_TRANSFERRED",
+            changedByUserId: actorUserId,
+          });
         for (const team of cleared)
           await transaction.auditLog.create({
             data: {

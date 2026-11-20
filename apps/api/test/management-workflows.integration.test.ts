@@ -867,6 +867,20 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
           where: { entityId: teamId, action: "team.leader.cleared" },
         }),
       ).toBe(1);
+      // Leader history: picked in team details, then dropped by the transfer.
+      const history = await request(app.getHttpServer())
+        .get(`/management/projects/${projectId}/teams/${teamId}/leader-history`)
+        .auth(adminToken, { type: "bearer" })
+        .expect(200);
+      expect(history.body.slice(0, 2)).toMatchObject([
+        { reason: "MEMBER_TRANSFERRED", previousLeaderName: person.displayName, leaderName: null },
+        { reason: "TEAM_UPDATED", leaderName: person.displayName },
+      ]);
+      expect(history.body[0].changedByName).not.toBeNull();
+      await request(app.getHttpServer())
+        .get(`/management/projects/${projectId}/teams/${teamId}/leader-history`)
+        .auth(otherToken, { type: "bearer" })
+        .expect(403);
       await request(app.getHttpServer())
         .put(`/management/projects/${projectId}/teams/${teamId}`)
         .auth(adminToken, { type: "bearer" })

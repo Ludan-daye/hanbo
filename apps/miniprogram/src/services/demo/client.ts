@@ -1312,6 +1312,15 @@ const routeDemo = (
             (team) => team.id === parts[4] && team.projectId === scopeId,
           );
           if (!original) throw new ApiError(404, "班组不存在。", {});
+          if (parts[5] === "leader-history")
+            return response(
+              state,
+              (state.teamLeaderChanges ?? [])
+                .filter((row) => row.teamId === original.id)
+                .slice()
+                .sort((a, b) => b.changedAt.localeCompare(a.changedAt))
+                .map(({ teamId: _teamId, ...row }) => row),
+            );
           if (method === "GET")
             return response(state, managedDemoTeam(state, original));
           const body = options.data as TeamForm;
@@ -1352,8 +1361,35 @@ const routeDemo = (
               Math.max(Date.now(), Date.parse(body.expectedUpdatedAt) + 1),
             ).toISOString(),
           };
+          const before = managedDemoTeam(state, original).leader;
+          const afterName = body.leader
+            ? (state.people.find(
+                (person) =>
+                  person.projectId === scopeId &&
+                  person.memberId === body.leader?.memberId,
+              )?.displayName ?? "姓名待补录")
+            : null;
+          const leaderChanged =
+            (before?.memberId ?? null) !== (body.leader?.memberId ?? null);
           const next: DemoState = {
             ...state,
+            teamLeaderChanges: leaderChanged
+              ? [
+                  ...(state.teamLeaderChanges ?? []),
+                  {
+                    id: demoId("leader-change"),
+                    teamId: original.id,
+                    changedAt: new Date().toISOString(),
+                    reason: "TEAM_UPDATED",
+                    previousLeaderName: before
+                      ? (before.displayName ?? "姓名待补录")
+                      : null,
+                    leaderName: afterName,
+                    changedByName:
+                      state.accountProfiles?.[userId]?.realName ?? "演示管理员",
+                  },
+                ]
+              : state.teamLeaderChanges,
             teams: state.teams.map((team) =>
               team.id === original.id ? updated : team,
             ),

@@ -122,6 +122,24 @@ export const fetchManagedTeam = (
   apiClient.request(`/management/projects/${projectId}/teams/${teamId}`, {
     method: "GET",
   });
+/** 班组负责人的一次变更（2026-11-20 起记录）。 */
+export type TeamLeaderChange = {
+  readonly id: string;
+  readonly changedAt: string;
+  readonly reason: "TEAM_UPDATED" | "MEMBER_INACTIVE" | "MEMBER_TRANSFERRED";
+  readonly previousLeaderName: string | null;
+  readonly leaderName: string | null;
+  readonly changedByName: string | null;
+};
+/** 最近的负责人变更，新的在前。 */
+export const fetchTeamLeaderHistory = (
+  projectId: string,
+  teamId: string,
+): Promise<readonly TeamLeaderChange[]> =>
+  apiClient.request(
+    `/management/projects/${projectId}/teams/${teamId}/leader-history`,
+    { method: "GET" },
+  );
 export const updateTeam = (
   projectId: string,
   teamId: string,

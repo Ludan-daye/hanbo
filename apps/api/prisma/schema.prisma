@@ -371,6 +371,7 @@ model Team {
   leaderManagerMember   ProjectManagerMember?  @relation("ManagerTeamLeadership", fields: [leaderManagerMemberId, projectId], references: [id, projectId], onDelete: Restrict)
   memberHistories       ProjectMemberHistory[]
   reportExports         ReportExport[]
+  leaderChanges         TeamLeaderChange[]
 
   @@unique([id, projectId])
   @@unique([projectId, name])
@@ -1092,4 +1093,23 @@ model PersonnelTransferRequest {
   @@index([targetProjectId, createdAt])
   @@index([profileId, participantType, status])
   @@map("personnel_transfer_requests")
+}
+
+/// One change of a team's leader. History starts 2026-11-20; earlier changes were not recorded.
+model TeamLeaderChange {
+  id                            String   @id @default(uuid())
+  teamId                        String
+  projectId                     String
+  previousLeaderWorkerMemberId  String?
+  previousLeaderManagerMemberId String?
+  leaderWorkerMemberId          String?
+  leaderManagerMemberId         String?
+  /// TEAM_UPDATED | MEMBER_INACTIVE | MEMBER_TRANSFERRED
+  reason                        String
+  changedByUserId               String?
+  changedAt                     DateTime @default(now())
+  team                          Team     @relation(fields: [teamId], references: [id], onDelete: Restrict)
+
+  @@index([teamId, changedAt])
+  @@map("team_leader_changes")
 }

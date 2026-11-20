@@ -28,3 +28,12 @@ export type ManagedTeamResponse = {
       })
     | null;
 };
+/** One row of a team's leader history, names resolved for display. */
+export type TeamLeaderChangeResponse = {
+  readonly id: string;
+  readonly changedAt: string;
+  readonly reason: "TEAM_UPDATED" | "MEMBER_INACTIVE" | "MEMBER_TRANSFERRED";
+  readonly previousLeaderName: string | null;
+  readonly leaderName: string | null;
+  readonly changedByName: string | null;
+};
