@@ -940,6 +940,18 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     await expect(client.request(path, { method: "GET" })).rejects.toThrow();
   });
 
+  test("a project admin works on a team's pages like its leader", async () => {
+    await login("dev-project");
+    const teams = await client.request<ProjectTeam[]>("/management/projects/demo-project/teams", { method: "GET" });
+    expect(teams.some((team) => team.id === "demo-team")).toBe(true);
+    const task = await client.request<TeamTask>("/team-work/teams/demo-team/tasks", {
+      method: "POST",
+      data: { title: "项目管理员代排", description: "清理现场", workType: "普工", startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 3600000).toISOString(), memberIds: [] },
+    });
+    expect(task.teamId).toBe("demo-team");
+    await client.request(`/team-work/teams/demo-team/daily?date=${chinaToday()}`, { method: "GET" });
+  });
+
   test("selected project managers receive access without losing their original project", async () => {
     await login("dev-company");
     const project = await client.request<CompanyProject>("/management/companies/demo-company/projects", {

@@ -87,6 +87,12 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       url: "/pages/project-management/index",
     },
     {
+      title: "班组现场",
+      sub: "替组长安排工作、交底、看日报、登记违规",
+      icon: "task",
+      url: "/pages/team-site/index",
+    },
+    {
       title: "打卡安排",
       sub: "设置下级打卡次数与时间",
       icon: "calendar",

@@ -664,5 +664,20 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         ).toBe("REGISTRATION_SELF_VERIFY_FORBIDDEN");
       });
     });
+
+    test("project admins act on any team of their project, not other projects", async (): Promise<void> => {
+      const date = chinaDate(new Date());
+      for (const path of [
+        `/team-work/teams/${teamId}/tasks?date=${date}`,
+        `/team-work/teams/${teamId}/daily?date=${date}`,
+        `/safety-credit/teams/${teamId}`,
+        `/reports/teams/${teamId}/daily?date=${date}`,
+      ])
+        await http().get(path).auth(auth("admin"), { type: "bearer" }).expect(200);
+      await http()
+        .get(`/team-work/teams/${otherTeamId}/tasks?date=${date}`)
+        .auth(auth("admin"), { type: "bearer" })
+        .expect(403);
+    });
   },
 );

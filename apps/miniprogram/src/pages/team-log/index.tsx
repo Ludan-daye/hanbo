@@ -26,6 +26,7 @@ import {
 } from "../../components/team-work-fields";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { useManagedTeamId } from "../../hooks/use-management-scope";
+import { NoTeamScreen } from "../../components/team-site/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSession } from "../../store/session";
 import {
@@ -105,9 +106,7 @@ export default function TeamLog(): JSX.Element {
     viewing === "saved" && saved !== null ? saved : data;
   if (teamId === null)
     return (
-      <Screen header={<PageHeader title="班组日报" />}>
-        <StateView kind="empty" title="请先选择负责的班组" />
-      </Screen>
+      <NoTeamScreen title="班组日报" me={state.me} />
     );
   if (shown === null || data === null)
     return (

@@ -2,7 +2,7 @@ import Taro from "@tarojs/taro";
 
 import { resolveAdminProjectId } from "../routing/projectAdmin";
 import { resolveCompanyAdminCompanyId } from "../routing/companyAdmin";
-import { resolveTeamLeaderTeamId } from "../routing/teamLeader";
+import { resolveManagedTeamId } from "../routing/teamLeader";
 import type { MeResponse } from "../services/auth.types";
 
 export const useManagedProjectId = (me: MeResponse | null): string | null => {
@@ -28,7 +28,6 @@ export const useManagedCompanyId = (me: MeResponse | null): string | null => {
 };
 
 export const useManagedTeamId = (me: MeResponse | null): string | null => {
-  const requestedId = Taro.useRouter().params.teamId;
-  if (requestedId && me?.roles.assignments.some((assignment) => assignment.roleCode === "TEAM_LEADER" && assignment.scope.scopeId === requestedId)) return requestedId;
-  return resolveTeamLeaderTeamId(me);
+  const { teamId, projectId } = Taro.useRouter().params;
+  return resolveManagedTeamId(me, teamId, projectId);
 };

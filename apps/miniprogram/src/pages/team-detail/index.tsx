@@ -3,6 +3,7 @@ import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
 import { ChipsRow } from "../../components/member-role-editor/form-rows";
+import { TeamSiteEntries } from "../../components/team-site/index";
 import {
   joinText,
   maskPhone,
@@ -345,6 +346,8 @@ export default function TeamDetail(): JSX.Element {
           }}
         />
       </Sheet>
+      <SectionTitle>班组现场</SectionTitle>
+      <TeamSiteEntries projectId={projectId} teamId={teamId} />
       {error ? <Notice tone="error">{error}</Notice> : null}
       <BottomBar
         primary={busy ? "保存中…" : "保存"}

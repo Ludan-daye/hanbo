@@ -1,8 +1,8 @@
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
-import { PageHeader, Screen, StateView } from "../../components/ui/index";
 import { useManagedTeamId } from "../../hooks/use-management-scope";
+import { NoTeamScreen } from "../../components/team-site/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { errorMessage } from "../../services/error-messages";
@@ -68,15 +68,7 @@ export default function TeamAttendance(): JSX.Element {
   }, [teamId, period, date, weekStart, month, revision]);
 
   if (teamId === null) {
-    return (
-      <Screen header={<PageHeader title="班组考勤" />}>
-        <StateView
-          kind="empty"
-          title="没有可以看的班组"
-          sub="这个账号不是班组长。"
-        />
-      </Screen>
-    );
+    return <NoTeamScreen title="班组考勤" me={state.me} />;
   }
 
   return (

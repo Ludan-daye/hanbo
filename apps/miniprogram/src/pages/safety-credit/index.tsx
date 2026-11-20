@@ -23,6 +23,7 @@ import {
 import { useLeaveGuard } from "../../hooks/use-leave-guard";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { useManagedTeamId } from "../../hooks/use-management-scope";
+import { NoTeamScreen } from "../../components/team-site/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSession } from "../../store/session";
 import {
@@ -116,9 +117,7 @@ export default function TeamSafetyCredit(): JSX.Element {
   };
   if (teamId === null)
     return (
-      <Screen header={<PageHeader title="安全信用" />}>
-        <StateView kind="empty" title="请先选择班组" />
-      </Screen>
+      <NoTeamScreen title="安全信用" me={state.me} />
     );
 
   const complete: boolean =

@@ -15,6 +15,7 @@ import { WorkDate, workDateLabel } from "../../components/team-work-fields";
 import { useLeaveGuard } from "../../hooks/use-leave-guard";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { useManagedTeamId } from "../../hooks/use-management-scope";
+import { NoTeamScreen } from "../../components/team-site/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSession } from "../../store/session";
 import { fetchTeamParticipants } from "../../services/management";
@@ -149,9 +150,7 @@ export default function TeamSafety(): JSX.Element {
   };
   if (teamId === null)
     return (
-      <Screen header={<PageHeader title="班组安全" />}>
-        <StateView kind="empty" title="请先选择负责的班组" />
-      </Screen>
+      <NoTeamScreen title="班组安全" me={state.me} />
     );
 
   const openView = (next: ViewName): void => {
