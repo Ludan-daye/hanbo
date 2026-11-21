@@ -69,6 +69,8 @@ export default function TeamDetail(): JSX.Element {
   const [search, setSearch] = useState<string>("");
   const [page, setPage] = useState<number>(1);
   // 负责人变更记录；读不到就不显示这一段，不挡班组资料。
+  // 保存后重读负责人变更记录，换的人马上出现在下面。
+  const [historyVersion, setHistoryVersion] = useState<number>(0);
   const [history, setHistory] = useState<readonly TeamLeaderChange[] | null>(
     null,
   );
@@ -115,7 +117,7 @@ export default function TeamDetail(): JSX.Element {
     return (): void => {
       cancelled = true;
     };
-  }, [projectId, teamId, revision]);
+  }, [projectId, teamId, revision, historyVersion]);
   useEffect(() => {
     if (!projectId || !teamId) return;
     let cancelled: boolean = false;
@@ -164,6 +166,7 @@ export default function TeamDetail(): JSX.Element {
       });
       setTeam(saved);
       setSavedName(saved.name);
+      setHistoryVersion((value) => value + 1);
       await Taro.showToast({ title: "班组资料已保存", icon: "success" });
     } catch (failure: unknown) {
       setError(errorMessage(failure, "保存班组失败"));
