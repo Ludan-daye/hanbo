@@ -14,7 +14,7 @@ import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import { WechatCodeSessionConnector } from "../infrastructure/wechat/wechat-code-session.connector.js";
-import { TEST_ACCOUNTS, type TestAccountCode } from "./test-accounts.js";
+import { fitsTestAccount, testAccountOpenid, type TestAccountCode } from "./test-accounts.js";
 
 import type {
   AccessTokenPayload,
@@ -155,9 +155,9 @@ export class AuthService {
   async loginTestAccount(account: TestAccountCode, metadata: RequestMetadata): Promise<LoginResponse> {
     if (this.env.DEPLOYMENT_ENV !== "test" || !this.env.TEST_LOGIN_ENABLED)
       throw new NotFoundException({ message: "TEST_LOGIN_DISABLED" });
-    const user = await this.prisma.user.findUnique({ where: { openid: account }, include: { roles: { include: { role: true } } } });
-    if (user === null || !user.isBound || user.status !== "ACTIVE" ||
-        getHighestRoleCode(user.roles.map((assignment) => ({ roleCode: assignment.role.code }))) !== TEST_ACCOUNTS[account].roleCode)
+    const user = await this.prisma.user.findUnique({ where: { openid: testAccountOpenid(account) }, include: { managerProfile: true, roles: { include: { role: true } } } });
+    if (user === null ||
+        !fitsTestAccount(account, user, getHighestRoleCode(user.roles.map((assignment) => ({ roleCode: assignment.role.code })))))
       throw new ConflictException({ message: "TEST_ACCOUNT_NOT_READY" });
     assertAccountProfileComplete(user);
     await this.prisma.auditLog.create({ data: {

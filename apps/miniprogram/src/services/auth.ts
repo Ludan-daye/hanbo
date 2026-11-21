@@ -32,7 +32,7 @@ const storeLogin = (res: LoginResponse): void => {
   Taro.setStorageSync(REFRESH_TOKEN_KEY, res.refreshToken);
 };
 
-export type TestAccountCode = "dev-worker" | "dev-team" | "dev-project" | "dev-company" | "dev-system";
+export type TestAccountCode = "dev-worker" | "dev-team" | "dev-project" | "dev-company" | "dev-system" | "dev-worker-2";
 
 export const loginTestAccount = async (account: TestAccountCode): Promise<void> => {
   if (!TEST_LOGIN_ENABLED) throw new Error("当前版本未启用测试登录。");

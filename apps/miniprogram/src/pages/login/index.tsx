@@ -78,6 +78,15 @@ const DEMO_ROLES: readonly DemoRole[] = [
     icon: "shield",
   },
 ];
+// 只在测试服务器上有：不在任何项目的工人，用来走临时工邀请（排在最后，不打乱上面的顺序）。
+const TEST_ONLY_ROLES: readonly DemoRole[] = [
+  {
+    code: "dev-worker-2",
+    label: "临时工 不在项目里",
+    sub: "还没绑定，用临时工邀请码加入任务",
+    icon: "user",
+  },
+];
 const nativeWechatLogin: boolean = process.env.TARO_ENV === "weapp";
 
 export default function Login(): JSX.Element {
@@ -238,7 +247,7 @@ export default function Login(): JSX.Element {
           {showTestAccounts ? (
             <View className="m-fade">
               <Sheet>
-                {DEMO_ROLES.map((role) => (
+                {[...DEMO_ROLES, ...(FRONTEND_DEMO ? [] : TEST_ONLY_ROLES)].map((role) => (
                   <View
                     key={role.code}
                     className={`login-role ui-press${busy === role.code ? " login-role--busy" : ""}`}

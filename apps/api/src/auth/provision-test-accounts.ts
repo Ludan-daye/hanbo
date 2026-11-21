@@ -5,14 +5,18 @@ import type { PrismaClient } from "@prisma/client";
 
 import { LocalDiskStorage } from "../infrastructure/storage/local-disk-storage.js";
 import { encryptPersonnelName, personnelNameSearchHashes } from "../management/personnel-name.js";
-import { TEST_ACCOUNTS, TEST_ACCOUNT_CODES } from "./test-accounts.js";
+import { fitsTestAccount, testAccountOpenid, TEST_ACCOUNTS, TEST_ACCOUNT_CODES } from "./test-accounts.js";
 
 const avatar: Buffer = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQ0AAAAASUVORK5CYII=",
   "base64",
 );
 
-/** Prepare only the five existing synthetic identities; preserve roles, memberships and face records. */
+/**
+ * Prepare the synthetic test identities; preserve roles, memberships and face records.
+ * The five role accounts must already exist; the projectless worker (dev-worker-2) is
+ * created on first run.
+ */
 export const provisionTestAccounts = async (
   database: PrismaClient,
   encryptionKey: string,
@@ -24,13 +28,17 @@ export const provisionTestAccounts = async (
   await database.$transaction(async (transaction): Promise<void> => {
     for (const code of TEST_ACCOUNT_CODES) {
       const account = TEST_ACCOUNTS[code];
+      const openid = testAccountOpenid(code);
+      // The projectless worker has no fixture to start from: create it unbound, in no project.
+      if (account.projectless === true && (await transaction.user.findUnique({ where: { openid } })) === null)
+        await transaction.user.create({ data: { openid, isBound: false, status: "ACTIVE" } });
       const user = await transaction.user.findUnique({
-        where: { openid: code },
+        where: { openid },
         include: { workerProfile: true, managerProfile: true, roles: { include: { role: true } } },
       });
-      if (user === null || !user.isBound || user.status !== "ACTIVE" ||
-          getHighestRoleCode(user.roles.map((assignment) => ({ roleCode: assignment.role.code }))) !== account.roleCode ||
-          (user.workerProfile === null && user.managerProfile === null)) {
+      if (user === null ||
+          !fitsTestAccount(code, user, getHighestRoleCode(user.roles.map((assignment) => ({ roleCode: assignment.role.code })))) ||
+          (account.projectless !== true && user.workerProfile === null && user.managerProfile === null)) {
         throw new Error(`Test fixture ${code} is missing or has unexpected roles/binding; initialize and inspect its fixtures first.`);
       }
       const encryptedName: string = encryptPersonnelName(account.name, encryptionKey, randomBytes(12));

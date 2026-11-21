@@ -34,6 +34,8 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("test lo
     database = app.get(PrismaService);
     for (const code of TEST_ACCOUNT_CODES) {
       const account = TEST_ACCOUNTS[code];
+      // The projectless worker is created by provisioning itself.
+      if (account.projectless === true) continue;
       const role = await database.role.findUniqueOrThrow({ where: { code: account.roleCode } });
       await database.user.create({ data: {
         openid: code, isBound: true,
@@ -51,6 +53,14 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("test lo
     if (app !== undefined) await app.close();
     if (uploads !== undefined) await rm(uploads, { recursive: true, force: true });
     vi.unstubAllEnvs();
+  });
+
+  test("the projectless worker gets its own openid and survives a second provisioning", async (): Promise<void> => {
+    const user = await database.user.findUniqueOrThrow({ where: { openid: "test-login-worker-2" }, include: { roles: true, workerProfile: true } });
+    expect(user).toMatchObject({ isBound: false, phone: TEST_ACCOUNTS["dev-worker-2"].phone, roles: [], workerProfile: null });
+    expect(await database.user.count({ where: { openid: "dev-worker-2" } })).toBe(0);
+    await provisionTestAccounts(database, app.get<ApiEnv>(API_ENV).PERSONNEL_ENCRYPTION_KEY, uploads);
+    expect(await database.user.count({ where: { openid: "test-login-worker-2" } })).toBe(1);
   });
 
   test("rejects unknown accounts, unexpected fields and incomplete profiles", async (): Promise<void> => {
@@ -71,7 +81,10 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("test lo
     expect(login.headers["cache-control"]).toBe("no-store");
     const token: string = login.body.accessToken;
     const me = await request(server).get("/auth/me").auth(token, { type: "bearer" }).expect(200);
-    expect(me.body.roles.highestRoleCode).toBe(TEST_ACCOUNTS[account].roleCode);
+    const projectless = TEST_ACCOUNTS[account].projectless === true;
+    // dev-worker-2 starts in no project: unbound, no role, ready to take a temporary invitation.
+    expect(me.body.roles.highestRoleCode).toBe(projectless ? null : TEST_ACCOUNTS[account].roleCode);
+    if (projectless) expect(me.body.user.isBound).toBe(false);
     expect(me.headers["cache-control"]).toBe("no-store");
     await request(server).get("/auth/me").auth(token, { type: "bearer" }).expect(200);
     const profile = await request(server).get("/account/profile").auth(token, { type: "bearer" }).expect(200);
@@ -90,7 +103,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)("test lo
         payrollBankCard: "6222020000000000000",
       }).expect(200);
     }
-    await request(server).get("/me/projects").auth(token, { type: "bearer" }).expect(200);
+    if (!projectless) await request(server).get("/me/projects").auth(token, { type: "bearer" }).expect(200);
     const refreshed = await request(server).post("/auth/refresh").send({ refreshToken: login.body.refreshToken }).expect(201);
     await request(server).get("/auth/me").auth(refreshed.body.accessToken, { type: "bearer" }).expect(200);
     await request(server).post("/auth/logout").auth(token, { type: "bearer" }).expect(201);
