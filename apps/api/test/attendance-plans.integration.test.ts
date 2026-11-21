@@ -603,6 +603,20 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         data: { status: "SUSPENDED" },
       });
       await punch("peer", "2030-01-08", "START", "08:00", "31").expect(400);
+      // A suspended project's plan can still be read, but not changed.
+      await request(app.getHttpServer())
+        .get(scopePath("PROJECT", projectId))
+        .auth(auth("admin"), { type: "bearer" })
+        .expect(200);
+      expect(
+        (
+          await request(app.getHttpServer())
+            .post(scopePath("PROJECT", projectId))
+            .auth(auth("admin"), { type: "bearer" })
+            .send(input("suspended", threePoints, "2030-02-01", null))
+            .expect(404)
+        ).body.message,
+      ).toBe("PROJECT_NOT_FOUND");
       await database.project.update({
         where: { id: projectId },
         data: { status: "ACTIVE" },

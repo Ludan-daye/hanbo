@@ -153,7 +153,7 @@ export const demoOffboard = (
         id: demoId("leader-change"),
         teamId: team.id,
         changedAt: now,
-        reason: mode === "EXIT_ALL" ? ("MEMBER_INACTIVE" as const) : ("MEMBER_TRANSFERRED" as const),
+        reason: mode === "EXIT_ALL" ? ("MEMBER_INACTIVE" as const) : ("MEMBER_OFFBOARDED" as const),
         previousLeaderName: person.displayName ?? "姓名待补录",
         leaderName: null,
         changedByName: state.accountProfiles?.[userId]?.realName ?? "公司管理员",

@@ -3,7 +3,9 @@ import type { Prisma } from "@prisma/client";
 export type TeamLeaderChangeReason =
   | "TEAM_UPDATED"
   | "MEMBER_INACTIVE"
-  | "MEMBER_TRANSFERRED";
+  | "MEMBER_TRANSFERRED"
+  /** Company offboarding (离岗) took away their management posts. */
+  | "MEMBER_OFFBOARDED";
 
 type LeaderIds = {
   readonly leaderWorkerMemberId: string | null;

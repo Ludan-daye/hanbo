@@ -273,18 +273,28 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
           present: daily.totals.actualAttendedDays,
           workedMinutes: daily.totals.workedMinutes,
         });
+        let activeExpected = 0;
         for (const project of overview.projects) {
           const own = await get("company", `/management/projects/${project.projectId}/overview?date=${date}`);
-          expect(project.attendance).toEqual({
-            expected: own.attendance.expected,
-            missing: own.attendance.missing,
-            present: own.attendance.present,
-          });
+          // A preparing (suspended, completed) site has nobody expected on the company
+          // home, even though its own page still lists its members.
+          if (project.status === "ACTIVE") activeExpected += own.attendance.expected;
+          else expect(own.attendance.expected).toBeGreaterThan(0);
+          expect(project.attendance).toEqual(
+            project.status === "ACTIVE"
+              ? {
+                  expected: own.attendance.expected,
+                  missing: own.attendance.missing,
+                  present: own.attendance.present,
+                }
+              : { expected: 0, missing: 0, present: 0 },
+          );
           expect(project.todos).toEqual({
             facePending: own.todos.facePending,
             violationPending: own.todos.violationPending,
           });
         }
+        expect(overview.attendance.expected).toBe(activeExpected);
         expect(overview.projects.find((row) => row.projectId === p1)!.todos.facePending).toBe(1);
         expect(overview.projects.find((row) => row.projectId === p2)!.todos.violationPending).toBe(1);
         const all = (await get("company", "/makeups/pending")) as { items: { requesterUserId: string; onlyYou: boolean }[] };
@@ -304,6 +314,65 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         expect(inbox.items.map((row) => row.requesterUserId)).toEqual([users.w1]);
         expect(((await get("other", "/makeups/pending")) as { items: unknown[] }).items).toEqual([]);
         expect((await get("company", "/makeups/pending?onlyMine=yes", 400)).message).toBe("INVALID_MAKEUP_INBOX_QUERY");
+      });
+    });
+
+    describe("a participant read can be saved back unchanged", (): void => {
+      type Read = {
+        additionalRoles: { roleCode: string; teamId: string | null }[];
+        displayName: string; enteredAt: string; exitedAt: string | null; participantType: string;
+        phone: string; profileUpdatedAt: string; projectRoleLabel: string; requiresAttendance: boolean;
+        status: string; teamId: string | null; updatedAt: string; workType: string | null;
+      };
+      const writeBody = (read: Read) => ({
+        additionalRoles: read.additionalRoles.map(({ roleCode, teamId }) => ({ roleCode, teamId })),
+        displayName: read.displayName,
+        enteredAt: read.enteredAt,
+        exitedAt: read.exitedAt,
+        expectedProfileUpdatedAt: read.profileUpdatedAt,
+        expectedUpdatedAt: read.updatedAt,
+        participantType: read.participantType,
+        phone: read.phone,
+        projectRoleLabel: read.projectRoleLabel,
+        requiresAttendance: read.requiresAttendance,
+        status: read.status,
+        teamId: read.teamId,
+        workType: read.workType,
+      });
+
+      test("a manager without a work type round-trips; a worker still needs one", async (): Promise<void> => {
+        const managerPath = `/management/projects/${p1}/participants/${memberIds.get(`pa1:${p1}`)}`;
+        const manager = (await get("company", managerPath)) as Read;
+        expect(manager.workType).toBeNull();
+        const saved = (
+          await http().put(managerPath).auth(auth("company"), { type: "bearer" }).send(writeBody(manager)).expect(200)
+        ).body as Read;
+        expect(saved.workType).toBeNull();
+        const workerPath = `/management/projects/${p1}/participants/${memberIds.get("w1")}`;
+        const worker = (await get("company", workerPath)) as Read;
+        const rejected = (
+          await http()
+            .put(workerPath)
+            .auth(auth("company"), { type: "bearer" })
+            .send({ ...writeBody(worker), workType: null })
+            .expect(400)
+        ).body as { message: string; issues: { path: string[] }[] };
+        expect(rejected.message).toBe("INVALID_PARTICIPANT_REQUEST");
+        expect(rejected.issues.map((issue) => issue.path.join("."))).toEqual(["workType"]);
+      });
+    });
+
+    describe("a preparing project's attendance plan", (): void => {
+      test("can be read by the company admin, still not changed", async (): Promise<void> => {
+        const path = `/attendance/planning/${p3}/PROJECT/${p3}`;
+        const plan = (await get("company", path)) as { points: unknown[] };
+        expect(plan.points.length).toBeGreaterThan(0);
+        const saved = await http()
+          .post(path)
+          .auth(auth("company"), { type: "bearer" })
+          .send({ endsOn: null, expectedId: null, name: "筹备期", points: plan.points, startsOn: "2030-01-01", workdays: [1, 2, 3, 4, 5] })
+          .expect(404);
+        expect(saved.body.message).toBe("PROJECT_NOT_FOUND");
       });
     });
 
@@ -358,6 +427,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         await database.projectManagerMember.create({ data: { projectId: p2, managerId: own.id, roleCode: "WORKER", status: "ACTIVE" } });
         expect((await post("company", `${base}/MANAGER/${own.id}/offboard`, { effectiveDate: "2026-11-21", mode: "EXIT_ALL" }, 409)).body.message).toBe("CANNOT_CHANGE_OWN_MANAGEMENT_ASSIGNMENT");
 
+        const revokedSince = new Date();
         const revoked = (await post("company", `${base}/MANAGER/${managerId}/offboard`, { effectiveDate: "2026-11-21" }, 201)).body;
         expect(revoked.memberships.map((row: { projectRoleLabel: string; status: string }) => [row.projectRoleLabel, row.status])).toEqual([
           ["WORKER", "ACTIVE"],
@@ -365,7 +435,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         ]);
         expect(await database.userRole.count({ where: { userId: users.pa1, role: { code: "PROJECT_ADMIN" } } })).toBe(0);
         expect(await database.userRole.count({ where: { userId: users.pa1, role: { code: "WORKER" } } })).toBe(2);
-        const updates = await database.auditLog.findMany({ where: { action: "project.member.update", entityId: { in: [memberIds.get(`pa1:${p1}`)!, memberIds.get(`pa1:${p3}`)!] } } });
+        const updates = await database.auditLog.findMany({ where: { action: "project.member.update", createdAt: { gte: revokedSince }, entityId: { in: [memberIds.get(`pa1:${p1}`)!, memberIds.get(`pa1:${p3}`)!] } } });
         expect(updates.map((row) => row.projectId).sort()).toEqual([p1, p3]);
         expect(await database.auditLog.count({ where: { action: "PERSONNEL_OFFBOARDED", entityId: managerId } })).toBe(1);
         expect((await post("company", `${base}/MANAGER/${managerId}/offboard`, { effectiveDate: "2026-11-21" }, 409)).body.message).toBe("OFFBOARD_NOTHING_TO_CHANGE");
@@ -373,7 +443,8 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         // A team leader loses the role and the team.
         await post("company", `${base}/WORKER/${workerIds.get("leader")}/offboard`, { effectiveDate: "2026-11-21", mode: "REVOKE_ADMIN" }, 201);
         expect((await database.team.findUniqueOrThrow({ where: { id: t1 } })).leaderWorkerMemberId).toBeNull();
-        expect(await database.teamLeaderChange.count({ where: { teamId: t1, reason: "MEMBER_TRANSFERRED" } })).toBe(1);
+        expect(await database.teamLeaderChange.count({ where: { teamId: t1, reason: "MEMBER_OFFBOARDED" } })).toBe(1);
+        expect(await database.teamLeaderChange.count({ where: { teamId: t1, reason: "MEMBER_TRANSFERRED" } })).toBe(0);
         expect(await database.userRole.count({ where: { userId: users.leader, role: { code: "TEAM_LEADER" } } })).toBe(0);
         expect((await database.projectWorkerMember.findUniqueOrThrow({ where: { id: memberIds.get("leader")! } })).projectRoleLabel).toBe("钢筋工");
 
@@ -531,11 +602,17 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
           data: { action: "project.update", actorUserId: users.company, entityId: p1, entityType: "project", metadata: {}, projectId: p1 },
         });
         expect(row.companyId).toBe(companyId);
-        type Page = { items: { action: string; projectId: string | null }[]; nextCursor: string | null };
+        type Page = { items: { action: string; category: string | null; projectId: string | null }[]; nextCursor: string | null };
         const log = (await get("company", `/management/companies/${companyId}/audit-logs?type=COMPANY`)) as Page;
         const actions = new Set(log.items.map((item) => item.action));
         for (const action of ["project.create", "PERSONNEL_OFFBOARDED", "COMPANY_DEFAULTS_SAVED", "COMPANY_PROFILE_UPDATED"])
           expect(actions.has(action)).toBe(true);
+        // 建项目 is reported under the filter that finds it.
+        expect(log.items.filter((item) => item.action === "project.create").map((item) => item.category)).not.toContain("PROJECT");
+        expect(log.items.find((item) => item.action === "project.create")?.category).toBe("COMPANY");
+        const projectSettings = (await get("company", `/management/companies/${companyId}/audit-logs?type=PROJECT`)) as Page;
+        expect(projectSettings.items.some((item) => item.action === "project.create")).toBe(false);
+        expect(projectSettings.items.every((item) => item.category === "PROJECT")).toBe(true);
         const offboarded = log.items.find((item) => item.action === "PERSONNEL_OFFBOARDED")!;
         expect(offboarded.projectId).toBeNull();
         const other = (await get("other", `/management/companies/${otherCompanyId}/audit-logs`)) as Page;

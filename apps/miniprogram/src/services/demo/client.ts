@@ -552,13 +552,20 @@ const demoCompanyOverview = (
 ): unknown => {
   const projects = state.projects.filter((row) => row.companyId === companyId);
   const ids = new Set(projects.map((row) => row.id));
-  const per = projects.map((project) => ({
-    project,
-    overview: demoProjectOverview(state, userId, project.id, date) as {
+  const per = projects.map((project) => {
+    const overview = demoProjectOverview(state, userId, project.id, date) as {
       readonly attendance: { readonly expected: number; readonly missing: number; readonly present: number; readonly workedMinutes: number };
       readonly todos: { readonly facePending: number; readonly violationPending: number };
-    },
-  }));
+    };
+    // 和真实接口一样：只有进行中的项目算应到，其余项目这一行记 0、不进合计。
+    return {
+      project,
+      overview:
+        project.status === "ACTIVE"
+          ? overview
+          : { ...overview, attendance: { expected: 0, missing: 0, present: 0, workedMinutes: 0 } },
+    };
+  });
   const inbox = (path: string): readonly { readonly projectId: string }[] =>
     (routeDemo(state, userId, path, { method: "GET" }).data as { readonly items: readonly { readonly projectId: string }[] }).items
       .filter((row) => ids.has(row.projectId));
@@ -2103,9 +2110,16 @@ const routeDemo = (
         managedDemoTeam(state, team).leader?.displayName ?? null,
       ]),
     );
+    // 公司日报和真实接口一样只算进行中的项目（公司首页的“到岗 x／y”按它算）。
+    const counted =
+      parts[1] === "companies" && parts[3] === "daily"
+        ? people.filter((row) =>
+            state.projects.some((p) => p.id === row.projectId && p.status === "ACTIVE"),
+          )
+        : people;
     const built = demoReport(
       state,
-      people,
+      counted,
       scopeId,
       parts[3],
       start,

@@ -126,7 +126,7 @@ export const fetchManagedTeam = (
 export type TeamLeaderChange = {
   readonly id: string;
   readonly changedAt: string;
-  readonly reason: "TEAM_UPDATED" | "MEMBER_INACTIVE" | "MEMBER_TRANSFERRED";
+  readonly reason: "TEAM_UPDATED" | "MEMBER_INACTIVE" | "MEMBER_TRANSFERRED" | "MEMBER_OFFBOARDED";
   readonly previousLeaderName: string | null;
   readonly leaderName: string | null;
   readonly changedByName: string | null;

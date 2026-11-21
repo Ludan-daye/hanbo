@@ -36,7 +36,8 @@ const participantWriteSchema = z
     phone: z.string().regex(/^1\d{10}$/),
     participantType: z.enum(["WORKER", "MANAGER"]),
     projectRoleLabel: z.string().trim().min(1).max(40),
-    workType: z.string().trim().min(1).max(40),
+    // Managers may have none (the read returns null); workers always have one.
+    workType: z.string().trim().min(1).max(40).nullable(),
     teamId: z.string().min(1).nullable(),
     requiresAttendance: z.boolean(),
     status: z.enum(["ACTIVE", "EXITED", "SUSPENDED"]),
@@ -63,6 +64,13 @@ const participantWriteSchema = z
         code: z.ZodIssueCode.custom,
         path: ["projectRoleLabel"],
         message: "Choose a project administrator or a team leader with a team.",
+      });
+    }
+    if (body.participantType === "WORKER" && body.workType === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workType"],
+        message: "Workers need a work type.",
       });
     }
   });

@@ -15,7 +15,8 @@ export type ParticipantWriteRequest = {
   readonly phone: string;
   readonly participantType: ParticipantTypeValue;
   readonly projectRoleLabel: string;
-  readonly workType: string;
+  /** null only for managers; the parser rejects it for workers. */
+  readonly workType: string | null;
   readonly teamId: string | null;
   readonly requiresAttendance: boolean;
   readonly status: MemberStatusValue;

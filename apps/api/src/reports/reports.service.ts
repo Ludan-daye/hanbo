@@ -400,18 +400,22 @@ export class ReportsService {
     date: string,
     filter: ReportTeamFilter = NO_TEAM_FILTER,
   ): Promise<DailyAttendanceReportResponse> {
+    // Only ACTIVE projects: a preparing, suspended or completed site has nobody
+    // expected today, so it adds neither rows nor 应到 to the company day. The team
+    // filter is still checked against every company project, like the options.
     const projects = await this.companyProjects(companyId);
+    const teams = await this.filteredTeams(projects, filter);
     return this.daily(
       companyId,
-      projects,
-      await this.filteredTeams(projects, filter),
+      await this.activeProjects(projects),
+      teams,
       null,
       date,
     );
   }
   /**
    * The company daily report's totals, split by project: same rows and rules as
-   * getCompanyDailyReport, without sending the rows.
+   * getCompanyDailyReport (ACTIVE projects only), without sending the rows.
    */
   async getCompanyDailyTotalsByProject(
     companyId: string,
@@ -420,7 +424,9 @@ export class ReportsService {
     readonly byProject: ReadonlyMap<string, AttendanceReportTotals>;
     readonly totals: AttendanceReportTotals;
   }> {
-    const projects = await this.companyProjects(companyId);
+    const projects = await this.activeProjects(
+      await this.companyProjects(companyId),
+    );
     const rows = await this.days(
       this.prisma,
       projects,
@@ -728,6 +734,17 @@ export class ReportsService {
     if (team === null)
       throw new NotFoundException({ message: "REPORT_TEAM_NOT_FOUND", teamId });
     return team.projectId;
+  }
+  private async activeProjects(
+    projectIds: readonly string[],
+  ): Promise<readonly string[]> {
+    if (projectIds.length === 0) return [];
+    return (
+      await this.prisma.project.findMany({
+        where: { id: { in: [...projectIds] }, status: "ACTIVE" },
+        select: { id: true },
+      })
+    ).map((row) => row.id);
   }
   private async companyProjects(companyId: string): Promise<readonly string[]> {
     if (

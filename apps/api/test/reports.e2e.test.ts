@@ -38,6 +38,8 @@ type SessionRecord = {
 type ProjectRecord = {
   readonly companyId: string;
   readonly id: string;
+  /** Missing means ACTIVE, like most fixtures here. */
+  readonly status?: "ACTIVE" | "COMPLETED" | "PREPARING" | "SUSPENDED";
 };
 
 type RolePermissionRecord = {
@@ -154,6 +156,8 @@ type ProjectFindManyArgs = {
   };
   readonly where: {
     readonly companyId?: string;
+    readonly id?: { readonly in: readonly string[] };
+    readonly status?: string;
   };
 };
 
@@ -290,11 +294,12 @@ class ReportsPrismaTestDouble {
   readonly project = {
     findUnique: async (args: ProjectFindUniqueArgs): Promise<ProjectRecord | null> => this.projects.get(args.where.id) ?? null,
     findMany: async (args: ProjectFindManyArgs): Promise<ProjectRecord[]> => {
-      const allProjects = Array.from(this.projects.values());
-      if (args.where.companyId !== undefined) {
-        return allProjects.filter((p: ProjectRecord): boolean => p.companyId === args.where.companyId);
-      }
-      return allProjects;
+      return Array.from(this.projects.values()).filter(
+        (p: ProjectRecord): boolean =>
+          (args.where.companyId === undefined || p.companyId === args.where.companyId) &&
+          (args.where.id === undefined || args.where.id.in.includes(p.id)) &&
+          (args.where.status === undefined || (p.status ?? "ACTIVE") === args.where.status)
+      );
     }
   };
 
@@ -930,7 +935,7 @@ describe("ReportsModule", (): void => {
       .expect(403);
   });
 
-  test("GET /reports/companies/:companyId/daily aggregates across all projects in the company", async (): Promise<void> => {
+  test("GET /reports/companies/:companyId/daily aggregates across the active projects in the company", async (): Promise<void> => {
     // Use company-alpha (distinct from beforeEach's company-1) so project-1 members don't appear.
     // Seed: company-alpha with project-A and project-B; company-beta with project-C.
     prisma.companies.set("company-alpha", { id: "company-alpha" });
@@ -938,6 +943,19 @@ describe("ReportsModule", (): void => {
     prisma.projects.set("project-A", { companyId: "company-alpha", id: "project-A" });
     prisma.projects.set("project-B", { companyId: "company-alpha", id: "project-B" });
     prisma.projects.set("project-C", { companyId: "company-beta", id: "project-C" });
+    // A suspended site adds nobody to the company day (nor to the company home's 应到).
+    prisma.projects.set("project-D", { companyId: "company-alpha", id: "project-D", status: "SUSPENDED" });
+    prisma.workerMembers.push({
+      id: "member-D1",
+      projectId: "project-D",
+      projectRoleLabel: "Worker",
+      requiresAttendance: true,
+      status: "ACTIVE",
+      team: null,
+      teamId: null,
+      worker: { id: "worker-D1", phone: "13900000004", workType: "General" },
+      workerId: "worker-D1"
+    });
 
     // worker-A1 in project-A, worker-B1 in project-B, worker-C1 in project-C
     prisma.workerMembers.push({
@@ -996,6 +1014,7 @@ describe("ReportsModule", (): void => {
     expect(participantIds).toContain("worker-A1");
     expect(participantIds).toContain("worker-B1");
     expect(participantIds).not.toContain("worker-C1");
+    expect(participantIds).not.toContain("worker-D1");
     expect(response.body.totals.participantCount).toBe(2);
     expect(response.body.projectId).toBe("company-alpha");
     expect(response.body.periodType).toBe("DAILY");

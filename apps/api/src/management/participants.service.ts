@@ -17,7 +17,7 @@ import { AuthorizationContextService } from "../authorization/authorization-cont
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
-import { recordTeamLeaderChange } from "./team-leader-history.js";
+import { recordTeamLeaderChange, type TeamLeaderChangeReason } from "./team-leader-history.js";
 
 import {
   decryptPersonnelName,
@@ -57,6 +57,16 @@ type ManagerMember = Prisma.ProjectManagerMemberGetPayload<{
     additionalRoles: { include: { team: true } };
   };
 }>;
+/** The parser already rejects a worker without a work type; this narrows the type. */
+const workerWorkType = (body: ParticipantWriteRequest): string => {
+  if (body.workType === null)
+    throw new BadRequestException({
+      message: "INVALID_PARTICIPANT_REQUEST",
+      issues: [{ path: ["workType"], message: "Workers need a work type." }],
+    });
+  return body.workType;
+};
+
 const nextTimestamp = (previous: Date, now: Date): Date =>
   new Date(Math.max(previous.getTime() + 1, now.getTime()));
 
@@ -439,7 +449,7 @@ export class ParticipantsService {
                 ),
               ],
               phone: body.phone,
-              workType: body.workType,
+              workType: workerWorkType(body),
               realNameStatus: "PENDING",
               faceProfileStatus: "PENDING",
               employmentStatus: "ACTIVE",
@@ -851,6 +861,8 @@ export class ParticipantsService {
     previous: ManagedParticipantResponse,
     body: ParticipantWriteRequest,
     authorization: AuthorizationData,
+    /** Why a team they no longer may lead loses them, while they stay ACTIVE. */
+    leaderClearReason: TeamLeaderChangeReason = "MEMBER_TRANSFERRED",
   ): Promise<void> {
     {
       await this.validateTeam(transaction, projectId, body.teamId);
@@ -978,7 +990,7 @@ export class ParticipantsService {
             previous: team,
             next: { leaderWorkerMemberId: null, leaderManagerMemberId: null },
             reason:
-              body.status !== "ACTIVE" ? "MEMBER_INACTIVE" : "MEMBER_TRANSFERRED",
+              body.status !== "ACTIVE" ? "MEMBER_INACTIVE" : leaderClearReason,
             changedByUserId: actorUserId,
           });
         for (const team of cleared)
@@ -995,7 +1007,7 @@ export class ParticipantsService {
                 reason:
                   body.status !== "ACTIVE"
                     ? "MEMBER_INACTIVE"
-                    : "MEMBER_TRANSFERRED",
+                    : leaderClearReason,
               },
             },
           });
@@ -1073,7 +1085,7 @@ export class ParticipantsService {
             ),
           ],
           phone: body.phone,
-          workType: body.workType,
+          workType: workerWorkType(body),
           updatedAt: nextTimestamp(
             new Date(previous.profileUpdatedAt),
             new Date(),

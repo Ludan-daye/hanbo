@@ -339,6 +339,7 @@ export class CompanyPeopleService {
           previous,
           change.body,
           authorization,
+          "MEMBER_OFFBOARDED",
         );
         // Without management posts they no longer head a team either (Q3), even one they stay in.
         if (request.mode === "REVOKE_ADMIN") {
@@ -357,7 +358,7 @@ export class CompanyPeopleService {
               next: { leaderManagerMemberId: null, leaderWorkerMemberId: null },
               previous: team,
               projectId: change.projectId,
-              reason: "MEMBER_TRANSFERRED",
+              reason: "MEMBER_OFFBOARDED",
               teamId: team.id,
             });
             await transaction.auditLog.create({
@@ -366,7 +367,7 @@ export class CompanyPeopleService {
                 actorUserId,
                 entityId: team.id,
                 entityType: "team",
-                metadata: { memberId: change.memberId, projectId: change.projectId, reason: "MEMBER_TRANSFERRED" },
+                metadata: { memberId: change.memberId, projectId: change.projectId, reason: "MEMBER_OFFBOARDED" },
                 projectId: change.projectId,
               },
             });

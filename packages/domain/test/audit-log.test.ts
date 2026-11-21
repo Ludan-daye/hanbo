@@ -72,7 +72,8 @@ describe("operation log", () => {
 
 describe("company-level operation log", () => {
   it("keeps one category per action while the company filter finds company actions", () => {
-    expect(auditCategoryOf("project.create")).toBe("PROJECT");
+    expect(auditCategoryOf("project.create")).toBe("COMPANY");
+    expect(auditActionsIn("PROJECT")).not.toContain("project.create");
     expect(auditCategoryOf("report.export.requested")).toBe("ATTENDANCE");
     expect(auditCategoryOf("PERSONNEL_OFFBOARDED")).toBe("COMPANY");
     expect(auditCategoryOf("WORKER_REGISTRATION_VIEWED")).toBe("PEOPLE");

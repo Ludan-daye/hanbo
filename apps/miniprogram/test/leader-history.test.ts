@@ -41,5 +41,15 @@ describe("负责人变更记录", () => {
       title: "取消 张建国",
       sub: "11月20日 09:30，负责人暂停或退场，自动取消",
     });
+    expect(
+      leaderChangeLine({
+        id: "4",
+        changedAt: at,
+        reason: "MEMBER_OFFBOARDED",
+        previousLeaderName: "张建国",
+        leaderName: null,
+        changedByName: "王经理",
+      }).sub,
+    ).toBe("11月20日 09:30，负责人离岗，收回管理职务，自动取消");
   });
 });

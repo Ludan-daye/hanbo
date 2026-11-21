@@ -62,9 +62,11 @@ const CATEGORY_ACTIONS: Readonly<Record<AuditCategory, readonly string[]>> = {
     "TEAM_SAFETY_ISSUE_CREATED",
     "TEAM_SAFETY_ISSUE_RESOLVED",
   ],
-  PROJECT: ["project.create", "project.update"],
-  // Listed after the others, so auditCategoryOf keeps project.create under PROJECT and
-  // exports under ATTENDANCE; the COMPANY filter still finds them.
+  // 建项目 is a company action (company plan): it is only under COMPANY, so an entry's
+  // category always matches the filter that finds it.
+  PROJECT: ["project.update"],
+  // Listed after the others, so auditCategoryOf keeps exports under ATTENDANCE;
+  // the COMPANY filter still finds them.
   COMPANY: [
     "project.create",
     "report.export.requested",

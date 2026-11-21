@@ -1132,7 +1132,7 @@ model TeamLeaderChange {
   previousLeaderManagerMemberId String?
   leaderWorkerMemberId          String?
   leaderManagerMemberId         String?
-  /// TEAM_UPDATED | MEMBER_INACTIVE | MEMBER_TRANSFERRED
+  /// TEAM_UPDATED | MEMBER_INACTIVE | MEMBER_TRANSFERRED | MEMBER_OFFBOARDED
   reason                        String
   changedByUserId               String?
   changedAt                     DateTime @default(now())

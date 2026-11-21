@@ -28,7 +28,9 @@ export const leaderChangeLine = (
       ? "负责人暂停或退场，自动取消"
       : change.reason === "MEMBER_TRANSFERRED"
         ? "负责人换了班组或不再担任，自动取消"
-        : null;
+        : change.reason === "MEMBER_OFFBOARDED"
+          ? "负责人离岗，收回管理职务，自动取消"
+          : null;
   const by = change.changedByName ? `${change.changedByName} 办理` : null;
   return {
     title,

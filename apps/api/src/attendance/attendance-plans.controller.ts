@@ -187,6 +187,7 @@ export class AttendancePlansController {
     projectId: string,
     scopeType: string,
     scopeId: string,
+    access: "read" | "write",
   ): Promise<{ readonly scopeType: PlanScopeType; readonly level: number }> {
     if (
       scopeType !== "PROJECT" &&
@@ -197,7 +198,9 @@ export class AttendancePlansController {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
     });
-    if (project === null || project.status !== "ACTIVE")
+    // Any project's plan can be read (a new PREPARING project already has the
+    // company defaults applied); only ACTIVE projects take changes, as before.
+    if (project === null || (access === "write" && project.status !== "ACTIVE"))
       throw new NotFoundException({ message: "PROJECT_NOT_FOUND" });
     let teamId: string | null = null;
     let targetLevel: number = 0;
@@ -268,7 +271,7 @@ export class AttendancePlansController {
     @Param("scopeType") scopeType: string,
     @Param("scopeId") scopeId: string,
   ): Promise<PlanResponse> {
-    await this.target(actor, projectId, scopeType, scopeId);
+    await this.target(actor, projectId, scopeType, scopeId, "read");
     return response(
       await this.prisma.attendancePlan.findFirst({
         where: { projectId, scopeType, scopeId },
@@ -285,7 +288,13 @@ export class AttendancePlansController {
     @Param("scopeId") scopeId: string,
     @Body() body: unknown,
   ): Promise<PlanResponse> {
-    const target = await this.target(actor, projectId, scopeType, scopeId);
+    const target = await this.target(
+      actor,
+      projectId,
+      scopeType,
+      scopeId,
+      "write",
+    );
     const input = parsePlanBody(body);
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`plan:${projectId}:${scopeType}:${scopeId}`}, 0))`;
@@ -348,7 +357,13 @@ export class AttendancePlansController {
     @Param("scopeId") scopeId: string,
     @Body() body: unknown,
   ): Promise<PlanResponse> {
-    const target = await this.target(actor, projectId, scopeType, scopeId);
+    const target = await this.target(
+      actor,
+      projectId,
+      scopeType,
+      scopeId,
+      "write",
+    );
     if (scopeType === "PROJECT")
       throw new BadRequestException({ message: "项目默认排班不能移除。" });
     const input = parsePlanBody(body);
