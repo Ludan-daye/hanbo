@@ -1081,6 +1081,8 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     const approved = await client.request<TransferRequest>(`/management/companies/demo-company/transfer-requests/${asked.id}/approve`, { method: "POST", data: {} });
     expect(approved.status).toBe("APPROVED");
     expect(readDemoState().people.some((row) => row.projectId === "demo-project" && row.memberId === approved.createdMemberId)).toBe(true);
+    // 默认调走：原项目办了退场。
+    expect(readDemoState().people.find((row) => row.projectId === "demo-project-2" && row.memberId === helper.memberId)?.status).toBe("EXITED");
   });
 
   test("a company admin sees who runs each project, offboards a manager and adds a new one", async () => {

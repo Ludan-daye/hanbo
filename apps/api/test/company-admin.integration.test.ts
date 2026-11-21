@@ -52,7 +52,7 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       const session = await database.userSession.create({
         data: {
           userId,
-          tokenHash: createHash("sha256").update(userId).digest("hex"),
+          tokenHash: createHash("sha256").update(`${userId}:${randomBytes(8).toString("hex")}`).digest("hex"),
           expiresAt: new Date(Date.now() + 3_600_000),
         },
       });
@@ -569,6 +569,68 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         const pending = (await get("company", `/management/companies/${companyId}/people-page?projectId=${p1}&status=ACTIVE&registrationStatus=PENDING&participantType=WORKER`)) as { total: number };
         expect(of(p1).registrationPending).toBe(pending.total);
         expect(of(p1).lowCredit).toBe(0);
+      });
+    });
+
+    describe("transfer requests move or keep the source post", (): void => {
+      test("调走 exits the source membership the day before; 兼任 keeps it", async (): Promise<void> => {
+        await database.user.create({
+          data: { id: "ca-pa2", openid: "ca-pa2", nickname: "ca-pa2", isBound: true, phone: "13910000201", encryptedRealName: encryptPersonnelName("项目经理乙", key, randomBytes(12)) },
+        });
+        const role = await database.role.findUniqueOrThrow({ where: { code: "PROJECT_ADMIN" } });
+        await database.userRole.create({ data: { userId: "ca-pa2", roleId: role.id, scopeType: "PROJECT", scopeId: p3 } });
+        const pa2 = await tokenFor("ca-pa2");
+        const worker = async (name: string, phone: string) => {
+          const profile = await database.workerProfile.create({
+            data: { encryptedName: encryptPersonnelName(name, key, randomBytes(12)), phone, workType: "木工", realNameStatus: "PENDING", faceProfileStatus: "PENDING", employmentStatus: "ACTIVE" },
+          });
+          return database.projectWorkerMember.create({
+            data: { projectId: p2, workerId: profile.id, teamId: t2, enteredAt: new Date("2026-10-01T00:00:00+08:00"), projectRoleLabel: "木工", status: "ACTIVE" },
+          });
+        };
+        const ask = async (sourceMemberId: string, mode?: string) => {
+          const response = await http().post(`/management/projects/${p3}/transfer-requests`).auth(pa2, { type: "bearer" }).send({
+            sourceProjectId: p2, sourceMemberId, participantType: "WORKER", projectRoleLabel: "木工", teamId: null,
+            requiresAttendance: true, enteredAt: "2026-11-25T00:00:00+08:00", ...(mode === undefined ? {} : { mode }),
+          });
+          if (response.status !== 201) throw new Error(`${response.status} ${JSON.stringify(response.body)}`);
+          return response.body as { id: string; mode: string };
+        };
+        const approve = (id: string) =>
+          http().post(`/management/companies/${companyId}/transfer-requests/${id}/approve`).auth(auth("company"), { type: "bearer" }).send({}).expect(201);
+        const moving = await worker("调走甲", "13910000301");
+        const moved = await ask(moving.id);
+        expect(moved.mode).toBe("MOVE");
+        await approve(moved.id);
+        const source = await database.projectWorkerMember.findUniqueOrThrow({ where: { id: moving.id } });
+        expect(source.status).toBe("EXITED");
+        expect(source.exitedAt?.toISOString()).toBe(new Date("2026-11-24T00:00:00+08:00").toISOString());
+        expect(await database.projectWorkerMember.count({ where: { projectId: p3, workerId: moving.workerId, status: "ACTIVE" } })).toBe(1);
+        const staying = await worker("兼任乙", "13910000302");
+        const kept = await ask(staying.id, "CONCURRENT");
+        await approve(kept.id);
+        expect((await database.projectWorkerMember.findUniqueOrThrow({ where: { id: staying.id } })).status).toBe("ACTIVE");
+        expect(await database.projectWorkerMember.count({ where: { projectId: p3, workerId: staying.workerId } })).toBe(1);
+        const audit = await database.auditLog.findFirstOrThrow({ where: { action: "PERSONNEL_TRANSFER_APPROVED", entityId: moved.id } });
+        expect(audit.metadata).toMatchObject({ mode: "MOVE" });
+        expect(await database.auditLog.count({ where: { action: "project.member.update", entityId: moving.id, projectId: p2 } })).toBe(1);
+      });
+    });
+
+    describe("project status belongs to the company", (): void => {
+      test("a project admin keeps the attendance area but cannot pause or complete the project", async (): Promise<void> => {
+        const pa2 = await tokenFor("ca-pa2");
+        const path = `/management/projects/${p3}`;
+        const current = (await http().get(path).auth(pa2, { type: "bearer" }).expect(200)).body;
+        const denied = await http().put(path).auth(pa2, { type: "bearer" })
+          .send({ ...current, expectedUpdatedAt: current.updatedAt, status: "SUSPENDED" }).expect(403);
+        expect(denied.body.message).toBe("PROJECT_STATUS_REQUIRES_COMPANY_ADMIN");
+        const moved = (await http().put(path).auth(pa2, { type: "bearer" })
+          .send({ ...current, expectedUpdatedAt: current.updatedAt, geofenceRadiusM: 450 }).expect(200)).body;
+        expect(moved.geofenceRadiusM).toBe(450);
+        const paused = (await http().put(path).auth(auth("company"), { type: "bearer" })
+          .send({ ...moved, expectedUpdatedAt: moved.updatedAt, status: "SUSPENDED" }).expect(200)).body;
+        expect(paused.status).toBe("SUSPENDED");
       });
     });
   },

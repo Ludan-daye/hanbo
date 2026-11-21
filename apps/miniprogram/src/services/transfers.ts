@@ -9,10 +9,13 @@ import type {
 // 跨项目调人（2026-11-20 的决定 6）：项目管理员向公司管理员申请，公司管理员同意后调入。
 
 export type TransferStatus = "PENDING" | "APPROVED" | "REJECTED";
+/** 调走：同意后原项目办退场；兼任：原项目照旧（2026-11-21 Q11，默认调走）。 */
+export type TransferMode = "MOVE" | "CONCURRENT";
 
 export type TransferRequestForm = {
   readonly additionalRoles?: readonly AdditionalMemberRole[];
   readonly enteredAt: string;
+  readonly mode?: TransferMode;
   readonly participantType: ParticipantType;
   readonly projectRoleLabel: string;
   readonly requiresAttendance: boolean;
@@ -28,6 +31,8 @@ export type TransferRequest = {
   readonly displayName: string | null;
   readonly enteredAt: string;
   readonly id: string;
+  /** 旧数据没有，按兼任处理。 */
+  readonly mode?: TransferMode;
   readonly participantType: ParticipantType;
   readonly projectRoleLabel: string;
   readonly requestedByName: string | null;

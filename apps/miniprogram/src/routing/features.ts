@@ -106,7 +106,7 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
     },
     {
       title: "项目设置",
-      sub: "管理项目状态与考勤位置",
+      sub: "项目资料与考勤位置",
       icon: "gear",
       url: "/pages/project-detail/index",
     },

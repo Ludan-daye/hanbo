@@ -19,6 +19,8 @@ const writeSchema = z
   .object({
     additionalRoles: z.array(additionalRoleSchema).max(20).optional(),
     enteredAt: z.string().datetime({ offset: true }),
+    // Q11 (2026-11-21): 调走 exits the source membership on approval; 兼任 keeps it.
+    mode: z.enum(["MOVE", "CONCURRENT"]).default("MOVE"),
     participantType: z.enum(["WORKER", "MANAGER"]),
     projectRoleLabel: z.string().trim().min(1).max(40),
     requiresAttendance: z.boolean(),

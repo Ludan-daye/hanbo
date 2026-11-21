@@ -14,7 +14,9 @@ import {
   BottomBar,
   Button,
   Check,
+  Chips,
   FormInput,
+  FormRow,
   FormSwitch,
   Links,
   Notice,
@@ -54,8 +56,14 @@ import {
   fetchTransferSources,
   requestTransfer,
   transferStatusLabel,
+  type TransferMode,
   type TransferRequest,
 } from "../../services/transfers";
+
+const TRANSFER_MODES: ReadonlyArray<{ readonly value: TransferMode; readonly label: string }> = [
+  { value: "MOVE", label: "调走" },
+  { value: "CONCURRENT", label: "兼任" },
+];
 import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
 
@@ -97,6 +105,8 @@ export default function PersonReuse(): JSX.Element {
   const [page, setPage] = useState<number>(1);
   const [enteredAt, setEnteredAt] = useState<string>(new Date().toISOString());
   const [requiresAttendance, setRequiresAttendance] = useState<boolean>(true);
+  // 向公司申请时选调走（默认，原项目办退场）还是兼任（Q11）。
+  const [mode, setMode] = useState<TransferMode>("MOVE");
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   // 点过“加入本项目”、没通过检查之后，把有问题的行标出来。
@@ -227,7 +237,9 @@ export default function PersonReuse(): JSX.Element {
     const confirmation = await Taro.showModal({
       title: requesting ? "向公司管理员申请" : "确认加入本项目",
       content: requesting
-        ? "公司管理员同意后，他沿用档案和微信绑定加入本项目。"
+        ? mode === "MOVE"
+          ? "公司管理员同意后，他沿用档案和微信绑定加入本项目，原项目办退场。"
+          : "公司管理员同意后，他沿用档案和微信绑定加入本项目，原项目身份照旧。"
         : "沿用档案和微信绑定，保留原项目记录。",
       confirmText: requesting ? "提交申请" : "确认加入",
     });
@@ -242,6 +254,7 @@ export default function PersonReuse(): JSX.Element {
           participantType: selected.participantType,
           ...fields,
           enteredAt,
+          mode,
           requiresAttendance,
         });
         await Taro.showToast({ title: "已提交申请", icon: "success" });
@@ -336,10 +349,22 @@ export default function PersonReuse(): JSX.Element {
             checked={requiresAttendance}
             onChange={setRequiresAttendance}
           />
+          {requesting ? (
+            <FormRow label="原项目">
+              <Chips
+                onSheet
+                options={TRANSFER_MODES}
+                selected={[mode]}
+                onToggle={(value) => {
+                  if (!busy) setMode(value);
+                }}
+              />
+            </FormRow>
+          ) : null}
         </Sheet>
         <Notice>
           {requesting
-            ? `公司管理员同意后加到${targetName ?? "本项目"}，沿用原档案和微信绑定，原项目的记录保留。`
+            ? `公司管理员同意后加到${targetName ?? "本项目"}，沿用原档案和微信绑定。${mode === "MOVE" ? "调走：原项目在进场前一天办退场，记录保留。" : "兼任：原项目的身份照旧。"}`
             : `加到${targetName ?? "本项目"}后，沿用原档案和微信绑定，原项目的记录保留。`}
         </Notice>
         {error ? <Notice tone="error">{error}</Notice> : null}

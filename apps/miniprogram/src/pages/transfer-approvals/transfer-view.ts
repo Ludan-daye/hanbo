@@ -9,6 +9,14 @@ export const transferRoute = (
   row: Pick<TransferRequest, "sourceProjectName" | "targetProjectName">,
 ): string => `从 ${row.sourceProjectName} 调到 ${row.targetProjectName}`;
 
+/** 调走还是兼任：调走的同意后原项目办退场。 */
+export const transferModeText = (
+  row: Pick<TransferRequest, "mode" | "sourceProjectName">,
+): string =>
+  row.mode === "MOVE"
+    ? `调走：同意后在${row.sourceProjectName}办退场`
+    : `兼任：${row.sourceProjectName}的身份照旧`;
+
 /** 在新项目的岗位：身份或岗位名，加上班组。 */
 export const transferPost = (
   row: Pick<TransferRequest, "projectRoleLabel" | "teamName">,

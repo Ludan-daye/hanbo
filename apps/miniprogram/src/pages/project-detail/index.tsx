@@ -275,6 +275,12 @@ export default function ProjectDetail(): JSX.Element {
     );
   }
 
+  const canChangeStatus = (state.me?.roles.assignments ?? []).some(
+    (assignment) =>
+      assignment.roleCode === "SYSTEM_ADMIN" ||
+      (assignment.roleCode === "COMPANY_ADMIN" &&
+        assignment.scope.scopeId === project.companyId),
+  );
   const statusIndex = Math.max(
     0,
     STATUSES.findIndex((item) => item.value === project.status),
@@ -300,20 +306,27 @@ export default function ProjectDetail(): JSX.Element {
             setProject({ ...project, code: code.trim() || null })
           }
         />
-        <View className="project-detail__pick">
-          <Picker
-            mode="selector"
-            range={STATUSES.map((item) => item.label)}
-            value={statusIndex}
-            disabled={busy}
-            onChange={(event) => {
-              const next = STATUSES[Number(event.detail.value)];
-              if (next) setProject({ ...project, status: next.value });
-            }}
-          >
-            <FormRow label="状态" value={STATUSES[statusIndex].label} chevron />
-          </Picker>
-        </View>
+        {canChangeStatus ? (
+          <View className="project-detail__pick">
+            <Picker
+              mode="selector"
+              range={STATUSES.map((item) => item.label)}
+              value={statusIndex}
+              disabled={busy}
+              onChange={(event) => {
+                const next = STATUSES[Number(event.detail.value)];
+                if (next) setProject({ ...project, status: next.value });
+              }}
+            >
+              <FormRow label="状态" value={STATUSES[statusIndex].label} chevron />
+            </Picker>
+          </View>
+        ) : (
+          // Q5：项目暂停、完工由公司管理员办理，项目管理员这里只看。
+          <View className="project-detail__pick">
+            <FormRow label="状态" value={`${STATUSES[statusIndex].label}（由公司管理员修改）`} />
+          </View>
+        )}
         <View className="project-detail__pick">
           <Picker
             mode="date"

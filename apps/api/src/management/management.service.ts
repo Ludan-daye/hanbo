@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { ProjectMemberRole } from "@prisma/client";
 import { additionalRoleView } from "./membership-roles.js";
@@ -251,6 +251,11 @@ export class ManagementService {
         if (body.id !== projectId || body.companyId !== previous.companyId) {
           throw new BadRequestException({ message: "PROJECT_COMPANY_CANNOT_CHANGE" });
         }
+        // Q5 (2026-11-21): pausing or completing a project is the company's call; the
+        // attendance area stays with project admins (audited below).
+        if (body.status !== previous.status && !(await this.companyLevel(transaction, actorUserId, previous.companyId))) {
+          throw new ForbiddenException({ message: "PROJECT_STATUS_REQUIRES_COMPANY_ADMIN", projectId });
+        }
         const result = await transaction.project.updateMany({
           where: { id: projectId, updatedAt: new Date(body.expectedUpdatedAt) },
           data: {
@@ -290,6 +295,19 @@ export class ManagementService {
       throwConflictForUniqueError(error, "PROJECT_CODE_ALREADY_EXISTS", { projectId });
     }
     return this.getManagedProject(projectId);
+  }
+
+  /** Company admin of this company, or system admin. */
+  private async companyLevel(database: Prisma.TransactionClient, userId: string, companyId: string): Promise<boolean> {
+    return (await database.userRole.count({
+      where: {
+        userId,
+        OR: [
+          { scopeType: "COMPANY", scopeId: companyId, role: { code: "COMPANY_ADMIN" } },
+          { scopeType: "GLOBAL", role: { code: "SYSTEM_ADMIN" } }
+        ]
+      }
+    })) > 0;
   }
 
   async createCompany(request: CreateCompanyRequest): Promise<CompanyResponse> {

@@ -30,7 +30,7 @@ import {
 } from "../../services/transfers";
 import { useSession } from "../../store/session";
 
-import { transferPost, transferRoute, transferWho } from "./transfer-view";
+import { transferModeText, transferPost, transferRoute, transferWho } from "./transfer-view";
 
 type Tab = "PENDING" | "DONE";
 
@@ -124,7 +124,10 @@ export default function TransferApprovals(): JSX.Element {
       decision === "approve"
         ? {
             title: "同意调人",
-            content: `${row.displayName ?? "他"}会加入${row.targetProjectName}，原项目的记录保留。`,
+            content:
+              row.mode === "MOVE"
+                ? `${row.displayName ?? "他"}会加入${row.targetProjectName}，${row.sourceProjectName}在进场前一天办退场；原项目的考勤记录保留。`
+                : `${row.displayName ?? "他"}会加入${row.targetProjectName}，${row.sourceProjectName}的身份照旧（兼任）。`,
             confirmText: "同意",
           }
         : {
@@ -211,6 +214,7 @@ export default function TransferApprovals(): JSX.Element {
             </CardTitle>
             <CardMeta>{transferRoute(row)}</CardMeta>
             <CardMeta>{transferPost(row)}</CardMeta>
+            <CardMeta>{transferModeText(row)}</CardMeta>
             <CardMeta>{transferWho(row)}</CardMeta>
             {row.reviewReason ? <CardMeta>{`原因：${row.reviewReason}`}</CardMeta> : null}
             {actionError?.id === row.id ? (

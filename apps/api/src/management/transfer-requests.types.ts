@@ -2,11 +2,14 @@ import type { ParticipantTypeValue } from "./management.types.js";
 import type { AdditionalMemberRole } from "./participants.types.js";
 
 export type TransferStatusValue = "PENDING" | "APPROVED" | "REJECTED";
+/** 调走 (the source membership exits on approval) or 兼任 (keeps it). */
+export type TransferModeValue = "MOVE" | "CONCURRENT";
 
 /** What a project admin asks for: who, from where, and the post in the target project. */
 export type TransferRequestWrite = {
   readonly additionalRoles?: readonly AdditionalMemberRole[] | undefined;
   readonly enteredAt: string;
+  readonly mode: TransferModeValue;
   readonly participantType: ParticipantTypeValue;
   readonly projectRoleLabel: string;
   readonly requiresAttendance: boolean;
@@ -22,6 +25,7 @@ export type TransferRequestResponse = {
   readonly displayName: string | null;
   readonly enteredAt: string;
   readonly id: string;
+  readonly mode: TransferModeValue;
   readonly participantType: ParticipantTypeValue;
   readonly projectRoleLabel: string;
   readonly requestedByName: string | null;

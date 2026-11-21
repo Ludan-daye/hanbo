@@ -1103,6 +1103,8 @@ model PersonnelTransferRequest {
   additionalRoles    Json             @default("[]")
   requiresAttendance Boolean
   enteredAt          DateTime
+  /// MOVE (调走): the source membership is exited when approved; CONCURRENT (兼任) keeps it.
+  mode               String           @default("MOVE")
   status             String           @default("PENDING")
   requestedByUserId  String
   reviewedByUserId   String?

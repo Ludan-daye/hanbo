@@ -1,6 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
-import { transferPost, transferRoute, transferWho } from "../src/pages/transfer-approvals/transfer-view";
+import { transferModeText, transferPost, transferRoute, transferWho } from "../src/pages/transfer-approvals/transfer-view";
 import { transferStatusLabel } from "../src/services/transfers";
 
 describe("transfer request text", () => {
@@ -19,5 +19,13 @@ describe("transfer request text", () => {
     expect(transferStatusLabel("PENDING")).toEqual({ kind: "warn", text: "等公司同意" });
     expect(transferStatusLabel("APPROVED")).toEqual({ kind: "ok", text: "已调入" });
     expect(transferStatusLabel("REJECTED")).toEqual({ kind: "bad", text: "未同意" });
+  });
+});
+
+describe("调走还是兼任", () => {
+  it("调走写明原项目办退场，兼任和旧数据写照旧", () => {
+    expect(transferModeText({ mode: "MOVE", sourceProjectName: "城市更新" })).toBe("调走：同意后在城市更新办退场");
+    expect(transferModeText({ mode: "CONCURRENT", sourceProjectName: "城市更新" })).toBe("兼任：城市更新的身份照旧");
+    expect(transferModeText({ sourceProjectName: "城市更新" })).toBe("兼任：城市更新的身份照旧");
   });
 });

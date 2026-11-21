@@ -300,6 +300,22 @@ const demoReviewTransfer = (
     });
     next = added.state;
     createdMemberId = (added.data as { readonly memberId: string }).memberId;
+    // 调走（Q11）：原项目在进场前一天办退场；兼任不动原项目。
+    if (request.mode === "MOVE" && source.status !== "EXITED") {
+      const dayBefore = new Date(Date.parse(request.enteredAt) - 86_400_000).toISOString();
+      const exitedAt = dayBefore < source.enteredAt ? source.enteredAt : dayBefore;
+      next = {
+        ...next,
+        people: next.people.map((row) =>
+          row.projectId === source.projectId && row.memberId === source.memberId
+            ? { ...row, status: "EXITED" as const, exitedAt, updatedAt: new Date().toISOString() }
+            : row,
+        ),
+        teams: next.teams.map((team) =>
+          team.projectId === source.projectId && team.leader?.memberId === source.memberId ? { ...team, leader: null } : team,
+        ),
+      };
+    }
   } else if (decision !== "reject") throw new ApiError(405, "调人申请不支持此操作。", {});
   const updated: DemoTransfer = {
     ...request,
@@ -1241,6 +1257,7 @@ const routeDemo = (
           displayName: source.displayName,
           enteredAt: body.enteredAt,
           id: demoId("transfer"),
+          mode: body.mode === "CONCURRENT" ? "CONCURRENT" : "MOVE",
           participantType: source.participantType,
           projectRoleLabel: body.projectRoleLabel,
           requestedByName: state.accountProfiles?.[userId]?.realName ?? "项目管理员",
@@ -1275,6 +1292,12 @@ const routeDemo = (
         };
         if (body.expectedUpdatedAt !== project.updatedAt)
           throw new ApiError(409, "项目资料已更新，请重新进入。", {});
+        // Q5：项目状态（暂停、完工）只能由公司管理员改。
+        if (
+          body.status !== project.status &&
+          !me.roles.assignments.some((row) => row.roleCode === "COMPANY_ADMIN" || row.roleCode === "SYSTEM_ADMIN")
+        )
+          throw new ApiError(403, "项目暂停、完工要由公司管理员办理。", { message: "PROJECT_STATUS_REQUIRES_COMPANY_ADMIN" });
         const updated: ManagedProject = {
           ...body,
           updatedAt: new Date(

@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import type { PersonnelTransferRequest, Prisma } from "@prisma/client";
 
+import { AuthorizationContextService } from "../authorization/authorization-context.service.js";
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
@@ -44,6 +45,8 @@ export class TransferRequestsService {
     @Inject(API_ENV) private readonly env: ApiEnv,
     @Inject(ParticipantsService)
     private readonly participants: ParticipantsService,
+    @Inject(AuthorizationContextService)
+    private readonly authorization: AuthorizationContextService,
   ) {}
 
   /** Same-company projects the actor does not manage (managed ones go through direct reuse). */
@@ -164,6 +167,7 @@ export class TransferRequestsService {
           additionalRoles: [...(body.additionalRoles ?? [])],
           companyId: target.companyId,
           enteredAt: new Date(body.enteredAt),
+          mode: body.mode,
           participantType: source.participantType,
           profileId: source.profileId,
           projectRoleLabel: body.projectRoleLabel,
@@ -183,6 +187,7 @@ export class TransferRequestsService {
           entityId: row.id,
           entityType: "personnel_transfer_request",
           metadata: {
+            mode: row.mode,
             participantType: row.participantType,
             profileId: row.profileId,
             sourceProjectId: row.sourceProjectId,
@@ -273,15 +278,19 @@ export class TransferRequestsService {
         message: "TRANSFER_REQUEST_NOT_PENDING",
         requestId,
       });
-    let memberId: string;
+    let approved: PersonnelTransferRequest;
     try {
       // Approval acts on the person as they are now, not as they were when asked.
       const source = await this.participants.get(
         request.sourceProjectId,
         request.sourceMemberId,
       );
-      memberId = (
-        await this.participants.reuse(request.targetProjectId, actorUserId, {
+      const authorization = await this.authorization.loadAuthorizationData(actorUserId);
+      let row: PersonnelTransferRequest | null = null;
+      await this.participants.reuse(
+        request.targetProjectId,
+        actorUserId,
+        {
           additionalRoles: request.additionalRoles as AdditionalMemberRole[],
           enteredAt: request.enteredAt.toISOString(),
           expectedProfileUpdatedAt: source.profileUpdatedAt,
@@ -292,8 +301,48 @@ export class TransferRequestsService {
           sourceMemberId: request.sourceMemberId,
           sourceProjectId: request.sourceProjectId,
           teamId: request.teamId,
-        })
-      ).memberId;
+        },
+        // Same transaction as the new membership: Q11 调走 exits the source membership
+        // the day before the new one starts; 兼任 leaves it alone.
+        async (transaction, memberId): Promise<void> => {
+          if (request.mode === "MOVE" && source.status !== "EXITED") {
+            const dayBefore = new Date(request.enteredAt.getTime() - 86_400_000);
+            const exitedAt =
+              dayBefore < new Date(source.enteredAt) ? source.enteredAt : dayBefore.toISOString();
+            await this.participants.updateInTransaction(
+              transaction,
+              request.sourceProjectId,
+              request.sourceMemberId,
+              actorUserId,
+              source,
+              {
+                additionalRoles: source.additionalRoles.map(({ roleCode, teamId }) => ({ roleCode, teamId })),
+                displayName: source.displayName as string,
+                enteredAt: source.enteredAt,
+                exitedAt,
+                expectedProfileUpdatedAt: source.profileUpdatedAt,
+                expectedUpdatedAt: source.updatedAt,
+                participantType: source.participantType,
+                phone: source.phone,
+                projectRoleLabel: source.projectRoleLabel,
+                requiresAttendance: source.requiresAttendance,
+                status: "EXITED",
+                teamId: source.teamId,
+                workType: source.workType as string,
+              },
+              authorization,
+            );
+          }
+          row = await transaction.personnelTransferRequest.update({
+            where: { id: request.id },
+            data: { createdMemberId: memberId },
+          });
+          await transaction.auditLog.create({
+            data: this.reviewAudit(row, actorUserId, "PERSONNEL_TRANSFER_APPROVED"),
+          });
+        },
+      );
+      approved = row!;
     } catch (cause: unknown) {
       // Could not add the person: hand the request back so it can be retried or rejected.
       await this.prisma.personnelTransferRequest.updateMany({
@@ -312,16 +361,6 @@ export class TransferRequestsService {
       });
       throw cause;
     }
-    const approved = await this.prisma.$transaction(async (transaction) => {
-      const row = await transaction.personnelTransferRequest.update({
-        where: { id: request.id },
-        data: { createdMemberId: memberId },
-      });
-      await transaction.auditLog.create({
-        data: this.reviewAudit(row, actorUserId, "PERSONNEL_TRANSFER_APPROVED"),
-      });
-      return row;
-    });
     return (await this.views([approved]))[0]!;
   }
 
@@ -370,6 +409,8 @@ export class TransferRequestsService {
       entityType: "personnel_transfer_request",
       metadata: {
         createdMemberId: row.createdMemberId,
+        mode: row.mode,
+        sourceMemberId: row.sourceMemberId,
         sourceProjectId: row.sourceProjectId,
       },
       projectId: row.targetProjectId,
@@ -480,6 +521,7 @@ export class TransferRequestsService {
             : (manager?.name ?? null),
         enteredAt: row.enteredAt.toISOString(),
         id: row.id,
+        mode: row.mode === "CONCURRENT" ? "CONCURRENT" : "MOVE",
         participantType: row.participantType,
         projectRoleLabel: row.projectRoleLabel,
         requestedByName: userName(row.requestedByUserId),

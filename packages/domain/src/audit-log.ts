@@ -219,7 +219,9 @@ export const auditSentence = (
       case "PERSONNEL_TRANSFER_REQUESTED":
         return `申请从其他项目调入 ${person}`;
       case "PERSONNEL_TRANSFER_APPROVED":
-        return `同意了调入 ${person} 的申请`;
+        return meta.mode === "MOVE"
+          ? `同意了调入 ${person}，原项目办了退场`
+          : `同意了调入 ${person} 的申请`;
       case "PERSONNEL_TRANSFER_REJECTED":
         return "拒绝了一条调人申请";
       case "WORKER_REGISTRATION_VERIFIED":

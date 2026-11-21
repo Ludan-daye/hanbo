@@ -551,10 +551,19 @@ export class ParticipantsService {
       );
   }
 
+  /**
+   * `afterCreate` runs inside the same transaction once the new membership exists, so a
+   * caller (an approved transfer that also exits the source membership) commits or rolls
+   * back together with it.
+   */
   async reuse(
     projectId: string,
     actorUserId: string,
     body: ReuseParticipantRequest,
+    afterCreate?: (
+      transaction: Prisma.TransactionClient,
+      createdMemberId: string,
+    ) => Promise<void>,
   ): Promise<ManagedParticipantResponse> {
     const sources = await this.reuseProjects(projectId, actorUserId);
     if (
@@ -714,6 +723,7 @@ export class ParticipantsService {
             },
           },
         });
+        if (afterCreate !== undefined) await afterCreate(transaction, createdId);
         return createdId;
       },
     );

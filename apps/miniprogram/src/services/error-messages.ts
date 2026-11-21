@@ -58,6 +58,7 @@ export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   EVIDENCE_PHOTO_NOT_FOUND: "照片不存在。",
   EVIDENCE_PHOTO_EXPIRED: "凭证照片已失效。",
   EVIDENCE_PHOTO_INTEGRITY_FAILED: "照片完整性校验失败。",
+  PROJECT_STATUS_REQUIRES_COMPANY_ADMIN: "项目暂停、完工要由公司管理员办理。",
   COMPANY_PERSON_NOT_FOUND: "这个人不在本公司的项目里。",
   INVALID_COMPANY_DEFAULTS: "默认打卡安排或工时规则填得不对，请检查后再保存。",
   COMPANY_DEFAULTS_VERSION_CONFLICT: "别人刚改过公司默认，请重新打开再改。",
