@@ -3,7 +3,7 @@ import Taro from "@tarojs/taro";
 import { API_BASE_URL, FRONTEND_DEMO } from "../config/env";
 
 import { ApiError } from "./apiClient";
-import { apiClient } from "./client";
+import { fetchMe } from "./auth";
 import { demoUploadImage } from "./demo/client";
 import { messageForApiError } from "./error-messages";
 
@@ -19,7 +19,7 @@ export const uploadImage = async (
 ): Promise<UploadResult> => {
   if (FRONTEND_DEMO) return demoUploadImage(localFilePath);
   // 先走一次普通请求，让过期的登录态在上传前完成刷新。
-  await apiClient.request("/me");
+  await fetchMe();
   const accessToken = String(Taro.getStorageSync("accessToken") || "");
   const res = await Taro.uploadFile({
     filePath: localFilePath,
