@@ -138,6 +138,7 @@ export const parseParticipantPage = (query: unknown): ParticipantPageQuery => {
         .optional(),
       teamId: z.string().min(1).optional(),
       status: z.enum(["ACTIVE", "EXITED", "SUSPENDED"]).optional(),
+      notInProjectId: z.string().min(1).optional(),
     })
     .strict()
     .safeParse(query);
@@ -152,5 +153,6 @@ export const parseParticipantPage = (query: unknown): ParticipantPageQuery => {
     permissionRole: result.data.permissionRole ?? null,
     teamId: result.data.teamId ?? null,
     status: result.data.status ?? null,
+    notInProjectId: result.data.notInProjectId ?? null,
   };
 };

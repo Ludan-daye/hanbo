@@ -62,6 +62,8 @@ export type ParticipantPageOptions = {
   readonly participantType: ParticipantType | null;
   readonly teamId: string | null;
   readonly status: MemberStatus | null;
+  /** 复用人员时不列已经在这个项目里的人。 */
+  readonly notInProjectId?: string | null;
 };
 
 export type ReportTotals = {
@@ -122,6 +124,10 @@ export type DailyReportParticipant = ReportParticipantBase & {
   readonly isEarlyLeave: boolean;
   readonly isLate: boolean;
   readonly isMissingPunch: boolean;
+  /** 算进到岗：应到里有有效卡、不算缺勤。 */
+  readonly isPresent: boolean;
+  /** 算进应到。 */
+  readonly isScheduled: boolean;
   readonly workedMinutes: number;
   readonly normalMinutes: number;
   readonly overtimeMinutes: number;
@@ -132,12 +138,22 @@ export type DailyReportParticipant = ReportParticipantBase & {
 export type RangeReportParticipant = ReportParticipantBase &
   Omit<ReportTotals, "participantCount">;
 
-/** 项目管理员首页：今天的应到、到岗、缺卡和三类待办的条数，不带明细。 */
+/**
+ * 一天的人数，加起来对得上：应到 = 到岗 + 未到 + 还没到点。未到是应到、已过打卡点、
+ * 一张有效卡都没有的人；到了但漏了后面一张卡的人算到岗（日报里仍标缺卡）。
+ */
+export type DayHeadcount = {
+  readonly expected: number;
+  /** 未到。 */
+  readonly missing: number;
+  readonly present: number;
+  /** 第一张卡还没到点。 */
+  readonly waiting: number;
+};
+
+/** 项目管理员首页：今天的应到、到岗、未到和三类待办的条数，不带明细。 */
 export type ProjectOverview = {
-  readonly attendance: {
-    readonly expected: number;
-    readonly missing: number;
-    readonly present: number;
+  readonly attendance: DayHeadcount & {
     readonly workedMinutes: number;
   };
   readonly date: string;
@@ -152,20 +168,13 @@ export type ProjectOverview = {
 
 /** 公司管理员首页：每个项目一行今天的应到、到岗、缺卡，加公司的待办条数，不带明细。 */
 export type CompanyOverview = {
-  readonly attendance: {
-    readonly expected: number;
-    readonly missing: number;
-    readonly present: number;
+  readonly attendance: DayHeadcount & {
     readonly workedMinutes: number;
   };
   readonly companyId: string;
   readonly date: string;
   readonly projects: readonly {
-    readonly attendance: {
-      readonly expected: number;
-      readonly missing: number;
-      readonly present: number;
-    };
+    readonly attendance: DayHeadcount;
     readonly name: string;
     readonly projectId: string;
     readonly status: ProjectStatus;
@@ -473,7 +482,8 @@ export type CompanyPeopleItem = {
     readonly status: MemberStatus;
     readonly teamName: string | null;
   }[];
-  readonly registrationStatus: "NEEDS_UPDATE" | "PENDING" | "VERIFIED" | null;
+  /** 只有工人有：NOT_SUBMITTED 是还没填，PENDING 是填了待核实。 */
+  readonly registrationStatus: "NEEDS_UPDATE" | "NOT_SUBMITTED" | "PENDING" | "VERIFIED" | null;
 };
 export type CompanyPeoplePage = {
   readonly items: readonly CompanyPeopleItem[];
@@ -489,7 +499,7 @@ export type CompanyPeopleQuery = {
   readonly participantType?: ParticipantType | null;
   readonly permissionRole?: "WORKER" | "TEAM_LEADER" | "PROJECT_ADMIN" | null;
   readonly status?: MemberStatus | null;
-  readonly registrationStatus?: "NEEDS_UPDATE" | "PENDING" | "VERIFIED" | null;
+  readonly registrationStatus?: "NEEDS_UPDATE" | "NOT_SUBMITTED" | "PENDING" | "VERIFIED" | null;
   readonly faceStatus?: "APPROVED" | "NONE" | "PENDING" | "REJECTED" | null;
 };
 
@@ -534,6 +544,9 @@ export type ProjectHealth = {
     readonly lowCredit: number;
     readonly name: string;
     readonly projectId: string;
+    /** 在场工人里还没填用工资料的人数。 */
+    readonly registrationMissing: number;
+    /** 在场工人里填了、等核实的人数。 */
     readonly registrationPending: number;
     readonly status: ProjectStatus;
     readonly violationPending: number;

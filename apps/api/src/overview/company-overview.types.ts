@@ -5,8 +5,11 @@ export type CompanyOverviewResponse = {
   readonly attendance: {
     /** 应到: same rule as the company daily report's scheduled days. */
     readonly expected: number;
+    /** 未到: 应到, a card already due, no valid punch. expected = present + missing + waiting. */
     readonly missing: number;
     readonly present: number;
+    /** 应到 whose first card is not due yet. */
+    readonly waiting: number;
     readonly workedMinutes: number;
   };
   readonly companyId: string;
@@ -18,6 +21,7 @@ export type CompanyOverviewResponse = {
       readonly expected: number;
       readonly missing: number;
       readonly present: number;
+      readonly waiting: number;
     };
     readonly name: string;
     readonly projectId: string;
@@ -50,7 +54,9 @@ export type ProjectHealthResponse = {
     readonly lowCredit: number;
     readonly name: string;
     readonly projectId: string;
-    /** Active workers whose 用工登记 is not verified yet (people-page registrationStatus=PENDING). */
+    /** Active workers who have not filled in 用工登记 (people-page registrationStatus=NOT_SUBMITTED). */
+    readonly registrationMissing: number;
+    /** Active workers whose submitted 用工登记 waits for verification (people-page registrationStatus=PENDING). */
     readonly registrationPending: number;
     readonly status: "ACTIVE" | "COMPLETED" | "PREPARING" | "SUSPENDED";
     readonly violationPending: number;

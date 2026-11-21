@@ -96,6 +96,8 @@ export const fetchParticipantPage = (
   if (options.teamId !== null)
     query.push(`teamId=${encodeURIComponent(options.teamId)}`);
   if (options.status !== null) query.push(`status=${options.status}`);
+  if (options.notInProjectId)
+    query.push(`notInProjectId=${encodeURIComponent(options.notInProjectId)}`);
   return apiClient.request(
     `/management/projects/${projectId}/participant-page?${query.join("&")}`,
     { method: "GET" },

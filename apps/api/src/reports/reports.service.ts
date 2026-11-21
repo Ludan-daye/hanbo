@@ -40,6 +40,7 @@ import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { decryptPersonnelName } from "../management/personnel-name.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
+import { dailyHeadcount } from "./daily-headcount.js";
 import { evaluationView } from "./project-evaluations.service.js";
 import {
   NO_TEAM_FILTER,
@@ -52,6 +53,7 @@ import type {
   AttendanceReportTotals,
   DailyAttendanceReportParticipant,
   DailyAttendanceReportResponse,
+  DailyHeadcount,
   RangeAttendanceReportParticipant,
   RangeAttendanceReportResponse,
 } from "./reports.types.js";
@@ -218,6 +220,10 @@ const mergeTotals = (
     left.confirmedViolationCount + right.confirmedViolationCount,
 });
 
+/** Same rule as actualAttendedDays. */
+const isPresentDay = (day: AttendanceDayValues): boolean =>
+  day.isScheduled && day.hasResult && !day.isAbsent;
+
 const createDailyParticipant = (
   participant: AttendanceReportParticipantBase,
   dayValues: AttendanceDayValues,
@@ -229,6 +235,8 @@ const createDailyParticipant = (
   isEarlyLeave: dayValues.isEarlyLeave,
   isLate: dayValues.isLate,
   isMissingPunch: dayValues.isMissingPunch,
+  isPresent: isPresentDay(dayValues),
+  isScheduled: dayValues.isScheduled,
   workedMinutes: dayValues.workedMinutes,
   normalMinutes: dayValues.normalMinutes,
   overtimeMinutes: dayValues.overtimeMinutes,
@@ -421,8 +429,8 @@ export class ReportsService {
     companyId: string,
     date: string,
   ): Promise<{
-    readonly byProject: ReadonlyMap<string, AttendanceReportTotals>;
-    readonly totals: AttendanceReportTotals;
+    readonly byProject: ReadonlyMap<string, DailyHeadcount>;
+    readonly totals: DailyHeadcount & { readonly workedMinutes: number };
   }> {
     const projects = await this.activeProjects(
       await this.companyProjects(companyId),
@@ -437,21 +445,27 @@ export class ReportsService {
       new Date(),
       null,
     );
-    const byProject = new Map<string, AttendanceReportTotals>();
-    for (const row of rows)
-      byProject.set(
-        row.participant.projectId,
-        addDayToTotals(
-          byProject.get(row.participant.projectId) ?? createEmptyTotals(0),
-          row.dayValues,
-        ),
-      );
+    const participants = rows.map((row) =>
+      createDailyParticipant(row.participant, row.dayValues),
+    );
     return {
-      byProject,
-      totals: rows.reduce(
-        (totals, row) => addDayToTotals(totals, row.dayValues),
-        createEmptyTotals(rows.length),
+      byProject: new Map(
+        [...new Set(participants.map((row) => row.projectId))].map(
+          (projectId) => [
+            projectId,
+            dailyHeadcount(
+              participants.filter((row) => row.projectId === projectId),
+            ),
+          ],
+        ),
       ),
+      totals: {
+        ...dailyHeadcount(participants),
+        workedMinutes: participants.reduce(
+          (sum, row) => sum + row.workedMinutes,
+          0,
+        ),
+      },
     };
   }
   async getCompanyWeeklyReport(

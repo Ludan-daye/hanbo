@@ -297,10 +297,12 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         ).body;
         expect(overview.attendance).toEqual({
           expected: daily.totals.scheduledDays,
-          missing: daily.totals.missingPunchCount,
+          missing: daily.participants.filter((row) => row.isScheduled && !row.isPresent && row.isMissingPunch).length,
           present: daily.totals.actualAttendedDays,
+          waiting: daily.participants.filter((row) => row.isScheduled && !row.isPresent && !row.isMissingPunch).length,
           workedMinutes: daily.totals.workedMinutes,
         });
+        expect(overview.attendance.present + overview.attendance.missing + overview.attendance.waiting).toBe(overview.attendance.expected);
         const inbox = (
           await http()
             .get(`/makeups/pending?projectId=${projectId}`)

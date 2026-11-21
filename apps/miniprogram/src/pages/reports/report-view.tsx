@@ -34,6 +34,7 @@ import {
   SkeletonSign,
   StateView,
 } from "../../components/ui/index";
+import { dayHeadcount } from "../../services/day-headcount";
 import { errorMessage } from "../../services/error-messages";
 import {
   NO_REPORT_TEAM_FILTER,
@@ -281,7 +282,7 @@ export const ReportView = ({
         {heading(people.length)}
         <SearchField
           value={filters.search}
-          placeholder="搜索姓名、手机号或岗位"
+          placeholder="姓名、手机号或岗位"
           onInput={(search) => patchFilters({ search })}
         />
         <ReportPeople
@@ -374,6 +375,9 @@ export const ReportView = ({
           report.totals,
           period,
           byProject ? groupReportProjects(all).length : null,
+          report.periodType === "DAILY"
+            ? dayHeadcount(report.participants)
+            : undefined,
         );
   const exportTarget = reportExportTarget(scope, scopeId, teamFilter);
   const excel =
@@ -479,7 +483,7 @@ export const ReportView = ({
               <SectionTitle {...statsToggle}>按项目</SectionTitle>
               <SearchField
                 value={filters.search}
-                placeholder="搜索姓名、手机号或岗位"
+                placeholder="姓名、手机号或岗位"
                 onInput={(search) => patchFilters({ search })}
               />
               <ReportProjects

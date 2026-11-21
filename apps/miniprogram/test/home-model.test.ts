@@ -446,7 +446,7 @@ describe("projectAdminStatuses", () => {
 describe("overviewMissingText", () => {
   test("writes the missing count, or nothing", () => {
     const overview = (missing: number) => ({
-      attendance: { expected: 5, missing, present: 3, workedMinutes: 0 },
+      attendance: { expected: 5, missing, present: 3, waiting: 0, workedMinutes: 0 },
     });
     expect(overviewMissingText(overview(2))).toBe("2 人");
     expect(overviewMissingText(overview(0))).toBe("");
@@ -457,10 +457,10 @@ describe("overviewMissingText", () => {
 const companyOverview = {
   companyId: "c-1",
   projects: [
-    { attendance: { expected: 48, missing: 0, present: 43 }, name: "滨江花园", projectId: "p-1", status: "ACTIVE" as const, todos: { facePending: 2, violationPending: 0 } },
-    { attendance: { expected: 10, missing: 3, present: 6 }, name: "城市更新", projectId: "p-2", status: "ACTIVE" as const, todos: { facePending: 0, violationPending: 1 } },
-    { attendance: { expected: 0, missing: 0, present: 0 }, name: "新地块", projectId: "p-3", status: "PREPARING" as const, todos: { facePending: 0, violationPending: 0 } },
-    { attendance: { expected: 0, missing: 0, present: 0 }, name: "空项目", projectId: "p-4", status: "ACTIVE" as const, todos: { facePending: 0, violationPending: 0 } },
+    { attendance: { expected: 48, missing: 0, present: 43, waiting: 0 }, name: "滨江花园", projectId: "p-1", status: "ACTIVE" as const, todos: { facePending: 2, violationPending: 0 } },
+    { attendance: { expected: 10, missing: 3, present: 6, waiting: 0 }, name: "城市更新", projectId: "p-2", status: "ACTIVE" as const, todos: { facePending: 0, violationPending: 1 } },
+    { attendance: { expected: 0, missing: 0, present: 0, waiting: 0 }, name: "新地块", projectId: "p-3", status: "PREPARING" as const, todos: { facePending: 0, violationPending: 0 } },
+    { attendance: { expected: 0, missing: 0, present: 0, waiting: 0 }, name: "空项目", projectId: "p-4", status: "ACTIVE" as const, todos: { facePending: 0, violationPending: 0 } },
   ],
   todos: { makeupOnlyYou: 1, makeupPending: 5, transferPending: 2 },
 };

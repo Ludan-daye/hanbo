@@ -321,10 +321,12 @@ describe("standalone frontend workflows using persistent demo storage", () => {
       `/reports/projects/demo-project/daily?date=${date}`,
       { method: "GET" },
     );
+    // 应到 = 到岗 + 未到 + 还没到点；未到不含已经到岗的人。
     expect(overview.attendance).toEqual({
       expected: daily.totals.scheduledDays,
-      missing: daily.totals.missingPunchCount,
+      missing: daily.participants.filter((row) => row.isScheduled && !row.isPresent && row.isMissingPunch).length,
       present: daily.totals.actualAttendedDays,
+      waiting: daily.participants.filter((row) => row.isScheduled && !row.isPresent && !row.isMissingPunch).length,
       workedMinutes: daily.totals.workedMinutes,
     });
     const inbox = await client.request<{ items: { projectId: string }[] }>(

@@ -85,6 +85,7 @@ export class TransferRequestsService {
       search: query.search,
       status: null,
       teamId: null,
+      notInProjectId: projectId,
     });
     return {
       ...page,
@@ -307,8 +308,11 @@ export class TransferRequestsService {
         async (transaction, memberId): Promise<void> => {
           if (request.mode === "MOVE" && source.status !== "EXITED") {
             const dayBefore = new Date(request.enteredAt.getTime() - 86_400_000);
-            const exitedAt =
-              dayBefore < new Date(source.enteredAt) ? source.enteredAt : dayBefore.toISOString();
+            // Entered the source on or after the day before the move (e.g. both today): the
+            // exit cannot precede the entry, so it closes on the entry day and that day stops
+            // counting there (不参与考勤), or the person would be 应到 in both projects.
+            const sameDay = dayBefore < new Date(source.enteredAt);
+            const exitedAt = sameDay ? source.enteredAt : dayBefore.toISOString();
             await this.participants.updateInTransaction(
               transaction,
               request.sourceProjectId,
@@ -325,7 +329,7 @@ export class TransferRequestsService {
                 participantType: source.participantType,
                 phone: source.phone,
                 projectRoleLabel: source.projectRoleLabel,
-                requiresAttendance: source.requiresAttendance,
+                requiresAttendance: sameDay ? false : source.requiresAttendance,
                 status: "EXITED",
                 teamId: source.teamId,
                 workType: source.workType as string,

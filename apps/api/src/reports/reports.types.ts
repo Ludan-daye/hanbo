@@ -51,12 +51,29 @@ export type DailyAttendanceReportParticipant =
     readonly isEarlyLeave: boolean;
     readonly isLate: boolean;
     readonly isMissingPunch: boolean;
+    /** Counted as 到岗: scheduled (应到) with a valid punch and not absent. */
+    readonly isPresent: boolean;
+    /** Counted in 应到 for the day. */
+    readonly isScheduled: boolean;
     readonly workedMinutes: number;
     readonly normalMinutes: number;
     readonly overtimeMinutes: number;
     readonly unclassifiedMinutes: number;
     readonly confirmedViolationCount: number;
   };
+
+/**
+ * One day's headcount that always reconciles: expected = present + notArrived + waiting.
+ * notArrived is 应到 people with a card already due and no valid punch (未到); waiting is
+ * 应到 people whose first card is not due yet. A present person who missed a later card
+ * stays in present (the report's 缺卡 flag still shows it).
+ */
+export type DailyHeadcount = {
+  readonly expected: number;
+  readonly notArrived: number;
+  readonly present: number;
+  readonly waiting: number;
+};
 
 export type RangeAttendanceReportParticipant = AttendanceReportParticipantBase &
   Omit<AttendanceReportTotals, "participantCount">;

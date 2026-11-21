@@ -3,8 +3,11 @@ export type ProjectOverviewResponse = {
   readonly attendance: {
     /** 应到: same rule as the daily report's scheduled days. */
     readonly expected: number;
+    /** 未到: 应到, a card already due, no valid punch. expected = present + missing + waiting. */
     readonly missing: number;
     readonly present: number;
+    /** 应到 whose first card is not due yet. */
+    readonly waiting: number;
     readonly workedMinutes: number;
   };
   /** Asia/Shanghai YYYY-MM-DD. */

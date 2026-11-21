@@ -39,7 +39,7 @@ const ENTRIES: readonly string[] = [
 ];
 
 /**
- * 公司管理员首页：标牌说全公司今天到了多少、缺卡多少；“等你处理”是调人申请、
+ * 公司管理员首页：标牌说全公司今天应到、到岗、未到多少（应到 = 到岗 + 未到 + 还没到点）；“等你处理”是调人申请、
  * 只有你能批的补卡和各项目积压的底照、违规；下面一个进行中的项目一行（没人的也列），
  * 缺得多的排前面，点进去就是这个项目。数字都来自 /management/companies/:id/overview。
  */
@@ -119,6 +119,7 @@ export const CompanyAdminHome = ({
                 date={date}
                 report={sign}
                 missing={overviewMissingText(overview.data)}
+                missingLabel="未到"
                 onOpen={() =>
                   go(featureUrl("/pages/company-reports/index", company))
                 }
@@ -153,7 +154,7 @@ export const CompanyAdminHome = ({
                     }
                     status={
                       line.missing > 0
-                        ? { kind: "bad", text: `缺卡 ${line.missing} 人` }
+                        ? { kind: "bad", text: `未到 ${line.missing} 人` }
                         : undefined
                     }
                     chevron
@@ -170,9 +171,11 @@ export const CompanyAdminHome = ({
                     sub="筹备中、已暂停或已完工"
                     mute
                     chevron
-                    onClick={() =>
-                      go(featureUrl("/pages/company-projects/index", company))
-                    }
+                    onClick={() => {
+                      // 直接停在“其他”（筹备、暂停、完工）这一栏。
+                      const url = featureUrl("/pages/company-projects/index", company);
+                      go(`${url}${url.includes("?") ? "&" : "?"}filter=OTHER`);
+                    }}
                   />
                 ) : null}
               </Sheet>

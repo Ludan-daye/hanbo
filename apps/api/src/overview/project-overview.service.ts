@@ -5,6 +5,7 @@ import { MakeupService } from "../makeup/makeup.service.js";
 import { ReportsService } from "../reports/reports.service.js";
 
 import type { ProjectOverviewResponse } from "./project-overview.types.js";
+import { overviewAttendance as headcount } from "./overview-attendance.js";
 
 @Injectable()
 export class ProjectOverviewService {
@@ -38,9 +39,7 @@ export class ProjectOverviewService {
       ]);
     return {
       attendance: {
-        expected: daily.totals.scheduledDays,
-        missing: daily.totals.missingPunchCount,
-        present: daily.totals.actualAttendedDays,
+        ...headcount(daily.participants),
         workedMinutes: daily.totals.workedMinutes,
       },
       date,

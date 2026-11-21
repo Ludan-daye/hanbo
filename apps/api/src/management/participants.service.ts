@@ -186,9 +186,22 @@ export class ParticipantsService {
     query: ParticipantPageQuery,
   ): Promise<ParticipantPageResponse> {
     const search: string = query.search;
+    // Picking someone to bring into another project: hide who is already there.
+    const elsewhere =
+      query.notInProjectId === null
+        ? null
+        : {
+            projectMemberships: {
+              none: {
+                projectId: query.notInProjectId,
+                status: { not: "EXITED" as const },
+              },
+            },
+          };
     const workerWhere: Prisma.ProjectWorkerMemberWhereInput = {
       projectId,
       AND: [
+        ...(elsewhere === null ? [] : [{ worker: elsewhere }]),
         ...(query.permissionRole === null
           ? []
           : [
@@ -247,6 +260,7 @@ export class ParticipantsService {
     const managerWhere: Prisma.ProjectManagerMemberWhereInput = {
       projectId,
       AND: [
+        ...(elsewhere === null ? [] : [{ manager: elsewhere }]),
         ...(query.permissionRole === null
           ? []
           : [
@@ -1032,6 +1046,8 @@ export class ParticipantsService {
             status: body.status,
             previousTeamId: previous.teamId,
             teamId: body.teamId,
+            // Part of a company offboarding (PERSONNEL_OFFBOARDED), so the log can say so.
+            ...(leaderClearReason === "MEMBER_OFFBOARDED" ? { via: "OFFBOARD" } : {}),
           },
         },
       });

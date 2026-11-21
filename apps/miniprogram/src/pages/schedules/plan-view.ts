@@ -15,3 +15,18 @@ export const pointRule = (
   point: Pick<ScheduledAttendancePoint, "kind" | "graceMins">,
 ): string =>
   `${point.kind === "CHECKPOINT" ? "中途签到，" : ""}${graceLabel(point.kind)} ${point.graceMins} 分钟`;
+
+/**
+ * 没有可以安排的对象时的说明。“由上级安排”只对班组长说得通；项目、公司管理员看到空，
+ * 多半是项目已暂停或完工（只能查看），或者项目里还没有人。
+ */
+export const emptyScopesText = (
+  highestRoleCode: string | null,
+  forProject: boolean,
+): string => {
+  if (highestRoleCode === "COMPANY_ADMIN" || highestRoleCode === "PROJECT_ADMIN" || highestRoleCode === "SYSTEM_ADMIN")
+    return forProject
+      ? "这个项目已暂停或已完工，打卡安排不能再改。"
+      : "你管的项目都已暂停或已完工，打卡安排不能再改。";
+  return "你自己的打卡要求由上级安排。";
+};

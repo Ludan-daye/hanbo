@@ -285,7 +285,7 @@ export const projectAdminStatuses = (
   );
 };
 
-/** 项目首页黑条：缺卡几个人；没人缺卡就是空的。 */
+/** 项目、公司首页黑条：未到几个人（应到、已过打卡点、一张卡都没有）；没有就是空的。 */
 export const overviewMissingText = (
   overview: Pick<ProjectOverview, "attendance"> | null,
 ): string =>
@@ -293,7 +293,7 @@ export const overviewMissingText = (
     ? `${overview.attendance.missing} 人`
     : "";
 
-/** 公司首页上一个进行中的项目一行：“到岗 43／48”，缺卡几人。 */
+/** 公司首页上一个进行中的项目一行：“到岗 43／48”，未到几人。 */
 export type ProjectLine = {
   readonly projectId: string;
   readonly projectName: string;
@@ -303,7 +303,7 @@ export type ProjectLine = {
 };
 
 /**
- * 公司概览里进行中的项目一行一个（没人的也列），缺卡多的排前面；
+ * 公司概览里进行中的项目一行一个（没人的也列），未到多的排前面（公司日报按项目也这样排）；
  * 筹备中、暂停、完工的不列，只数一个数，合成一行“另有 N 个”（2026-11-21 Q1）。
  */
 export const companyProjectLines = (

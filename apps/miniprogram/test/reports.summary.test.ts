@@ -67,6 +67,8 @@ const daily = (
   isEarlyLeave: false,
   isLate: false,
   isMissingPunch: false,
+  isPresent: true,
+  isScheduled: true,
   workedMinutes: 510,
   normalMinutes: 480,
   overtimeMinutes: 30,
@@ -144,6 +146,18 @@ describe("reportSummary", () => {
       title: "4 人到岗，1 人缺卡",
       sub: "应到 5 人，已记工 31.5 小时",
     });
+  });
+  test("daily with a headcount reconciles 应到 = 到岗 + 未到 + 还没到点", () => {
+    const day = { ...totals, actualAttendedDays: 2, scheduledDays: 13 };
+    expect(
+      reportSummary(day, "DAILY", 2, { expected: 13, missing: 10, present: 2, waiting: 1 }),
+    ).toEqual({
+      title: "2 人到岗，10 人未到",
+      sub: "2 个项目，应到 13 人（1 人还没到打卡时间），已记工 850.0 小时",
+    });
+    expect(
+      reportSummary(day, "DAILY", null, { expected: 0, missing: 0, present: 0, waiting: 0 }).title,
+    ).toBe("这一天没有排班");
   });
   test("daily falls back to absences, then to a plain count", () => {
     const day = { ...totals, actualAttendedDays: 4, scheduledDays: 5 };
@@ -259,6 +273,7 @@ describe("people", () => {
         hours: "285.0",
         rate: 95,
         troubled: 1,
+        day: null,
       },
       {
         projectId: "p2",
@@ -267,12 +282,24 @@ describe("people", () => {
         hours: "142.5",
         rate: 90,
         troubled: 0,
+        day: null,
       },
     ]);
     expect(groupReportProjects([daily({ isLate: true })])[0]).toMatchObject({
       rate: null,
       troubled: 1,
     });
+  });
+  test("daily project rows count 到岗／应到 like the home and put more 未到 first", () => {
+    const groups = groupReportProjects([
+      daily({ memberId: "a" }),
+      daily({ memberId: "b", projectId: "p2", projectName: "城市更新", isPresent: false, isMissingPunch: true, workedMinutes: 0 }),
+      daily({ memberId: "c", projectId: "p2", projectName: "城市更新", isScheduled: false, isPresent: false }),
+    ]);
+    expect(groups.map((row) => [row.projectName, row.day])).toEqual([
+      ["城市更新", { expected: 1, missing: 1, present: 0, waiting: 0 }],
+      ["滨江花园", { expected: 1, missing: 0, present: 1, waiting: 0 }],
+    ]);
   });
 });
 

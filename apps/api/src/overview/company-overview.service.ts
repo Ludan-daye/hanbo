@@ -6,6 +6,7 @@ import { ReportsService } from "../reports/reports.service.js";
 import { SafetyCreditService } from "../safety-credit/safety-credit.service.js";
 
 import type { CompanyOverviewResponse, ProjectHealthResponse } from "./company-overview.types.js";
+import { registrationState } from "../management/registration-state.js";
 
 /** 信用低于这个分数算“低信用”。 */
 const LOW_CREDIT = 60;
@@ -43,7 +44,7 @@ export class CompanyOverviewService {
       this.pendingFacesByProject(projectIds),
       this.prisma.projectWorkerMember.findMany({
         where: { projectId: { in: projectIds }, status: "ACTIVE" },
-        select: { projectId: true, workerId: true, worker: { select: { realNameStatus: true } } },
+        select: { projectId: true, workerId: true, worker: { select: { realNameStatus: true, registrationCompletedAt: true } } },
       }),
     ]);
     const now = new Date();
@@ -60,9 +61,13 @@ export class CompanyOverviewService {
         lowCredit: distinct(project.id, (row) => (credit.get(row.workerId)?.score ?? 100) < LOW_CREDIT),
         name: project.name,
         projectId: project.id,
+        registrationMissing: distinct(
+          project.id,
+          (row) => registrationState(row.worker.realNameStatus, row.worker.registrationCompletedAt) === "NOT_SUBMITTED",
+        ),
         registrationPending: distinct(
           project.id,
-          (row) => row.worker.realNameStatus !== "VERIFIED" && row.worker.realNameStatus !== "NEEDS_UPDATE",
+          (row) => registrationState(row.worker.realNameStatus, row.worker.registrationCompletedAt) === "PENDING",
         ),
         status: project.status as ProjectHealthResponse["projects"][number]["status"],
         violationPending: count(violations, project.id),
@@ -104,9 +109,10 @@ export class CompanyOverviewService {
       ]);
     return {
       attendance: {
-        expected: daily.totals.scheduledDays,
-        missing: daily.totals.missingPunchCount,
-        present: daily.totals.actualAttendedDays,
+        expected: daily.totals.expected,
+        missing: daily.totals.notArrived,
+        present: daily.totals.present,
+        waiting: daily.totals.waiting,
         workedMinutes: daily.totals.workedMinutes,
       },
       companyId,
@@ -115,9 +121,10 @@ export class CompanyOverviewService {
         const totals = daily.byProject.get(project.id);
         return {
           attendance: {
-            expected: totals?.scheduledDays ?? 0,
-            missing: totals?.missingPunchCount ?? 0,
-            present: totals?.actualAttendedDays ?? 0,
+            expected: totals?.expected ?? 0,
+            missing: totals?.notArrived ?? 0,
+            present: totals?.present ?? 0,
+            waiting: totals?.waiting ?? 0,
           },
           name: project.name,
           projectId: project.id,

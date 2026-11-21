@@ -276,6 +276,8 @@ export const dailyPersonAt = (
       (date < chinaToday() && worktime.isPendingVerification),
     isLate: isScheduled && result.isLate,
     isEarlyLeave: isScheduled && result.isEarlyLeave,
+    isPresent: isScheduled && attended(state, person, date),
+    isScheduled,
     workedMinutes: worktime.workedMinutes,
     normalMinutes: worktime.normalMinutes,
     overtimeMinutes: worktime.overtimeMinutes,
@@ -317,10 +319,11 @@ export const demoReport = (
         .slice(0, 10),
   );
   const scoped = people.flatMap((person) => {
-    const teamIds = [
+    // 这个人这段时间待过的班组（没分班组是 null）；不筛班组时没分班组的人也要算进合计。
+    const memberTeams = [
       ...new Set(dates.map((date) => demoMemberOn(state, person, date).teamId)),
     ];
-    return teamIds
+    return memberTeams
       .filter((id) => teamIds === null || (id !== null && teamIds.includes(id)))
       .map((id) => ({ person, id }));
   });

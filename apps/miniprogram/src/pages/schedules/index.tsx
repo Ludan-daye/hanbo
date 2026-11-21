@@ -37,7 +37,8 @@ import {
 } from "../../services/attendance-plans";
 import { chinaToday } from "../../services/time";
 import { errorMessage } from "../../services/error-messages";
-import { graceLabel, pointRule, POINT_KINDS } from "./plan-view";
+import { useSession } from "../../store/session";
+import { emptyScopesText, graceLabel, pointRule, POINT_KINDS } from "./plan-view";
 
 import "./index.scss";
 
@@ -49,6 +50,7 @@ const DANGER = "#D7261E";
 
 export default function Schedules(): JSX.Element {
   useSessionGuard();
+  const { state: sessionState } = useSession();
   const router = Taro.useRouter();
   const requestedProject = router.params.projectId;
   const requestedTeam = router.params.teamId;
@@ -349,7 +351,7 @@ export default function Schedules(): JSX.Element {
           />
         </Sheet>
         <Notice>
-          上班和下班要成对，中途签到不算工时。改完回到打卡安排，点“保存”才生效。
+          上班和下班要成对，中途签到不算工时。点“改好了”回到打卡安排，再点“保存”才生效。
         </Notice>
         <BottomBar primary="改好了" onPrimary={() => setEditingCode(null)}>
           {points.length > 2 ? (
@@ -380,7 +382,10 @@ export default function Schedules(): JSX.Element {
         <StateView
           kind="empty"
           title="没有可以安排的对象"
-          sub="你自己的打卡要求由上级安排。"
+          sub={emptyScopesText(
+            sessionState.me?.roles.highestRoleCode ?? null,
+            Boolean(requestedProject),
+          )}
         />
       ) : null}
       {scope ? (
@@ -451,7 +456,8 @@ export default function Schedules(): JSX.Element {
                 touch();
               }}
             >
-              {`恢复默认（${defaultAttendancePoints.map((point) => `${point.label} ${point.time}`).join("，")}）`}
+              {/* 改回的是平台的每日两次，不是公司默认（项目可能是按公司默认建的）。 */}
+              {`改回平台默认（每日两次：${defaultAttendancePoints.map((point) => `${point.label} ${point.time}`).join("，")}）`}
             </Button>
           </Links>
           <Sheet gap>

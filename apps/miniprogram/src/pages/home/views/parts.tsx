@@ -126,6 +126,7 @@ export const AttendanceSign = ({
   date,
   report,
   missing,
+  missingLabel = "缺卡",
   onOpen,
   onRetry,
 }: {
@@ -142,6 +143,8 @@ export const AttendanceSign = ({
   >;
   /** 黑条里写谁缺卡或缺几个人；空着就不出黑条。 */
   readonly missing: string;
+  /** 黑条的标签：组长首页写谁缺卡；项目、公司首页写未到几人（和应到、到岗加得上）。 */
+  readonly missingLabel?: string;
   readonly onOpen: () => void;
   readonly onRetry: () => void;
 }): JSX.Element => {
@@ -164,7 +167,7 @@ export const AttendanceSign = ({
       <SignCount value={String(totals.actualAttendedDays)} unit="人到岗" />
       {missing ? (
         <SignAlert
-          label="缺卡"
+          label={missingLabel}
           value={missing}
           action="查看"
           onClick={onOpen}

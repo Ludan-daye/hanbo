@@ -1,5 +1,7 @@
+import { dayHeadcount } from "../../services/day-headcount";
 import type {
   DailyReportParticipant,
+  DayHeadcount,
   RangeReportParticipant,
   ReportTotals,
 } from "../../services/management.types";
@@ -70,14 +72,27 @@ export const reportNumbers = (
   };
 };
 
-/** 小标牌上的结论。projectCount 只有公司报表传，其余传 null。 */
+/**
+ * 小标牌上的结论。projectCount 只有公司报表传，其余传 null。
+ * 日报传了 headcount（由这一天的人算出）就写“到岗、未到”，和首页同一套数：
+ * 应到 = 到岗 + 未到 + 还没到点；到了但漏卡的人在下面的“缺卡”里。
+ */
 export const reportSummary = (
   totals: ReportTotals,
   period: ReportPeriod,
   projectCount: number | null,
+  headcount?: DayHeadcount,
 ): { readonly title: string; readonly sub: string } => {
   const worked = hours(totals.workedMinutes);
   const scope = projectCount === null ? "" : `${projectCount} 个项目，`;
+  if (period === "DAILY" && headcount !== undefined) {
+    if (headcount.expected === 0 && headcount.present === 0)
+      return { title: "这一天没有排班", sub: `${scope}已记工 ${worked} 小时` };
+    return {
+      title: `${headcount.present} 人到岗${headcount.missing > 0 ? `，${headcount.missing} 人未到` : ""}`,
+      sub: `${scope}应到 ${headcount.expected} 人${headcount.waiting > 0 ? `（${headcount.waiting} 人还没到打卡时间）` : ""}，已记工 ${worked} 小时`,
+    };
+  }
   if (period === "DAILY") {
     const trouble =
       totals.missingPunchCount > 0
@@ -247,6 +262,8 @@ export const groupReportPeople = (
 export type ReportProjectGroup = {
   readonly projectId: string;
   readonly projectName: string;
+  /** 日报：这一天的应到、到岗、未到（和首页项目行同一套数）；周报月报是 null。 */
+  readonly day: DayHeadcount | null;
   readonly people: number;
   readonly hours: string;
   /** 周报月报是出勤率（没有排班时是 null）；日报没有。 */
@@ -255,14 +272,14 @@ export type ReportProjectGroup = {
   readonly troubled: number;
 };
 
-/** 按项目分行，项目按名称排。 */
+/** 按项目分行。日报和首页一样：未到多的排前面，其余按名称；周报月报按名称。 */
 export const groupReportProjects = (
   rows: readonly ReportRow[],
 ): readonly ReportProjectGroup[] =>
   [...new Map(rows.map((row) => [row.projectId, row.projectName])).entries()]
-    .sort((a, b) => a[1].localeCompare(b[1], "zh-CN"))
     .map(([projectId, projectName]) => {
       const own = rows.filter((row) => row.projectId === projectId);
+      const dailyRows = own.filter(isDaily);
       const people = groupReportPeople(own);
       const scheduled = sum(own, (row) =>
         isDaily(row) ? 0 : row.scheduledDays,
@@ -283,8 +300,14 @@ export const groupReportProjects = (
                   100,
               ),
         troubled: people.filter((person) => person.outcome.bad !== null).length,
+        day: dailyRows.length === own.length && own.length > 0 ? dayHeadcount(dailyRows) : null,
       };
-    });
+    })
+    .sort(
+      (a, b) =>
+        (b.day?.missing ?? 0) - (a.day?.missing ?? 0) ||
+        a.projectName.localeCompare(b.projectName, "zh"),
+    );
 
 /** 一个人这段时间的结论，放在个人明细顶上的小标牌里。 */
 export const personSummary = (

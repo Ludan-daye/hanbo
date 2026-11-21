@@ -44,6 +44,8 @@ export type ParticipantPageQuery = {
   readonly participantType: ParticipantTypeValue | null;
   readonly teamId: string | null;
   readonly status: MemberStatusValue | null;
+  /** Leave out people who are already in (not exited from) this project. */
+  readonly notInProjectId: string | null;
 };
 
 export type ParticipantPageResponse = {

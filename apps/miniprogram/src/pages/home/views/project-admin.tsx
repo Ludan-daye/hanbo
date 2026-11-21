@@ -107,6 +107,7 @@ export const ProjectAdminHome = ({
                 date={date}
                 report={sign}
                 missing={overviewMissingText(overview.data)}
+                missingLabel="未到"
                 onOpen={() => go(featureUrl("/pages/reports/index", project))}
                 onRetry={refresh}
               />

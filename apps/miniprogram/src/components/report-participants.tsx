@@ -336,7 +336,11 @@ export const ReportProjects = ({
         <Row
           key={project.projectId}
           title={project.projectName}
-          sub={`${project.people} 人，${project.hours} 小时`}
+          sub={
+            project.day === null
+              ? `${project.people} 人，${project.hours} 小时`
+              : `到岗 ${project.day.present}／${project.day.expected}，${project.hours} 小时`
+          }
           status={
             project.rate === null && project.troubled > 0
               ? { kind: "bad", text: `${project.troubled} 人有异常` }

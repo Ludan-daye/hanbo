@@ -10,7 +10,7 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
-import type { AttendancePlan, Prisma } from "@prisma/client";
+import type { AttendancePlan, Prisma, ProjectStatus } from "@prisma/client";
 import { defaultAttendancePoints } from "@construction/domain/attendance.js";
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
@@ -30,6 +30,9 @@ import {
   tomorrowChina,
   type PlanScopeType,
 } from "./attendance-plans.js";
+
+/** Projects whose plans can be listed and changed. */
+const PLANNABLE_STATUSES: readonly ProjectStatus[] = ["ACTIVE", "PREPARING"];
 
 type PlanScope = {
   readonly projectId: string;
@@ -89,7 +92,7 @@ export class AttendancePlansController {
     );
     if (projectFilters.length === 0) return [];
     const projects = await this.prisma.project.findMany({
-      where: { status: "ACTIVE", OR: projectFilters },
+      where: { status: { in: [...PLANNABLE_STATUSES] }, OR: projectFilters },
       include: {
         teams: true,
         workerMembers: { include: { worker: true } },
@@ -198,9 +201,13 @@ export class AttendancePlansController {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
     });
-    // Any project's plan can be read (a new PREPARING project already has the
-    // company defaults applied); only ACTIVE projects take changes, as before.
-    if (project === null || (access === "write" && project.status !== "ACTIVE"))
+    // Any project's plan can be read; ACTIVE and PREPARING projects take changes
+    // (a company admin adjusts a new project's plan before it starts), while
+    // SUSPENDED and COMPLETED projects stay read-only.
+    if (
+      project === null ||
+      (access === "write" && !PLANNABLE_STATUSES.includes(project.status))
+    )
       throw new NotFoundException({ message: "PROJECT_NOT_FOUND" });
     let teamId: string | null = null;
     let targetLevel: number = 0;

@@ -47,11 +47,16 @@ export const demoPlanLevel = (
       .map((assignment) => ROLE_LEVEL[assignment.roleCode]),
   );
 };
+/** 筹备中的项目也能排（开工前先调好），暂停、完工只读，和服务端一样。 */
+const PLANNABLE = new Set(["ACTIVE", "PREPARING"]);
 export const demoPlanScopes = (
   state: DemoState,
   userId: string,
+  readable: boolean = false,
 ): readonly PlanScope[] =>
-  state.projects.flatMap((project) => [
+  state.projects
+    .filter((project) => readable || PLANNABLE.has(project.status))
+    .flatMap((project) => [
     ...(demoPlanLevel(state, userId, project.id, null) >= 3
       ? [
           {
@@ -221,9 +226,8 @@ export const demoPlanRequest = (
   method: string,
   body: unknown,
 ): { readonly state: DemoState; readonly data: unknown } => {
-  const scopes = demoPlanScopes(state, userId);
-  if (parts[2] === "scopes") return { state, data: scopes };
-  const scope = scopes.find(
+  if (parts[2] === "scopes") return { state, data: demoPlanScopes(state, userId) };
+  const scope = demoPlanScopes(state, userId, method === "GET").find(
     (row) =>
       row.projectId === parts[2] &&
       row.scopeType === parts[3] &&

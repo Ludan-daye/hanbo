@@ -1,7 +1,7 @@
 import type { TeamTask, TeamTaskWorker } from "@construction/domain";
 import { describe, expect, it } from "vitest";
 
-import { graceLabel, pointRule } from "../src/pages/schedules/plan-view";
+import { emptyScopesText, graceLabel, pointRule } from "../src/pages/schedules/plan-view";
 import {
   dayTimeRange,
   filterWorkers,
@@ -379,5 +379,13 @@ describe("打卡安排里每张卡的要求", () => {
     expect(pointRule({ kind: "CHECKPOINT", graceMins: 5 })).toBe(
       "中途签到，迟到宽限 5 分钟",
     );
+  });
+});
+
+describe("schedule scopes empty text", () => {
+  it("only tells a team leader that his own plan comes from above", () => {
+    expect(emptyScopesText("TEAM_LEADER", false)).toBe("你自己的打卡要求由上级安排。");
+    expect(emptyScopesText("COMPANY_ADMIN", true)).toContain("已暂停或已完工");
+    expect(emptyScopesText("PROJECT_ADMIN", false)).not.toContain("上级");
   });
 });

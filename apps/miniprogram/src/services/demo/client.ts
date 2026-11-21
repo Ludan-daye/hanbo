@@ -25,6 +25,7 @@ import { noteWrite } from "../read-cache";
 import type { AccountProfile } from "../account";
 import { emptyWorkerRegistration, normalizeWorkerRegistration, workerRegistrationError, type WorkerRegistration } from "@construction/domain";
 import type {
+  DailyReportParticipant,
   DefaultScheduleBody,
   DefaultShiftBody,
   ManagedProject,
@@ -49,6 +50,7 @@ import { checkAttendanceGeofence } from "../geofence";
 import { managedDemoTeam } from "./teams";
 import { demoAuditLog } from "./audit-log";
 import type { TransferRequestForm } from "../transfers";
+import { dayHeadcount } from "../day-headcount";
 import { demoDaySummary, demoReport, dailyPerson } from "./reports";
 import {
   demoId,
@@ -503,12 +505,8 @@ const demoProjectOverview = (
   const read = <T,>(path: string): T =>
     routeDemo(state, userId, path, { method: "GET" }).data as T;
   const daily = read<{
-    readonly totals: {
-      readonly scheduledDays: number;
-      readonly actualAttendedDays: number;
-      readonly missingPunchCount: number;
-      readonly workedMinutes: number;
-    };
+    readonly participants: readonly DailyReportParticipant[];
+    readonly totals: { readonly workedMinutes: number };
   }>(`/reports/projects/${projectId}/daily?date=${date}`);
   const inbox = read<{ readonly items: readonly unknown[] }>(
     `/makeups/pending?projectId=${encodeURIComponent(projectId)}`,
@@ -524,9 +522,7 @@ const demoProjectOverview = (
   );
   return {
     attendance: {
-      expected: daily.totals.scheduledDays,
-      missing: daily.totals.missingPunchCount,
-      present: daily.totals.actualAttendedDays,
+      ...dayHeadcount(daily.participants),
       workedMinutes: daily.totals.workedMinutes,
     },
     date,
@@ -543,6 +539,15 @@ const demoProjectOverview = (
     },
   };
 };
+/** 和服务端一样：复用、调人时不列已经在目标项目（没退场）的人。 */
+const demoInProject = (state: DemoState, person: ProjectParticipant, projectId: string): boolean =>
+  state.people.some(
+    (row) =>
+      row.projectId === projectId &&
+      row.profileId === person.profileId &&
+      row.participantType === person.participantType &&
+      row.status !== "EXITED",
+  );
 /** 公司首页的概览：每个项目用演示版的项目概览算，补卡、调人用演示收件箱，和点进去的列表同口径。 */
 const demoCompanyOverview = (
   state: DemoState,
@@ -554,7 +559,7 @@ const demoCompanyOverview = (
   const ids = new Set(projects.map((row) => row.id));
   const per = projects.map((project) => {
     const overview = demoProjectOverview(state, userId, project.id, date) as {
-      readonly attendance: { readonly expected: number; readonly missing: number; readonly present: number; readonly workedMinutes: number };
+      readonly attendance: { readonly expected: number; readonly missing: number; readonly present: number; readonly waiting: number; readonly workedMinutes: number };
       readonly todos: { readonly facePending: number; readonly violationPending: number };
     };
     // 和真实接口一样：只有进行中的项目算应到，其余项目这一行记 0、不进合计。
@@ -563,20 +568,20 @@ const demoCompanyOverview = (
       overview:
         project.status === "ACTIVE"
           ? overview
-          : { ...overview, attendance: { expected: 0, missing: 0, present: 0, workedMinutes: 0 } },
+          : { ...overview, attendance: { expected: 0, missing: 0, present: 0, waiting: 0, workedMinutes: 0 } },
     };
   });
   const inbox = (path: string): readonly { readonly projectId: string }[] =>
     (routeDemo(state, userId, path, { method: "GET" }).data as { readonly items: readonly { readonly projectId: string }[] }).items
       .filter((row) => ids.has(row.projectId));
-  const sum = (key: "expected" | "missing" | "present" | "workedMinutes"): number =>
+  const sum = (key: "expected" | "missing" | "present" | "waiting" | "workedMinutes"): number =>
     per.reduce((total, row) => total + row.overview.attendance[key], 0);
   return {
-    attendance: { expected: sum("expected"), missing: sum("missing"), present: sum("present"), workedMinutes: sum("workedMinutes") },
+    attendance: { expected: sum("expected"), missing: sum("missing"), present: sum("present"), waiting: sum("waiting"), workedMinutes: sum("workedMinutes") },
     companyId,
     date,
     projects: per.map(({ project, overview }) => ({
-      attendance: { expected: overview.attendance.expected, missing: overview.attendance.missing, present: overview.attendance.present },
+      attendance: { expected: overview.attendance.expected, missing: overview.attendance.missing, present: overview.attendance.present, waiting: overview.attendance.waiting },
       name: project.name,
       projectId: project.id,
       status: project.status,
@@ -1025,6 +1030,9 @@ const routeDemo = (
                 lowCredit: (board.workers ?? []).filter((row) => row.score < 60).length,
                 name: project.name,
                 projectId: project.id,
+                registrationMissing: demoCompanyPeoplePage(state, scopeId, {
+                  page: "1", pageSize: "100", participantType: "WORKER", projectId: project.id, registrationStatus: "NOT_SUBMITTED", status: "ACTIVE",
+                }).total,
                 registrationPending: demoCompanyPeoplePage(state, scopeId, {
                   page: "1", pageSize: "100", participantType: "WORKER", projectId: project.id, registrationStatus: "PENDING", status: "ACTIVE",
                 }).total,
@@ -1230,6 +1238,7 @@ const routeDemo = (
         const rows = state.people.filter(
           (person) =>
             person.projectId === query.sourceProjectId &&
+            !demoInProject(state, person, scopeId) &&
             (!search || (person.displayName ?? "").startsWith(search) || person.phone.includes(search)),
         );
         const pageNumber = Number(query.page ?? 1);
@@ -1345,9 +1354,11 @@ const routeDemo = (
           throw new ApiError(400, "项目人员权限筛选无效。", { path });
         const teamId = parameters.get("teamId");
         const status = parameters.get("status");
+        const notInProjectId = parameters.get("notInProjectId");
         const rows = state.people.filter(
           (person) =>
             person.projectId === scopeId &&
+            (!notInProjectId || !demoInProject(state, person, notInProjectId)) &&
             (!participantType || person.participantType === participantType) &&
             (!permissionRole ||
               memberRoleAssignments(person).some((role) => role.roleCode === permissionRole)) &&

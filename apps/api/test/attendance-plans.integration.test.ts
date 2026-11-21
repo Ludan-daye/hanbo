@@ -617,6 +617,30 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
             .expect(404)
         ).body.message,
       ).toBe("PROJECT_NOT_FOUND");
+      const scopeIds = async (): Promise<readonly string[]> =>
+        (
+          await request(app.getHttpServer())
+            .get("/attendance/planning/scopes")
+            .auth(auth("admin"), { type: "bearer" })
+            .expect(200)
+        ).body.map((row: { scopeId: string }) => row.scopeId);
+      expect(await scopeIds()).not.toContain(projectId);
+      // A preparing project is listed and can be planned before it starts.
+      await database.project.update({
+        where: { id: projectId },
+        data: { status: "PREPARING" },
+      });
+      expect(await scopeIds()).toContain(projectId);
+      const current = await request(app.getHttpServer())
+        .get(scopePath("PROJECT", projectId))
+        .auth(auth("admin"), { type: "bearer" })
+        .expect(200);
+      const preparing = await request(app.getHttpServer())
+        .post(scopePath("PROJECT", projectId))
+        .auth(auth("admin"), { type: "bearer" })
+        .send(input("preparing", threePoints, "2030-03-01", current.body.id))
+        .expect(201);
+      await database.attendancePlan.delete({ where: { id: preparing.body.id } });
       await database.project.update({
         where: { id: projectId },
         data: { status: "ACTIVE" },
