@@ -47,6 +47,32 @@ export const createProjectDefaultsText = (
 export const defaultsProblem = (values: CompanyAttendanceDefaultValues): string | null =>
   attendanceDefaultsError(values) ?? worktimeRuleError(values.worktime);
 
+/**
+ * 保存公司默认的请求体：只带服务端收的字段。读回来的 current 里还有 createdAt、createdByName、
+ * version，原样带上去会被严格校验拒掉（INVALID_COMPANY_DEFAULTS）。
+ */
+export const defaultsSaveBody = (
+  values: CompanyAttendanceDefaultValues,
+  expectedVersion: number,
+): CompanyAttendanceDefaultValues & { readonly expectedVersion: number } => ({
+  expectedVersion,
+  name: values.name,
+  points: values.points.map((point) => ({
+    code: point.code,
+    graceMins: point.graceMins,
+    kind: point.kind,
+    label: point.label,
+    time: point.time,
+  })),
+  workdays: [...values.workdays],
+  worktime: {
+    lunchEnd: values.worktime.lunchEnd,
+    lunchStart: values.worktime.lunchStart,
+    overtimeStart: values.worktime.overtimeStart,
+    projectKind: values.worktime.projectKind,
+  },
+});
+
 /** 在最后两张卡中间加一张中途签到；挨得太近返回 null。 */
 export const withCheckpoint = (
   points: readonly ScheduledAttendancePoint[],

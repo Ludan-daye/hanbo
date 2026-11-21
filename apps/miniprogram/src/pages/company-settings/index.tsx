@@ -43,7 +43,7 @@ import { formatChinaDate } from "../../services/time";
 import { useSession } from "../../store/session";
 import { graceLabel, pointRule, POINT_KINDS } from "../schedules/plan-view";
 
-import { defaultsProblem, withCheckpoint } from "./settings-view";
+import { defaultsProblem, defaultsSaveBody, withCheckpoint } from "./settings-view";
 import "./index.scss";
 
 type Tab = "DEFAULTS" | "PROFILE";
@@ -146,7 +146,7 @@ export default function CompanySettings(): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      const next = await saveCompanyDefaults(companyId, { ...values, expectedVersion: defaults.latestVersion });
+      const next = await saveCompanyDefaults(companyId, defaultsSaveBody(values, defaults.latestVersion));
       setDefaults(next);
       setValues(next.current ?? next.fallback);
       setDirty(false);
@@ -214,7 +214,7 @@ export default function CompanySettings(): JSX.Element {
             onInput={(value) => updatePoint(editing.code, { graceMins: value === "" ? 0 : Number(value) })}
           />
         </Sheet>
-        <Notice>上班和下班要成对，中途签到不算工时。改完回到公司设置，点“保存”才生效。</Notice>
+        <Notice>上班和下班要成对，中途签到不算工时。点“改好了”回到公司设置，再点“保存公司默认”才生效。</Notice>
         <BottomBar primary="改好了" onPrimary={() => setEditingCode(null)}>
           {values.points.length > 2 ? (
             <Button

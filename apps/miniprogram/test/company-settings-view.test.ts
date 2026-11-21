@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import {
   createProjectDefaultsText,
   defaultsProblem,
+  defaultsSaveBody,
   defaultsSummary,
   withCheckpoint,
   workdaysText,
@@ -12,6 +13,15 @@ import {
 const values = { name: "每日两次", points: defaultAttendancePoints, workdays: [1, 2, 3, 4, 5, 6], worktime: defaultWorktimeRule };
 
 describe("company settings texts", () => {
+  test("save body carries only the writable fields, not the version metadata read back", () => {
+    const current = { ...values, createdAt: "2026-11-21T00:00:00.000Z", createdByName: "王总", version: 3 };
+    const body = defaultsSaveBody(current, 3);
+    expect(Object.keys(body).sort()).toEqual(["expectedVersion", "name", "points", "workdays", "worktime"]);
+    expect(body.expectedVersion).toBe(3);
+    expect(body.points).toEqual(defaultAttendancePoints);
+    expect(body.worktime).toEqual(defaultWorktimeRule);
+  });
+
   test("workdays read as a range or a list", () => {
     expect(workdaysText([1, 2, 3, 4, 5, 6, 7])).toBe("每天");
     expect(workdaysText([6, 1, 2, 3, 4, 5])).toBe("周一到周六");
