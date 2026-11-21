@@ -1,7 +1,11 @@
 import { Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
-import { AUDIT_CATEGORIES, type AuditCategory } from "@construction/domain";
+import {
+  AUDIT_CATEGORIES,
+  COMPANY_ONLY_CATEGORIES,
+  type AuditCategory,
+} from "@construction/domain";
 
 import {
   Button,
@@ -30,10 +34,17 @@ import { useSession } from "../../store/session";
 import { auditLogScope, auditTimeLabel } from "./audit-view";
 import "./index.scss";
 
-const TYPES: ReadonlyArray<{
+type TypeOption = {
   readonly value: AuditCategory | null;
   readonly label: string;
-}> = [{ value: null, label: "全部操作" }, ...AUDIT_CATEGORIES];
+};
+// “公司”（建项目、导出、离岗、默认规则、公司资料）只在公司的操作记录里有。
+const typesFor = (kind: "PROJECT" | "COMPANY" | null): readonly TypeOption[] => [
+  { value: null, label: "全部操作" },
+  ...AUDIT_CATEGORIES.filter(
+    (item) => kind === "COMPANY" || !COMPANY_ONLY_CATEGORIES.includes(item.value),
+  ),
+];
 
 /**
  * 操作记录：项目管理员看本项目、公司管理员看本公司各项目里谁在什么时候做了什么。
@@ -109,6 +120,7 @@ export default function AuditLog(): JSX.Element {
         />
       </Screen>
     );
+  const TYPES = typesFor(scope.kind);
   const typeIndex = Math.max(
     0,
     TYPES.findIndex((item) => item.value === type),

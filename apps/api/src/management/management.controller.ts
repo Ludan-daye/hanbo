@@ -183,8 +183,8 @@ export class ManagementController {
   @Header("Cache-Control", "no-store")
   @RequirePermission({ permissionCode: "worker.sensitive.view", target: { source: "projectParam", paramName: "projectId" } })
   @UseGuards(AccessTokenGuard, PermissionsGuard)
-  async participantRegistration(@Param("projectId") projectId: string, @Param("memberId") memberId: string): Promise<MemberRegistrationResponse> {
-    return this.registrations.get(projectId, memberId);
+  async participantRegistration(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string, @Param("memberId") memberId: string): Promise<MemberRegistrationResponse> {
+    return this.registrations.view(projectId, memberId, actor.userId);
   }
 
   @Post("projects/:projectId/participants/:memberId/registration/verification")

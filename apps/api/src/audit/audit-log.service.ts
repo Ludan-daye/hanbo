@@ -25,7 +25,7 @@ const refKey = (ref: AuditTargetRef): string =>
     ? `profile:${ref.participantType}:${ref.id}`
     : `${ref.kind}:${ref.id}`;
 
-/** Read-only operation log over AuditLog.projectId, newest first. */
+/** Read-only operation log over AuditLog.projectId (project) or companyId (company), newest first. */
 @Injectable()
 export class AuditLogService {
   constructor(
@@ -42,7 +42,7 @@ export class AuditLogService {
         message: "AUDIT_PROJECT_OUT_OF_SCOPE",
         projectId: query.projectId,
       });
-    return this.page([projectId], query);
+    return this.page({ projectId }, [projectId], query);
   }
 
   async companyLog(
@@ -60,8 +60,13 @@ export class AuditLogService {
         message: "AUDIT_PROJECT_OUT_OF_SCOPE",
         projectId: query.projectId,
       });
+    // AuditLog.companyId (2026-11-21): project rows plus company-level ones
+    // (project creation, exports, offboarding, defaults, company profile).
     return this.page(
-      query.projectId === null ? projects : [query.projectId],
+      query.projectId === null
+        ? { companyId }
+        : { companyId, projectId: query.projectId },
+      projects,
       query,
     );
   }
@@ -73,11 +78,12 @@ export class AuditLogService {
   }
 
   private async page(
+    scope: Prisma.AuditLogWhereInput,
     projectIds: readonly string[],
     query: AuditLogQuery,
   ): Promise<AuditLogPageResponse> {
     const where: Prisma.AuditLogWhereInput = {
-      projectId: { in: [...projectIds] },
+      ...scope,
       ...(query.type === null
         ? {}
         : { action: { in: [...auditActionsIn(query.type)] } }),

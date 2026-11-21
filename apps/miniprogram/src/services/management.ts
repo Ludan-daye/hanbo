@@ -7,6 +7,7 @@ import type {
   CompanyAttendanceDefaultValues,
   CompanyPeoplePage,
   CompanyProfile,
+  ProjectHealth,
   CompanyPeopleQuery,
   CompanyPerson,
   OffboardMode,
@@ -323,3 +324,7 @@ export const updateCompanyProfile = (
   body: Pick<CompanyProfile, "address" | "contactName" | "contactPhone"> & { readonly expectedUpdatedAt: string },
 ): Promise<CompanyProfile> =>
   apiClient.request(`${companyBase(companyId)}/profile`, { method: "PUT", data: body });
+
+/** 各项目一览：违规、申诉、底照、资料未核实、低信用人数。 */
+export const fetchProjectHealth = (companyId: string): Promise<ProjectHealth> =>
+  apiClient.request(`${companyBase(companyId)}/project-health`, { method: "GET" });

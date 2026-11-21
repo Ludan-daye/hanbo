@@ -24,7 +24,9 @@ const verificationStatus = (value: string): RegistrationVerificationStatus =>
 
 /**
  * Project admins (and above, in scope) read a worker's registration unmasked and mark it
- * 已核实 or 需更正 (decisions 2 and 3 of 2026-11-20). Reads are not logged; marks are.
+ * 已核实 or 需更正 (decisions 2 and 3 of 2026-11-20). Marks are logged; since 2026-11-21 (Q9)
+ * each read is logged too (who, when, whose), without a reason, at most once per viewer and
+ * person every 10 minutes so reopening the page does not flood the log.
  */
 @Injectable()
 export class RegistrationReviewService {
@@ -38,6 +40,34 @@ export class RegistrationReviewService {
     memberId: string,
   ): Promise<MemberRegistrationResponse> {
     const member = await this.workerMember(projectId, memberId);
+    return this.response(member.id, member.worker);
+  }
+
+  async view(
+    projectId: string,
+    memberId: string,
+    viewerUserId: string,
+  ): Promise<MemberRegistrationResponse> {
+    const member = await this.workerMember(projectId, memberId);
+    const recent = await this.prisma.auditLog.count({
+      where: {
+        action: "WORKER_REGISTRATION_VIEWED",
+        actorUserId: viewerUserId,
+        createdAt: { gt: new Date(Date.now() - 10 * 60_000) },
+        entityId: member.worker.id,
+      },
+    });
+    if (recent === 0)
+      await this.prisma.auditLog.create({
+        data: {
+          action: "WORKER_REGISTRATION_VIEWED",
+          actorUserId: viewerUserId,
+          entityId: member.worker.id,
+          entityType: "worker_profile",
+          metadata: { memberId: member.id },
+          projectId,
+        },
+      });
     return this.response(member.id, member.worker);
   }
 

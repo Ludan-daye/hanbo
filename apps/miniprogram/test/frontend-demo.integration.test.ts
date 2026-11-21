@@ -1143,6 +1143,21 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     expect(saved).toMatchObject({ name: profile.name, contactName: "王经理" });
   });
 
+  test("the company log shows company-level actions and project health counts backlogs", async () => {
+    await login("dev-company");
+    const profile = await client.request<{ updatedAt: string }>("/management/companies/demo-company/profile", { method: "GET" });
+    await client.request("/management/companies/demo-company/profile", {
+      method: "PUT", data: { address: null, contactName: "王经理", contactPhone: null, expectedUpdatedAt: profile.updatedAt } });
+    const log = await client.request<{ items: { action: string; projectId: string | null }[] }>(
+      "/management/companies/demo-company/audit-logs?type=COMPANY", { method: "GET" });
+    expect(log.items.some((row) => row.action === "COMPANY_PROFILE_UPDATED" && row.projectId === null)).toBe(true);
+    const health = await client.request<{ projects: { projectId: string; registrationPending: number }[] }>(
+      "/management/companies/demo-company/project-health", { method: "GET" });
+    expect(health.projects.map((row) => row.projectId)).toContain("demo-project");
+    await login("dev-project");
+    await expect(client.request("/management/companies/demo-company/project-health", { method: "GET" })).rejects.toThrow();
+  });
+
   test("selected project managers receive access without losing their original project", async () => {
     await login("dev-company");
     const project = await client.request<CompanyProject>("/management/companies/demo-company/projects", {

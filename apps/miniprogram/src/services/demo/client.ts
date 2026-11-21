@@ -971,6 +971,7 @@ const routeDemo = (
           projectIds,
           (query.type as AuditCategory | undefined) ?? null,
           query.cursor ?? null,
+          scope === "companies" ? scopeId : null,
         ),
       );
     }
@@ -983,6 +984,32 @@ const routeDemo = (
         return method === "GET"
           ? response(state, demoCompanyProfile(state, scopeId))
           : updateDemoCompanyProfile(state, scopeId, (options.data ?? {}) as Record<string, unknown>);
+      if (resource === "project-health" && method === "GET")
+        return response(state, {
+          companyId: scopeId,
+          projects: state.projects
+            .filter((row) => row.companyId === scopeId)
+            .map((project) => {
+              const overview = demoProjectOverview(state, userId, project.id, chinaToday()) as {
+                readonly todos: { readonly appealPending: number; readonly facePending: number; readonly violationPending: number };
+              };
+              const board = routeDemo(state, userId, `/safety-credit/projects/${project.id}`, { method: "GET" }).data as {
+                readonly workers?: readonly { readonly score: number }[];
+              };
+              return {
+                appealPending: overview.todos.appealPending,
+                facePending: overview.todos.facePending,
+                lowCredit: (board.workers ?? []).filter((row) => row.score < 60).length,
+                name: project.name,
+                projectId: project.id,
+                registrationPending: demoCompanyPeoplePage(state, scopeId, {
+                  page: "1", pageSize: "100", participantType: "WORKER", projectId: project.id, registrationStatus: "PENDING", status: "ACTIVE",
+                }).total,
+                status: project.status,
+                violationPending: overview.todos.violationPending,
+              };
+            }),
+        });
       if (resource === "people-page" && method === "GET")
         return response(state, demoCompanyPeoplePage(state, scopeId, query));
       if (resource === "project-admins" && method === "GET")

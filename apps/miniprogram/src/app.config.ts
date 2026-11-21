@@ -25,6 +25,7 @@ export default defineAppConfig({
     "pages/company-admins/index",
     "pages/company-person/index",
     "pages/company-settings/index",
+    "pages/project-health/index",
     "pages/company-people/index",
     "pages/my-records/index",
     "pages/my-makeups/index",

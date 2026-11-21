@@ -3,8 +3,12 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import { MakeupService } from "../makeup/makeup.service.js";
 import { ReportsService } from "../reports/reports.service.js";
+import { SafetyCreditService } from "../safety-credit/safety-credit.service.js";
 
-import type { CompanyOverviewResponse } from "./company-overview.types.js";
+import type { CompanyOverviewResponse, ProjectHealthResponse } from "./company-overview.types.js";
+
+/** 信用低于这个分数算“低信用”。 */
+const LOW_CREDIT = 60;
 
 @Injectable()
 export class CompanyOverviewService {
@@ -12,7 +16,59 @@ export class CompanyOverviewService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ReportsService) private readonly reports: ReportsService,
     @Inject(MakeupService) private readonly makeups: MakeupService,
+    @Inject(SafetyCreditService) private readonly safety: SafetyCreditService,
   ) {}
+
+  /** Q10: a separate page, so the home stays light; all counts grouped in a few queries. */
+  async projectHealth(companyId: string): Promise<ProjectHealthResponse> {
+    const projects = await this.prisma.project.findMany({
+      where: { companyId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, name: true, status: true },
+    });
+    if (projects.length === 0 && (await this.prisma.company.count({ where: { id: companyId } })) === 0)
+      throw new NotFoundException({ message: "COMPANY_NOT_FOUND", companyId });
+    const projectIds = projects.map((project) => project.id);
+    const [violations, appeals, faces, workers] = await Promise.all([
+      this.prisma.safetyViolation.groupBy({
+        by: ["projectId"],
+        where: { projectId: { in: projectIds }, status: "PENDING" },
+        _count: { _all: true },
+      }),
+      this.prisma.safetyViolation.groupBy({
+        by: ["projectId"],
+        where: { projectId: { in: projectIds }, appeals: { some: { status: "PENDING" } } },
+        _count: { _all: true },
+      }),
+      this.pendingFacesByProject(projectIds),
+      this.prisma.projectWorkerMember.findMany({
+        where: { projectId: { in: projectIds }, status: "ACTIVE" },
+        select: { projectId: true, workerId: true, worker: { select: { realNameStatus: true } } },
+      }),
+    ]);
+    const now = new Date();
+    const credit = await this.safety.summariesIn(this.prisma, workers.map((row) => row.workerId), now, now);
+    const count = (rows: readonly { projectId: string; _count: { _all: number } }[], projectId: string): number =>
+      rows.find((row) => row.projectId === projectId)?._count._all ?? 0;
+    const distinct = (projectId: string, keep: (row: (typeof workers)[number]) => boolean): number =>
+      new Set(workers.filter((row) => row.projectId === projectId && keep(row)).map((row) => row.workerId)).size;
+    return {
+      companyId,
+      projects: projects.map((project) => ({
+        appealPending: count(appeals, project.id),
+        facePending: faces.get(project.id) ?? 0,
+        lowCredit: distinct(project.id, (row) => (credit.get(row.workerId)?.score ?? 100) < LOW_CREDIT),
+        name: project.name,
+        projectId: project.id,
+        registrationPending: distinct(
+          project.id,
+          (row) => row.worker.realNameStatus !== "VERIFIED" && row.worker.realNameStatus !== "NEEDS_UPDATE",
+        ),
+        status: project.status as ProjectHealthResponse["projects"][number]["status"],
+        violationPending: count(violations, project.id),
+      })),
+    };
+  }
 
   /**
    * Each number equals the rows of the list it opens: the company daily report split

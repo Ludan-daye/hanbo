@@ -37,3 +37,22 @@ export type CompanyOverviewResponse = {
     readonly transferPending: number;
   };
 };
+
+/** 各项目一览 (2026-11-21 Q10): per project backlogs, each equal to the list it opens. */
+export type ProjectHealthResponse = {
+  readonly companyId: string;
+  readonly projects: readonly {
+    /** Confirmed violations with a pending appeal. */
+    readonly appealPending: number;
+    /** Pending baseline photos of active members. */
+    readonly facePending: number;
+    /** Active workers whose safety credit is below 60. */
+    readonly lowCredit: number;
+    readonly name: string;
+    readonly projectId: string;
+    /** Active workers whose 用工登记 is not verified yet (people-page registrationStatus=PENDING). */
+    readonly registrationPending: number;
+    readonly status: "ACTIVE" | "COMPLETED" | "PREPARING" | "SUSPENDED";
+    readonly violationPending: number;
+  }[];
+};

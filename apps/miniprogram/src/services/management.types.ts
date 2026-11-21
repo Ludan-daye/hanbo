@@ -524,3 +524,18 @@ export type CompanyProfile = {
   readonly status: string;
   readonly updatedAt: string;
 };
+
+/** 各项目一览（2026-11-21 Q10）：每个项目的积压，等于点进去的列表条数。 */
+export type ProjectHealth = {
+  readonly companyId: string;
+  readonly projects: readonly {
+    readonly appealPending: number;
+    readonly facePending: number;
+    readonly lowCredit: number;
+    readonly name: string;
+    readonly projectId: string;
+    readonly registrationPending: number;
+    readonly status: ProjectStatus;
+    readonly violationPending: number;
+  }[];
+};

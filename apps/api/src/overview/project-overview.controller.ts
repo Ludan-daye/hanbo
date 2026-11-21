@@ -7,7 +7,7 @@ import { PermissionsGuard } from "../authorization/permissions.guard.js";
 import { RequirePermission } from "../authorization/require-permission.decorator.js";
 
 import { CompanyOverviewService } from "./company-overview.service.js";
-import type { CompanyOverviewResponse } from "./company-overview.types.js";
+import type { CompanyOverviewResponse, ProjectHealthResponse } from "./company-overview.types.js";
 import { parseOverviewQuery } from "./project-overview.parsers.js";
 import { ProjectOverviewService } from "./project-overview.service.js";
 import type { ProjectOverviewResponse } from "./project-overview.types.js";
@@ -37,6 +37,16 @@ export class ProjectOverviewController {
       companyId,
       parseOverviewQuery(query).date,
     );
+  }
+
+  @Get("companies/:companyId/project-health")
+  @RequirePermission({
+    permissionCode: "company.manage",
+    target: { paramName: "companyId", source: "companyParam" },
+  })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async projectHealth(@Param("companyId") companyId: string): Promise<ProjectHealthResponse> {
+    return this.companyOverview.projectHealth(companyId);
   }
 
   @Get("projects/:projectId/overview")

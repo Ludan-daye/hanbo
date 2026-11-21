@@ -377,6 +377,7 @@ export class CompanyPeopleService {
         data: {
           action: "PERSONNEL_OFFBOARDED",
           actorUserId,
+          companyId,
           entityId: profileId,
           entityType: participantType === "WORKER" ? "worker_profile" : "manager_profile",
           metadata: {

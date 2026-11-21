@@ -69,3 +69,29 @@ describe("operation log", () => {
     );
   });
 });
+
+describe("company-level operation log", () => {
+  it("keeps one category per action while the company filter finds company actions", () => {
+    expect(auditCategoryOf("project.create")).toBe("PROJECT");
+    expect(auditCategoryOf("report.export.requested")).toBe("ATTENDANCE");
+    expect(auditCategoryOf("PERSONNEL_OFFBOARDED")).toBe("COMPANY");
+    expect(auditCategoryOf("WORKER_REGISTRATION_VIEWED")).toBe("PEOPLE");
+    expect(auditActionsIn("COMPANY")).toEqual(
+      expect.arrayContaining(["project.create", "report.export.requested", "PERSONNEL_OFFBOARDED", "COMPANY_DEFAULTS_SAVED"]),
+    );
+  });
+
+  it("says who was offboarded and whose registration was viewed", () => {
+    expect(
+      auditTargetRef({ action: "PERSONNEL_OFFBOARDED", entityType: "manager_profile", entityId: "p1", metadata: { participantType: "MANAGER" } }),
+    ).toEqual({ kind: "profile", participantType: "MANAGER", id: "p1" });
+    expect(auditSentence({ action: "PERSONNEL_OFFBOARDED", metadata: { mode: "REVOKE_ADMIN", projectIds: ["a", "b"] } }, "王经理", "陈工")).toBe(
+      "王经理 收回了 陈工 在2 个项目的管理职务",
+    );
+    expect(auditSentence({ action: "PERSONNEL_OFFBOARDED", metadata: { mode: "EXIT_ALL", projectIds: ["a"] } }, "王经理", "陈工")).toBe(
+      "王经理 让 陈工 在1 个项目办了退场",
+    );
+    expect(auditSentence({ action: "WORKER_REGISTRATION_VIEWED", metadata: { memberId: "m" } }, "李工", "张建国")).toBe("李工 查看了 张建国 的用工资料");
+    expect(auditSentence({ action: "COMPANY_DEFAULTS_SAVED", metadata: {} }, "王经理", null)).toBe("王经理 保存了公司默认的打卡安排和工时规则");
+  });
+});

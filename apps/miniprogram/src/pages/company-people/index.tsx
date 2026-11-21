@@ -71,7 +71,15 @@ export default function CompanyPeople(): JSX.Element {
   const companyId = useManagedCompanyId(state.me);
   const [typed, setTyped] = useState<string>("");
   const [search, setSearch] = useState<string>("");
-  const [filters, setFilters] = useState<Filters>({});
+  // 从“各项目一览”点进来时带着筛选（项目、在场、资料待核实）。
+  const params = Taro.useRouter().params;
+  const [filters, setFilters] = useState<Filters>(() => ({
+    ...(params.projectId ? { projectId: decodeURIComponent(params.projectId) } : {}),
+    ...(params.status === "ACTIVE" || params.status === "EXITED" ? { status: params.status } : {}),
+    ...(params.registrationStatus === "PENDING" || params.registrationStatus === "NEEDS_UPDATE" || params.registrationStatus === "VERIFIED"
+      ? { registrationStatus: params.registrationStatus }
+      : {}),
+  }));
   const [filtering, setFiltering] = useState<boolean>(false);
   const [projects, setProjects] = useState<readonly CompanyProject[]>([]);
   const [items, setItems] = useState<readonly CompanyPeopleItem[] | null>(null);

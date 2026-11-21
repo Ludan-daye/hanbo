@@ -2,7 +2,7 @@
 // is about, and the plain Chinese sentence shown for it. Shared by the API
 // and the mini program's demo backend so both say the same thing.
 
-export type AuditCategory = "PEOPLE" | "TEAM" | "ATTENDANCE" | "SAFETY" | "PROJECT";
+export type AuditCategory = "PEOPLE" | "TEAM" | "ATTENDANCE" | "SAFETY" | "PROJECT" | "COMPANY";
 
 export const AUDIT_CATEGORIES: readonly {
   readonly value: AuditCategory;
@@ -13,7 +13,11 @@ export const AUDIT_CATEGORIES: readonly {
   { value: "ATTENDANCE", label: "考勤和补卡" },
   { value: "SAFETY", label: "安全" },
   { value: "PROJECT", label: "项目设置" },
+  { value: "COMPANY", label: "公司" },
 ];
+
+/** Only in the company log: company-level actions (建项目、导出、离岗、默认规则、公司资料). */
+export const COMPANY_ONLY_CATEGORIES: readonly AuditCategory[] = ["COMPANY"];
 
 const CATEGORY_ACTIONS: Readonly<Record<AuditCategory, readonly string[]>> = {
   PEOPLE: [
@@ -24,6 +28,7 @@ const CATEGORY_ACTIONS: Readonly<Record<AuditCategory, readonly string[]>> = {
     "PERSONNEL_TRANSFER_APPROVED",
     "PERSONNEL_TRANSFER_REJECTED",
     "WORKER_REGISTRATION_VERIFIED",
+    "WORKER_REGISTRATION_VIEWED",
     "FACE_PROFILE_REVIEWED",
     "binding.invitation.create",
     "TEMPORARY_INVITATION_CREATED",
@@ -58,6 +63,16 @@ const CATEGORY_ACTIONS: Readonly<Record<AuditCategory, readonly string[]>> = {
     "TEAM_SAFETY_ISSUE_RESOLVED",
   ],
   PROJECT: ["project.create", "project.update"],
+  // Listed after the others, so auditCategoryOf keeps project.create under PROJECT and
+  // exports under ATTENDANCE; the COMPANY filter still finds them.
+  COMPANY: [
+    "project.create",
+    "report.export.requested",
+    "report.export.downloaded",
+    "PERSONNEL_OFFBOARDED",
+    "COMPANY_DEFAULTS_SAVED",
+    "COMPANY_PROFILE_UPDATED",
+  ],
 };
 
 /** The actions a category filter keeps. */
@@ -114,7 +129,14 @@ export const auditTargetRef = (entry: {
     case "TEMPORARY_WORKER_EXIT_CONFIRMED":
       return member(entry.entityId);
     case "WORKER_REGISTRATION_VERIFIED":
+    case "WORKER_REGISTRATION_VIEWED":
       return member(meta.memberId);
+    case "PERSONNEL_OFFBOARDED":
+      return id(entry.entityId, (found) => ({
+        kind: "profile",
+        participantType: ownerType(meta.participantType),
+        id: found,
+      }));
     case "TEMPORARY_INVITATION_ACCEPTED":
       return task(meta.taskId);
     case "PERSONNEL_TRANSFER_APPROVED":
@@ -204,6 +226,19 @@ export const auditSentence = (
         return meta.status === "NEEDS_UPDATE"
           ? `要求 ${person} 更正用工资料`
           : `核实了 ${person} 的用工资料`;
+      case "WORKER_REGISTRATION_VIEWED":
+        return `查看了 ${person} 的用工资料`;
+      case "PERSONNEL_OFFBOARDED": {
+        const count = Array.isArray(meta.projectIds) ? meta.projectIds.length : 0;
+        const where = count > 0 ? `${count} 个项目` : "本公司各项目";
+        return meta.mode === "EXIT_ALL"
+          ? `让 ${person} 在${where}办了退场`
+          : `收回了 ${person} 在${where}的管理职务`;
+      }
+      case "COMPANY_DEFAULTS_SAVED":
+        return "保存了公司默认的打卡安排和工时规则";
+      case "COMPANY_PROFILE_UPDATED":
+        return "修改了公司资料";
       case "FACE_PROFILE_REVIEWED":
         return meta.decision === "REJECTED"
           ? `退回了 ${person} 的人脸底照`

@@ -83,7 +83,7 @@ export class TemporaryInvitationsService {
       const code: string = randomInt(0, 1000000).toString().padStart(6, "0");
       try {
         const row = await this.db.$transaction(async (tx) => {
-          await requireActiveTeam(tx, teamId);
+          const team = await requireActiveTeam(tx, teamId);
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team-task:${taskId}`}))`;
           const task = await tx.teamWorkTask.findFirst({
             where: {
@@ -173,6 +173,7 @@ export class TemporaryInvitationsService {
               entityType: "TemporaryTaskInvitation",
               entityId: created.id,
               metadata: { teamId, taskId },
+              projectId: team.projectId,
             },
           });
           return created;
@@ -205,7 +206,7 @@ export class TemporaryInvitationsService {
     actor: string,
   ): Promise<void> {
     await this.db.$transaction(async (tx) => {
-      await requireActiveTeam(tx, teamId);
+      const team = await requireActiveTeam(tx, teamId);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team-task:${taskId}`}))`;
       const updated = await tx.temporaryTaskInvitation.updateMany({
         where: { id, taskId, task: { teamId }, status: "PENDING" },
@@ -222,6 +223,7 @@ export class TemporaryInvitationsService {
           entityType: "TemporaryTaskInvitation",
           entityId: id,
           metadata: { teamId, taskId },
+          projectId: team.projectId,
         },
       });
     });
@@ -457,6 +459,7 @@ export class TemporaryInvitationsService {
               teamId: team.id,
               memberId: member.id,
             },
+            projectId: team.projectId,
           },
         });
         return {

@@ -194,8 +194,10 @@ export class ReportExportsService implements OnModuleInit, OnModuleDestroy {
         data: {
           actorUserId: userId,
           action: "report.export.requested",
+          companyId: created.companyId,
           entityType: "ReportExport",
           entityId: created.id,
+          projectId: created.projectId,
           metadata: {
             scope: input.scope,
             scopeId: input.scopeId,
@@ -285,8 +287,10 @@ export class ReportExportsService implements OnModuleInit, OnModuleDestroy {
       data: {
         actorUserId: userId,
         action: "report.export.downloaded",
+        companyId: job.companyId,
         entityType: "ReportExport",
         entityId: id,
+        projectId: job.projectId,
         metadata: { version: job.version },
       },
     });

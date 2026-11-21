@@ -524,5 +524,52 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         expect(await database.auditLog.count({ where: { action: "COMPANY_PROFILE_UPDATED", entityId: companyId } })).toBe(1);
       });
     });
+
+    describe("company audit log and project health", (): void => {
+      test("every new row knows its company; the company log shows company-level actions", async (): Promise<void> => {
+        const row = await database.auditLog.create({
+          data: { action: "project.update", actorUserId: users.company, entityId: p1, entityType: "project", metadata: {}, projectId: p1 },
+        });
+        expect(row.companyId).toBe(companyId);
+        type Page = { items: { action: string; projectId: string | null }[]; nextCursor: string | null };
+        const log = (await get("company", `/management/companies/${companyId}/audit-logs?type=COMPANY`)) as Page;
+        const actions = new Set(log.items.map((item) => item.action));
+        for (const action of ["project.create", "PERSONNEL_OFFBOARDED", "COMPANY_DEFAULTS_SAVED", "COMPANY_PROFILE_UPDATED"])
+          expect(actions.has(action)).toBe(true);
+        const offboarded = log.items.find((item) => item.action === "PERSONNEL_OFFBOARDED")!;
+        expect(offboarded.projectId).toBeNull();
+        const other = (await get("other", `/management/companies/${otherCompanyId}/audit-logs`)) as Page;
+        expect(other.items.some((item) => item.action === "PERSONNEL_OFFBOARDED")).toBe(false);
+        const scoped = (await get("company", `/management/companies/${companyId}/audit-logs?projectId=${p1}`)) as Page;
+        expect(scoped.items.every((item) => item.projectId === p1)).toBe(true);
+      });
+
+      test("reading a worker's registration leaves one record per viewer every 10 minutes", async (): Promise<void> => {
+        const path = `/management/projects/${p1}/participants/${memberIds.get("w1")}/registration`;
+        await get("company", path);
+        await get("company", path);
+        const rows = await database.auditLog.findMany({
+          where: { action: "WORKER_REGISTRATION_VIEWED", entityId: workerIds.get("w1")!, actorUserId: users.company },
+        });
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ projectId: p1, companyId });
+        const people = (await get("company", `/management/companies/${companyId}/audit-logs?type=PEOPLE`)) as { items: { action: string; sentence: string }[] };
+        expect(people.items.find((item) => item.action === "WORKER_REGISTRATION_VIEWED")?.sentence).toBe("测试company 查看了 工人w1 的用工资料");
+      });
+
+      test("project health counts backlogs per project", async (): Promise<void> => {
+        const path = `/management/companies/${companyId}/project-health`;
+        await get("pa1", path, 403);
+        const health = (await get("company", path)) as {
+          projects: { projectId: string; violationPending: number; facePending: number; registrationPending: number; lowCredit: number }[];
+        };
+        const of = (projectId: string) => health.projects.find((row) => row.projectId === projectId)!;
+        expect(of(p2).violationPending).toBe(1);
+        expect(of(p1).facePending).toBe(1);
+        const pending = (await get("company", `/management/companies/${companyId}/people-page?projectId=${p1}&status=ACTIVE&registrationStatus=PENDING&participantType=WORKER`)) as { total: number };
+        expect(of(p1).registrationPending).toBe(pending.total);
+        expect(of(p1).lowCredit).toBe(0);
+      });
+    });
   },
 );

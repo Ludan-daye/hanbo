@@ -12,7 +12,9 @@ const PAGE_SIZE = 30;
 
 type Derived = {
   readonly action: string;
-  readonly projectId: string;
+  /** 公司级的操作（建项目、离岗、公司默认、公司资料）没有项目，记公司。 */
+  readonly companyId?: string;
+  readonly projectId: string | null;
   readonly target: string | null;
   readonly metadata: Readonly<Record<string, unknown>>;
 };
@@ -40,6 +42,24 @@ const derive = (state: DemoState, raw: string): Derived | null => {
       target: person?.displayName ?? null,
       metadata: {},
     };
+  }
+  if (parts[0] === "management" && parts[1] === "companies" && parts[2]) {
+    const companyId = parts[2];
+    if (parts[3] === "projects" && parts.length === 4 && method === "POST")
+      return { action: "project.create", companyId, projectId: null, target: null, metadata: {} };
+    if (parts[3] === "people" && parts[6] === "offboard" && method === "POST")
+      return {
+        action: "PERSONNEL_OFFBOARDED",
+        companyId,
+        projectId: null,
+        target: state.people.find((row) => row.profileId === parts[5])?.displayName ?? null,
+        metadata: {},
+      };
+    if (parts[3] === "attendance-defaults" && method === "PUT")
+      return { action: "COMPANY_DEFAULTS_SAVED", companyId, projectId: null, target: null, metadata: {} };
+    if (parts[3] === "profile" && method === "PUT")
+      return { action: "COMPANY_PROFILE_UPDATED", companyId, projectId: null, target: null, metadata: {} };
+    return null;
   }
   if (parts[0] === "management" && parts[1] === "projects" && parts[2]) {
     const projectId = parts[2];
@@ -90,13 +110,16 @@ export const demoAuditLog = (
   projectIds: readonly string[],
   type: AuditCategory | null,
   cursor: string | null,
+  companyId: string | null = null,
 ): AuditLogPage => {
   const entries: AuditLogEntry[] = [];
   for (const entry of state.audit) {
     const derived = derive(state, entry.action);
     if (
       derived === null ||
-      !projectIds.includes(derived.projectId) ||
+      (derived.projectId === null
+        ? companyId === null || derived.companyId !== companyId
+        : !projectIds.includes(derived.projectId)) ||
       (type !== null && !auditActionsIn(type).includes(derived.action))
     )
       continue;

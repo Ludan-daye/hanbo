@@ -122,6 +122,7 @@ export class CompanySettingsService {
         data: {
           action: "COMPANY_DEFAULTS_SAVED",
           actorUserId,
+          companyId,
           entityId: saved.id,
           entityType: "company_attendance_default",
           metadata: { companyId, name: body.name, pointCount: body.points.length, version: saved.version },
@@ -229,6 +230,7 @@ export class CompanySettingsService {
         data: {
           action: "COMPANY_PROFILE_UPDATED",
           actorUserId,
+          companyId,
           entityId: companyId,
           entityType: "company",
           metadata: {
