@@ -2,7 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { z } from "zod";
 
 import type { ParticipantTypeValue } from "./management.types.js";
-import type { OffboardRequest } from "./company-people.types.js";
+import type { CompanyPeoplePageQuery, OffboardRequest } from "./company-people.types.js";
 
 const isValidDateOnly = (value: string): boolean => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -26,4 +26,35 @@ export const parseOffboard = (body: unknown): OffboardRequest => {
   if (!result.success)
     throw new BadRequestException({ issues: result.error.issues, message: "INVALID_OFFBOARD_REQUEST" });
   return result.data;
+};
+
+export const parseCompanyPeoplePage = (query: unknown): CompanyPeoplePageQuery => {
+  const result = z
+    .object({
+      faceStatus: z.enum(["APPROVED", "NONE", "PENDING", "REJECTED"]).optional(),
+      page: z.coerce.number().int().min(1).max(100_000).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(30),
+      participantType: z.enum(["WORKER", "MANAGER"]).optional(),
+      permissionRole: z.enum(["WORKER", "TEAM_LEADER", "PROJECT_ADMIN"]).optional(),
+      projectId: z.string().min(1).optional(),
+      registrationStatus: z.enum(["NEEDS_UPDATE", "PENDING", "VERIFIED"]).optional(),
+      search: z.string().trim().max(40).default(""),
+      status: z.enum(["ACTIVE", "EXITED", "SUSPENDED"]).optional(),
+    })
+    .strict()
+    .safeParse(query ?? {});
+  if (!result.success)
+    throw new BadRequestException({ issues: result.error.issues, message: "INVALID_COMPANY_PEOPLE_PAGE" });
+  const value = result.data;
+  return {
+    faceStatus: value.faceStatus ?? null,
+    page: value.page,
+    pageSize: value.pageSize,
+    participantType: value.participantType ?? null,
+    permissionRole: value.permissionRole ?? null,
+    projectId: value.projectId ?? null,
+    registrationStatus: value.registrationStatus ?? null,
+    search: value.search,
+    status: value.status ?? null,
+  };
 };

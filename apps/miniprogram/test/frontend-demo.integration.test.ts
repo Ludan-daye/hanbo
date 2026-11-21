@@ -1106,6 +1106,19 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     expect(listed.find((row) => row.id === project.id)?.adminNames).toEqual(["新经理"]);
   });
 
+  test("company people come one person per row with server-side filters", async () => {
+    await login("dev-company");
+    const page = await client.request<{ items: { profileId: string; participantType: string }[]; total: number }>(
+      "/management/companies/demo-company/people-page?page=1&pageSize=100", { method: "GET" });
+    const keys = page.items.map((row) => `${row.participantType}:${row.profileId}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(page.total).toBe(page.items.length);
+    const managers = await client.request<{ items: { participantType: string }[] }>(
+      "/management/companies/demo-company/people-page?page=1&pageSize=100&participantType=MANAGER", { method: "GET" });
+    expect(managers.items.every((row) => row.participantType === "MANAGER")).toBe(true);
+    await expect(client.request("/management/companies/demo-company/people-page?page=1&pageSize=101", { method: "GET" })).rejects.toThrow();
+  });
+
   test("selected project managers receive access without losing their original project", async () => {
     await login("dev-company");
     const project = await client.request<CompanyProject>("/management/companies/demo-company/projects", {

@@ -3,6 +3,8 @@ import type {
   DefaultAttendanceConfiguration,
   CompanyOverview,
   CompanyParticipant,
+  CompanyPeoplePage,
+  CompanyPeopleQuery,
   CompanyPerson,
   OffboardMode,
   ProjectAdmins,
@@ -287,3 +289,16 @@ export const offboardCompanyPerson = (
     `${companyBase(companyId)}/people/${participantType}/${encodeURIComponent(profileId)}/offboard`,
     { method: "POST", data: body },
   );
+
+/** 公司人员分页：一人一行，筛选都在服务端做。 */
+export const fetchCompanyPeoplePage = (
+  companyId: string,
+  query: CompanyPeopleQuery,
+): Promise<CompanyPeoplePage> => {
+  const pairs = Object.entries(query)
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`);
+  return apiClient.request(`${companyBase(companyId)}/people-page?${pairs.join("&")}`, {
+    method: "GET",
+  });
+};

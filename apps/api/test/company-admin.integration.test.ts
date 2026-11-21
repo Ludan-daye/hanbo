@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { AppModule } from "../src/app.module.js";
 import { PrismaService } from "../src/infrastructure/database/prisma.service.js";
-import { encryptPersonnelName } from "../src/management/personnel-name.js";
+import { encryptPersonnelName, personnelNameSearchHashes } from "../src/management/personnel-name.js";
 import type { CompanyOverviewResponse } from "../src/overview/company-overview.types.js";
 
 // Company-admin features against a real database: the company home numbers equal
@@ -402,6 +402,60 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         ]);
         const audit = await database.auditLog.findFirstOrThrow({ where: { action: "project.create", entityId: created.id } });
         expect(audit.projectId).toBe(created.id);
+      });
+    });
+
+    describe("company people, one person per row", (): void => {
+      type PageItem = { participantType: string; profileId: string; projectCount: number; projects: { projectId: string }[]; registrationStatus: string | null; faceStatus: string };
+      const page = async (user: UserKey, companyQuery: string, status = 200) =>
+        (await get(user, `/management/companies/${companyId}/people-page?${companyQuery}`, status)) as { items: PageItem[]; total: number };
+
+      beforeAll(async (): Promise<void> => {
+        // w2 also works on p1 and on another company's project.
+        for (const projectId of [p1, x1])
+          await database.projectWorkerMember.create({
+            data: { projectId, workerId: workerIds.get("w2")!, enteredAt: new Date("2026-11-01T00:00:00+08:00"), projectRoleLabel: "木工", status: "ACTIVE" },
+          });
+        await database.workerProfile.update({ where: { id: workerIds.get("w1")! }, data: { realNameStatus: "VERIFIED" } });
+        await database.workerProfile.update({
+          where: { id: workerIds.get("w2")! },
+          data: { nameSearchHashes: [...personnelNameSearchHashes("工人w2", key)] },
+        });
+      });
+
+      test("checks the query and the caller", async (): Promise<void> => {
+        expect((await page("company", "pageSize=101", 400) as unknown as { message: string }).message).toBe("INVALID_COMPANY_PEOPLE_PAGE");
+        expect((await page("company", "registrationStatus=DONE", 400) as unknown as { message: string }).message).toBe("INVALID_COMPANY_PEOPLE_PAGE");
+        await page("pa1", "", 403);
+      });
+
+      test("one row per person, with this company's projects only", async (): Promise<void> => {
+        const all = await page("company", "page=1&pageSize=100");
+        const w2 = all.items.filter((row) => row.profileId === workerIds.get("w2"));
+        expect(w2).toHaveLength(1);
+        expect(w2[0]!.projects.map((row) => row.projectId).sort()).toEqual([p1, p2]);
+        expect(w2[0]!.projectCount).toBe(2);
+        expect(all.total).toBe(all.items.length);
+        const other = (await get("other", `/management/companies/${otherCompanyId}/people-page`)) as { items: PageItem[] };
+        expect(other.items.map((row) => row.projects.map((p) => p.projectId))).toEqual([[x1]]);
+        const paged = await page("company", "page=1&pageSize=2");
+        expect(paged.items).toHaveLength(2);
+        expect(paged.total).toBe(all.total);
+      });
+
+      test("filters by project, registration, photo and search on the server", async (): Promise<void> => {
+        expect((await page("company", `projectId=${p2}`)).items.map((row) => row.profileId)).toEqual(
+          expect.arrayContaining([workerIds.get("w2")]),
+        );
+        const verified = await page("company", "registrationStatus=VERIFIED");
+        expect(verified.items.map((row) => row.profileId)).toEqual([workerIds.get("w1")]);
+        expect(verified.items.every((row) => row.participantType === "WORKER")).toBe(true);
+        const photos = await page("company", "faceStatus=PENDING");
+        expect(photos.items.map((row) => row.profileId)).toEqual([workerIds.get("w1")]);
+        const byName = await page("company", `search=${encodeURIComponent("工人w2")}`);
+        expect(byName.items.map((row) => row.profileId)).toEqual([workerIds.get("w2")]);
+        const managers = await page("company", "participantType=MANAGER");
+        expect(managers.items.every((row) => row.participantType === "MANAGER")).toBe(true);
       });
     });
   },

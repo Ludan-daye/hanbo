@@ -29,6 +29,7 @@ export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   INVALID_OVERVIEW_QUERY: "日期不对，请返回首页重新打开。",
   COMPANY_NOT_FOUND: "公司不存在或已停用。",
   COMPANY_PERSON_NOT_FOUND: "这个人不在本公司的项目里。",
+  INVALID_COMPANY_PEOPLE_PAGE: "人员列表的筛选条件不对，请返回重新打开。",
   INVALID_PARTICIPANT_TYPE: "人员类型不对，请返回重新打开。",
   INVALID_OFFBOARD_REQUEST: "离岗日期不对，请重新选择。",
   OFFBOARD_NOTHING_TO_CHANGE: "他在本公司已经没有要收回的职务了。",

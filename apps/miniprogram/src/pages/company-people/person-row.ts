@@ -11,6 +11,7 @@ import {
 } from "../../routing/permissionLevels";
 import type {
   CompanyParticipant,
+  CompanyPeopleItem,
   MemberRoleAssignment,
 } from "../../services/management.types";
 import {
@@ -93,3 +94,53 @@ export const matchesPerson = (
   `${person.displayName ?? ""} ${person.phone} ${person.teamName ?? ""} ${displayProjectRole(person.projectRoleLabel)} ${roleLabelsOf(person)} ${person.projectName}`.includes(
     search.trim(),
   );
+
+/**
+ * 公司人员一人一行（2026-11-21 Q8）：副行写在哪几个项目，右侧写最要紧的一件资料问题：
+ * 资料需更正、资料待核实、底照没交或没通过；都没问题就写身份。
+ */
+export const companyPersonLine = (
+  item: CompanyPeopleItem,
+): {
+  readonly title: string;
+  readonly avatar: string;
+  readonly sub: string;
+  readonly status: { readonly kind: StatusKind; readonly text: string } | null;
+  readonly tag: string | null;
+} => {
+  const active = item.projects.filter((row) => row.status !== "EXITED");
+  const names = (active.length > 0 ? active : item.projects).map((row) => row.projectName);
+  const roles = new Set(
+    active
+      .map((row) => row.roleLabel)
+      .filter((label) => label === "PROJECT_ADMIN" || label === "TEAM_LEADER")
+      .map(displayProjectRole),
+  );
+  return {
+    title: item.displayName ?? "姓名待补录",
+    avatar: personInitial(item.displayName),
+    sub: joinText([
+      item.displayName === null && `尾号 ${item.phone.slice(-4)}`,
+      active.length === 0
+        ? `已退场，原在 ${names.join("、")}`
+        : active.length === 1
+          ? names[0]
+          : `在 ${active.length} 个项目：${names.join("、")}`,
+    ]),
+    status:
+      item.registrationStatus === "NEEDS_UPDATE"
+        ? { kind: "bad", text: "资料需更正" }
+        : item.faceStatus === "REJECTED"
+          ? { kind: "bad", text: "底照未通过" }
+          : item.registrationStatus === "PENDING"
+            ? { kind: "warn", text: "资料待核实" }
+            : item.faceStatus === "NONE"
+              ? { kind: "warn", text: "没交底照" }
+              : item.faceStatus === "PENDING"
+                ? { kind: "warn", text: "底照待审" }
+                : active.length === 0
+                  ? { kind: "idle", text: "已退场" }
+                  : null,
+    tag: roles.size === 0 ? null : [...roles].join("、"),
+  };
+};

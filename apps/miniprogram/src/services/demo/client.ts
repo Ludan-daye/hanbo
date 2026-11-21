@@ -9,7 +9,7 @@ import { memberRoleAssignments, memberRoleFields } from "../member-roles";
 import { demoMyProject } from "./my-project";
 import { demoReportPerson, saveDemoEvaluation } from "./report-details";
 import { demoProjectManagers } from "./project-managers";
-import { demoCompanyPerson, demoOffboard, demoProjectAdmins } from "./company-people";
+import { demoCompanyPeoplePage, demoCompanyPerson, demoOffboard, demoProjectAdmins } from "./company-people";
 import { demoPlanRequest, effectiveDemoPlan, demoPlanLevel } from "./plans";
 import Taro from "@tarojs/taro";
 import { FRONTEND_DEMO } from "../../config/env";
@@ -974,6 +974,8 @@ const routeDemo = (
       );
     }
     if (scope === "companies") {
+      if (resource === "people-page" && method === "GET")
+        return response(state, demoCompanyPeoplePage(state, scopeId, query));
       if (resource === "project-admins" && method === "GET")
         return response(state, demoProjectAdmins(state, scopeId));
       if (resource === "people" && parts[4] && parts[5]) {

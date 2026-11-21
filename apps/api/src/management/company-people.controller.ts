@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
 
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
@@ -6,9 +6,9 @@ import type { AuthenticatedUser } from "../auth/auth.types.js";
 import { PermissionsGuard } from "../authorization/permissions.guard.js";
 import { RequirePermission } from "../authorization/require-permission.decorator.js";
 
-import { parseOffboard, parseParticipantTypeParam } from "./company-people.parsers.js";
+import { parseCompanyPeoplePage, parseOffboard, parseParticipantTypeParam } from "./company-people.parsers.js";
 import { CompanyPeopleService } from "./company-people.service.js";
-import type { CompanyPersonResponse, ProjectAdminsResponse } from "./company-people.types.js";
+import type { CompanyPeoplePageResponse, CompanyPersonResponse, ProjectAdminsResponse } from "./company-people.types.js";
 
 const COMPANY = {
   permissionCode: "company.manage",
@@ -27,6 +27,13 @@ export class CompanyPeopleController {
   @UseGuards(AccessTokenGuard, PermissionsGuard)
   async projectAdmins(@Param("companyId") companyId: string): Promise<ProjectAdminsResponse> {
     return this.people.projectAdmins(companyId);
+  }
+
+  @Get("people-page")
+  @RequirePermission(COMPANY)
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async peoplePage(@Param("companyId") companyId: string, @Query() query: unknown): Promise<CompanyPeoplePageResponse> {
+    return this.people.page(companyId, parseCompanyPeoplePage(query));
   }
 
   @Get("people/:participantType/:profileId")

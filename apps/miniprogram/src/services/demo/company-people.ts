@@ -1,5 +1,7 @@
 import { ApiError } from "../apiClient";
 import type {
+  CompanyPeopleItem,
+  CompanyPeoplePage,
   CompanyPerson,
   ManagedParticipant,
   ProjectAdmins,
@@ -159,4 +161,76 @@ export const demoOffboard = (
     ],
   };
   return { state: next, data: demoCompanyPerson(next, companyId, participantType, profileId) };
+};
+
+/** 公司人员分页：一人一行，筛选和服务端一样。 */
+export const demoCompanyPeoplePage = (
+  state: DemoState,
+  companyId: string,
+  query: Readonly<Record<string, string>>,
+): CompanyPeoplePage => {
+  const page = Number(query.page ?? "1");
+  const pageSize = Number(query.pageSize ?? "30");
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100)
+    throw new ApiError(400, "人员列表的筛选条件不对，请返回重新打开。", { message: "INVALID_COMPANY_PEOPLE_PAGE" });
+  const projects = new Map(
+    state.projects.filter((row) => row.companyId === companyId).map((row) => [row.id, row]),
+  );
+  const search = (query.search ?? "").trim();
+  const roleOf = (person: ManagedParticipant): string =>
+    person.projectRoleLabel === "PROJECT_ADMIN" || person.projectRoleLabel === "TEAM_LEADER"
+      ? person.projectRoleLabel
+      : "WORKER";
+  const matching = state.people.filter(
+    (person) =>
+      projects.has(person.projectId) &&
+      (query.projectId === undefined || person.projectId === query.projectId) &&
+      (query.participantType === undefined || person.participantType === query.participantType) &&
+      (query.status === undefined || person.status === query.status) &&
+      (query.permissionRole === undefined ||
+        roleOf(person) === query.permissionRole ||
+        (query.permissionRole === "TEAM_LEADER" && (person.additionalRoles ?? []).some((role) => role.roleCode === "TEAM_LEADER"))) &&
+      (search === "" || `${person.displayName ?? ""} ${person.phone}`.includes(search)),
+  );
+  const face = (profileId: string): CompanyPeopleItem["faceStatus"] => {
+    const latest = [...state.faces]
+      .filter((row) => row.ownerId === profileId)
+      .sort((a, b) => b.version - a.version)[0];
+    return latest === undefined ? "NONE" : (latest.status as CompanyPeopleItem["faceStatus"]);
+  };
+  const registration = (person: ManagedParticipant): CompanyPeopleItem["registrationStatus"] =>
+    person.participantType === "WORKER"
+      ? ((state.registrationReviews?.[person.profileId]?.status as CompanyPeopleItem["registrationStatus"]) ?? "PENDING")
+      : null;
+  const keys = [...new Map(matching.map((person) => [`${person.participantType}:${person.profileId}`, person])).values()]
+    .filter((person) => query.registrationStatus === undefined || registration(person) === query.registrationStatus)
+    .filter((person) => query.faceStatus === undefined || face(person.profileId) === query.faceStatus)
+    .sort((a, b) => a.phone.localeCompare(b.phone));
+  return {
+    items: keys.slice((page - 1) * pageSize, page * pageSize).map((person): CompanyPeopleItem => {
+      const memberships = state.people.filter(
+        (row) => row.profileId === person.profileId && row.participantType === person.participantType && projects.has(row.projectId),
+      );
+      return {
+        displayName: person.displayName,
+        faceStatus: face(person.profileId),
+        participantType: person.participantType,
+        phone: person.phone,
+        profileId: person.profileId,
+        projectCount: memberships.filter((row) => row.status !== "EXITED").length,
+        projects: memberships.map((row) => ({
+          memberId: row.memberId,
+          projectId: row.projectId,
+          projectName: projects.get(row.projectId)?.name ?? "",
+          roleLabel: row.projectRoleLabel,
+          status: row.status,
+          teamName: row.teamName,
+        })),
+        registrationStatus: registration(person),
+      };
+    }),
+    page,
+    pageSize,
+    total: keys.length,
+  };
 };

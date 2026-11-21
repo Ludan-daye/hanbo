@@ -11,7 +11,11 @@ import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 
+import type { Prisma } from "@prisma/client";
+
 import type {
+  CompanyPeoplePageQuery,
+  CompanyPeoplePageResponse,
   CompanyPersonResponse,
   OffboardRequest,
   ProjectAdminsResponse,
@@ -23,10 +27,12 @@ import type {
 } from "./management.types.js";
 import { ParticipantsService } from "./participants.service.js";
 import type { ParticipantWriteRequest } from "./participants.types.js";
-import { decryptPersonnelName } from "./personnel-name.js";
+import { decryptPersonnelName, personnelSearchHash } from "./personnel-name.js";
 import { recordTeamLeaderChange } from "./team-leader-history.js";
 
 const ADMIN = "PROJECT_ADMIN";
+const registrationOf = (value: string): "NEEDS_UPDATE" | "PENDING" | "VERIFIED" =>
+  value === "VERIFIED" || value === "NEEDS_UPDATE" ? value : "PENDING";
 const LEADER = "TEAM_LEADER";
 
 /**
@@ -385,6 +391,154 @@ export class CompanyPeopleService {
       });
     });
     return this.person(companyId, participantType, profileId);
+  }
+
+  /**
+   * Q8 (2026-11-21): one row per person (participantType + profileId), paginated. Step one
+   * reads the matching memberships' profile ids (filters in SQL), step two narrows by
+   * registration and photo state, sorts by phone and builds only the requested page.
+   */
+  async page(
+    companyId: string,
+    query: CompanyPeoplePageQuery,
+  ): Promise<CompanyPeoplePageResponse> {
+    await this.requireCompany(companyId);
+    const projectFilter = query.projectId === null ? { project: { companyId } } : { project: { companyId }, projectId: query.projectId };
+    const search = query.search;
+    const hash = search.length === 0 ? null : personnelSearchHash(search, this.env.PERSONNEL_ENCRYPTION_KEY);
+    const workerRole: Prisma.ProjectWorkerMemberWhereInput =
+      query.permissionRole === null
+        ? {}
+        : query.permissionRole === "WORKER"
+          ? { projectRoleLabel: { notIn: [ADMIN, LEADER] } }
+          : query.permissionRole === LEADER
+            ? { OR: [{ projectRoleLabel: LEADER }, { additionalRoles: { some: { roleCode: "TEAM_LEADER" } } }] }
+            : { projectRoleLabel: ADMIN };
+    const managerRole: Prisma.ProjectManagerMemberWhereInput =
+      query.permissionRole === null
+        ? {}
+        : query.permissionRole === LEADER
+          ? { OR: [{ roleCode: LEADER }, { additionalRoles: { some: { roleCode: "TEAM_LEADER" } } }] }
+          : { roleCode: query.permissionRole };
+    const wantWorkers = query.participantType !== "MANAGER";
+    const wantManagers = query.participantType !== "WORKER" && query.registrationStatus === null;
+    const [workerRows, managerRows] = await Promise.all([
+      wantWorkers
+        ? this.prisma.projectWorkerMember.findMany({
+            where: {
+              ...projectFilter,
+              ...workerRole,
+              ...(query.status === null ? {} : { status: query.status }),
+              ...(hash === null ? {} : { worker: { OR: [{ phone: { contains: search } }, { nameSearchHashes: { has: hash } }] } }),
+            },
+            select: { workerId: true, worker: { select: { phone: true, realNameStatus: true } } },
+          })
+        : Promise.resolve([]),
+      wantManagers
+        ? this.prisma.projectManagerMember.findMany({
+            where: {
+              ...projectFilter,
+              ...managerRole,
+              ...(query.status === null ? {} : { status: query.status }),
+              ...(search.length === 0 ? {} : { manager: { OR: [{ phone: { contains: search } }, { name: { contains: search, mode: "insensitive" } }] } }),
+            },
+            select: { managerId: true, manager: { select: { phone: true } } },
+          })
+        : Promise.resolve([]),
+    ]);
+    type Key = { readonly participantType: ParticipantTypeValue; readonly profileId: string; readonly phone: string; readonly registration: string | null };
+    const keys = new Map<string, Key>();
+    for (const row of workerRows)
+      keys.set(`WORKER:${row.workerId}`, { participantType: "WORKER", profileId: row.workerId, phone: row.worker.phone, registration: registrationOf(row.worker.realNameStatus) });
+    for (const row of managerRows)
+      keys.set(`MANAGER:${row.managerId}`, { participantType: "MANAGER", profileId: row.managerId, phone: row.manager.phone, registration: null });
+    let candidates = [...keys.values()];
+    if (query.registrationStatus !== null)
+      candidates = candidates.filter((key) => key.registration === query.registrationStatus);
+    const faces = await this.latestFaces(candidates);
+    if (query.faceStatus !== null)
+      candidates = candidates.filter((key) => (faces.get(`${key.participantType}:${key.profileId}`) ?? "NONE") === query.faceStatus);
+    candidates.sort((a, b) => a.phone.localeCompare(b.phone) || a.participantType.localeCompare(b.participantType) || a.profileId.localeCompare(b.profileId));
+    const pageKeys = candidates.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
+    const ids = (type: ParticipantTypeValue): string[] => pageKeys.filter((key) => key.participantType === type).map((key) => key.profileId);
+    const [workers, managers] = await Promise.all([
+      this.prisma.workerProfile.findMany({
+        where: { id: { in: ids("WORKER") } },
+        select: {
+          encryptedName: true, id: true, phone: true,
+          projectMemberships: { where: { project: { companyId } }, select: { id: true, projectId: true, projectRoleLabel: true, status: true, project: { select: { name: true } }, team: { select: { name: true } } }, orderBy: [{ enteredAt: "desc" }, { id: "asc" }] },
+        },
+      }),
+      this.prisma.managerProfile.findMany({
+        where: { id: { in: ids("MANAGER") } },
+        select: {
+          id: true, name: true, phone: true,
+          projectMemberships: { where: { project: { companyId } }, select: { id: true, projectId: true, roleCode: true, status: true, project: { select: { name: true } }, teamScope: { select: { name: true } } }, orderBy: [{ enteredAt: "desc" }, { id: "asc" }] },
+        },
+      }),
+    ]);
+    return {
+      items: pageKeys.map((key) => {
+        const faceStatus = (faces.get(`${key.participantType}:${key.profileId}`) ?? "NONE") as CompanyPeoplePageResponse["items"][number]["faceStatus"];
+        if (key.participantType === "WORKER") {
+          const profile = workers.find((row) => row.id === key.profileId)!;
+          return {
+            displayName: this.name(profile.encryptedName),
+            faceStatus,
+            participantType: "WORKER" as const,
+            phone: profile.phone,
+            profileId: profile.id,
+            projectCount: profile.projectMemberships.filter((row) => row.status !== "EXITED").length,
+            projects: profile.projectMemberships.map((row) => ({
+              memberId: row.id, projectId: row.projectId, projectName: row.project.name,
+              roleLabel: row.projectRoleLabel, status: row.status as MemberStatusValue, teamName: row.team?.name ?? null,
+            })),
+            registrationStatus: key.registration as CompanyPeoplePageResponse["items"][number]["registrationStatus"],
+          };
+        }
+        const profile = managers.find((row) => row.id === key.profileId)!;
+        return {
+          displayName: profile.name,
+          faceStatus,
+          participantType: "MANAGER" as const,
+          phone: profile.phone,
+          profileId: profile.id,
+          projectCount: profile.projectMemberships.filter((row) => row.status !== "EXITED").length,
+          projects: profile.projectMemberships.map((row) => ({
+            memberId: row.id, projectId: row.projectId, projectName: row.project.name,
+            roleLabel: row.roleCode, status: row.status as MemberStatusValue, teamName: row.teamScope?.name ?? null,
+          })),
+          registrationStatus: null,
+        };
+      }),
+      page: query.page,
+      pageSize: query.pageSize,
+      total: candidates.length,
+    };
+  }
+
+  /** Latest baseline photo status per person (highest version wins). */
+  private async latestFaces(
+    keys: readonly { readonly participantType: ParticipantTypeValue; readonly profileId: string }[],
+  ): Promise<ReadonlyMap<string, string>> {
+    const result = new Map<string, string>();
+    if (keys.length === 0) return result;
+    const rows = await this.prisma.faceProfile.findMany({
+      where: {
+        OR: [
+          { ownerType: "WORKER", ownerId: { in: keys.filter((key) => key.participantType === "WORKER").map((key) => key.profileId) } },
+          { ownerType: "MANAGER", ownerId: { in: keys.filter((key) => key.participantType === "MANAGER").map((key) => key.profileId) } },
+        ],
+      },
+      orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+      select: { ownerId: true, ownerType: true, status: true },
+    });
+    for (const row of rows) {
+      const key = `${row.ownerType}:${row.ownerId}`;
+      if (!result.has(key))
+        result.set(key, ["APPROVED", "PENDING", "REJECTED"].includes(row.status) ? row.status : "PENDING");
+    }
+    return result;
   }
 
   private async requireCompany(companyId: string): Promise<void> {

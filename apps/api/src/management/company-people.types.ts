@@ -64,3 +64,42 @@ export type OffboardRequest = {
   /** REVOKE_ADMIN keeps the person in every project as a plain member; EXIT_ALL exits them. */
   readonly mode: "EXIT_ALL" | "REVOKE_ADMIN";
 };
+
+export type CompanyPeoplePageQuery = {
+  readonly faceStatus: "APPROVED" | "NONE" | "PENDING" | "REJECTED" | null;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly participantType: ParticipantTypeValue | null;
+  readonly permissionRole: "PROJECT_ADMIN" | "TEAM_LEADER" | "WORKER" | null;
+  readonly projectId: string | null;
+  readonly registrationStatus: "NEEDS_UPDATE" | "PENDING" | "VERIFIED" | null;
+  readonly search: string;
+  readonly status: MemberStatusValue | null;
+};
+
+/** One person per row (Q8): their posts in this company and the profile checks. */
+export type CompanyPeoplePageResponse = {
+  readonly items: readonly {
+    readonly displayName: string | null;
+    /** Latest baseline photo: NONE when never submitted. */
+    readonly faceStatus: "APPROVED" | "NONE" | "PENDING" | "REJECTED";
+    readonly participantType: ParticipantTypeValue;
+    readonly phone: string;
+    readonly profileId: string;
+    /** Memberships that are not exited. */
+    readonly projectCount: number;
+    readonly projects: readonly {
+      readonly memberId: string;
+      readonly projectId: string;
+      readonly projectName: string;
+      readonly roleLabel: string;
+      readonly status: MemberStatusValue;
+      readonly teamName: string | null;
+    }[];
+    /** Workers only: 用工登记 verification. */
+    readonly registrationStatus: "NEEDS_UPDATE" | "PENDING" | "VERIFIED" | null;
+  }[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+};

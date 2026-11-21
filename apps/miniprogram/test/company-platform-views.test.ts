@@ -5,6 +5,7 @@ import {
   managerSummary,
 } from "../src/components/project-manager-picker/summary";
 import {
+  companyPersonLine,
   matchesPerson,
   personRow,
 } from "../src/pages/company-people/person-row";
@@ -126,6 +127,43 @@ describe("公司人员的一行", () => {
     expect(matchesPerson(worker, "ALL", " 钢筋一班 ")).toBe(true);
     expect(matchesPerson(worker, "ALL", "滨江")).toBe(true);
     expect(matchesPerson(worker, "ALL", "木工")).toBe(false);
+  });
+});
+
+describe("公司人员一人一行", () => {
+  const item = {
+    displayName: "李明",
+    faceStatus: "APPROVED" as const,
+    participantType: "WORKER" as const,
+    phone: "13800000001",
+    profileId: "w-1",
+    projectCount: 2,
+    projects: [
+      { memberId: "m-1", projectId: "p-1", projectName: "滨江花园", roleLabel: "TEAM_LEADER", status: "ACTIVE" as const, teamName: "钢筋一班" },
+      { memberId: "m-2", projectId: "p-2", projectName: "城市更新", roleLabel: "钢筋工", status: "ACTIVE" as const, teamName: null },
+      { memberId: "m-3", projectId: "p-3", projectName: "老项目", roleLabel: "钢筋工", status: "EXITED" as const, teamName: null },
+    ],
+    registrationStatus: "VERIFIED" as const,
+  };
+  it("写在几个项目，资料都齐时右侧写身份", () => {
+    expect(companyPersonLine(item)).toEqual({
+      title: "李明",
+      avatar: "李",
+      sub: "在 2 个项目：滨江花园、城市更新",
+      status: null,
+      tag: "班组长",
+    });
+  });
+  it("资料问题排在身份前面，最要紧的先写", () => {
+    expect(companyPersonLine({ ...item, registrationStatus: "NEEDS_UPDATE", faceStatus: "NONE" }).status).toEqual({ kind: "bad", text: "资料需更正" });
+    expect(companyPersonLine({ ...item, registrationStatus: "PENDING" }).status).toEqual({ kind: "warn", text: "资料待核实" });
+    expect(companyPersonLine({ ...item, faceStatus: "NONE" }).status).toEqual({ kind: "warn", text: "没交底照" });
+    expect(companyPersonLine({ ...item, participantType: "MANAGER", registrationStatus: null }).status).toBeNull();
+  });
+  it("都退场了写原来在哪", () => {
+    const gone = { ...item, projects: [item.projects[2]!] };
+    expect(companyPersonLine(gone).sub).toBe("已退场，原在 老项目");
+    expect(companyPersonLine(gone).status).toEqual({ kind: "idle", text: "已退场" });
   });
 });
 

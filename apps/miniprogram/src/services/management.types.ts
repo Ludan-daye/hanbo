@@ -452,3 +452,39 @@ export type CompanyPerson = {
 };
 /** 离岗：默认只收回管理职务；EXIT_ALL 是在本公司所有项目办退场。 */
 export type OffboardMode = "REVOKE_ADMIN" | "EXIT_ALL";
+
+/** 公司人员一人一行（2026-11-21 Q8）：在哪几个项目、资料核实和底照状态。 */
+export type CompanyPeopleItem = {
+  readonly displayName: string | null;
+  readonly faceStatus: "APPROVED" | "NONE" | "PENDING" | "REJECTED";
+  readonly participantType: ParticipantType;
+  readonly phone: string;
+  readonly profileId: string;
+  readonly projectCount: number;
+  readonly projects: readonly {
+    readonly memberId: string;
+    readonly projectId: string;
+    readonly projectName: string;
+    readonly roleLabel: string;
+    readonly status: MemberStatus;
+    readonly teamName: string | null;
+  }[];
+  readonly registrationStatus: "NEEDS_UPDATE" | "PENDING" | "VERIFIED" | null;
+};
+export type CompanyPeoplePage = {
+  readonly items: readonly CompanyPeopleItem[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+};
+export type CompanyPeopleQuery = {
+  readonly page: number;
+  readonly pageSize: number;
+  readonly search: string;
+  readonly projectId?: string | null;
+  readonly participantType?: ParticipantType | null;
+  readonly permissionRole?: "WORKER" | "TEAM_LEADER" | "PROJECT_ADMIN" | null;
+  readonly status?: MemberStatus | null;
+  readonly registrationStatus?: "NEEDS_UPDATE" | "PENDING" | "VERIFIED" | null;
+  readonly faceStatus?: "APPROVED" | "NONE" | "PENDING" | "REJECTED" | null;
+};
