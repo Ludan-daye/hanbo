@@ -29,10 +29,9 @@ import { ParticipantsService } from "./participants.service.js";
 import type { ParticipantWriteRequest } from "./participants.types.js";
 import { decryptPersonnelName, personnelSearchHash } from "./personnel-name.js";
 import { recordTeamLeaderChange } from "./team-leader-history.js";
+import { registrationState } from "./registration-state.js";
 
 const ADMIN = "PROJECT_ADMIN";
-const registrationOf = (value: string): "NEEDS_UPDATE" | "PENDING" | "VERIFIED" =>
-  value === "VERIFIED" || value === "NEEDS_UPDATE" ? value : "PENDING";
 const LEADER = "TEAM_LEADER";
 
 /**
@@ -433,7 +432,7 @@ export class CompanyPeopleService {
               ...(query.status === null ? {} : { status: query.status }),
               ...(hash === null ? {} : { worker: { OR: [{ phone: { contains: search } }, { nameSearchHashes: { has: hash } }] } }),
             },
-            select: { workerId: true, worker: { select: { phone: true, realNameStatus: true } } },
+            select: { workerId: true, worker: { select: { phone: true, realNameStatus: true, registrationCompletedAt: true } } },
           })
         : Promise.resolve([]),
       wantManagers
@@ -451,10 +450,28 @@ export class CompanyPeopleService {
     type Key = { readonly participantType: ParticipantTypeValue; readonly profileId: string; readonly phone: string; readonly registration: string | null };
     const keys = new Map<string, Key>();
     for (const row of workerRows)
-      keys.set(`WORKER:${row.workerId}`, { participantType: "WORKER", profileId: row.workerId, phone: row.worker.phone, registration: registrationOf(row.worker.realNameStatus) });
+      keys.set(`WORKER:${row.workerId}`, { participantType: "WORKER", profileId: row.workerId, phone: row.worker.phone, registration: registrationState(row.worker.realNameStatus, row.worker.registrationCompletedAt) });
     for (const row of managerRows)
       keys.set(`MANAGER:${row.managerId}`, { participantType: "MANAGER", profileId: row.managerId, phone: row.manager.phone, registration: null });
     let candidates = [...keys.values()];
+    // 已退场 across the whole company means gone from every project here, not just one.
+    if (query.status === "EXITED" && query.projectId === null && candidates.length > 0) {
+      const [stayingWorkers, stayingManagers] = await Promise.all([
+        this.prisma.projectWorkerMember.findMany({
+          where: { project: { companyId }, status: { not: "EXITED" }, workerId: { in: candidates.filter((key) => key.participantType === "WORKER").map((key) => key.profileId) } },
+          select: { workerId: true },
+        }),
+        this.prisma.projectManagerMember.findMany({
+          where: { project: { companyId }, status: { not: "EXITED" }, managerId: { in: candidates.filter((key) => key.participantType === "MANAGER").map((key) => key.profileId) } },
+          select: { managerId: true },
+        }),
+      ]);
+      const staying = new Set([
+        ...stayingWorkers.map((row) => `WORKER:${row.workerId}`),
+        ...stayingManagers.map((row) => `MANAGER:${row.managerId}`),
+      ]);
+      candidates = candidates.filter((key) => !staying.has(`${key.participantType}:${key.profileId}`));
+    }
     if (query.registrationStatus !== null)
       candidates = candidates.filter((key) => key.registration === query.registrationStatus);
     const faces = await this.latestFaces(candidates);

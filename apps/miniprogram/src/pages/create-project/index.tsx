@@ -174,7 +174,7 @@ export default function CreateProject(): JSX.Element {
           : false;
       await Taro.redirectTo({
         url: invite
-          ? `/pages/invitation/index?projectId=${encodeURIComponent(created.id)}`
+          ? `/pages/invitation/index?projectId=${encodeURIComponent(created.id)}&target=MANAGER`
           : `/pages/company-projects/index?companyId=${companyId}`,
       });
     } catch (e) {
@@ -231,9 +231,10 @@ export default function CreateProject(): JSX.Element {
               chevron
               onClick={busy ? undefined : () => setView("managers")}
             >
-              {managers.length > 0 ? (
+              {managers.length + newManagers.length > 0 ? (
                 <View className="create-project__value">
-                  {managerSummary(managers)}
+                  {/* 下面录入的新管理员也算，录了就不再写“请选择”。 */}
+                  {managerSummary([...managers, ...newManagers])}
                 </View>
               ) : undefined}
             </FormRow>

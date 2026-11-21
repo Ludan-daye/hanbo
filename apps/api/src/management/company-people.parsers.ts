@@ -37,7 +37,7 @@ export const parseCompanyPeoplePage = (query: unknown): CompanyPeoplePageQuery =
       participantType: z.enum(["WORKER", "MANAGER"]).optional(),
       permissionRole: z.enum(["WORKER", "TEAM_LEADER", "PROJECT_ADMIN"]).optional(),
       projectId: z.string().min(1).optional(),
-      registrationStatus: z.enum(["NEEDS_UPDATE", "PENDING", "VERIFIED"]).optional(),
+      registrationStatus: z.enum(["NEEDS_UPDATE", "NOT_SUBMITTED", "PENDING", "VERIFIED"]).optional(),
       search: z.string().trim().max(40).default(""),
       status: z.enum(["ACTIVE", "EXITED", "SUSPENDED"]).optional(),
     })

@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { transferModeText, transferPost, transferRoute, transferWho } from "../src/pages/transfer-approvals/transfer-view";
+import { transferModeText, transferPost, transferReviewReason, transferRoute, transferWho } from "../src/pages/transfer-approvals/transfer-view";
 import { transferStatusLabel } from "../src/services/transfers";
 
 describe("transfer request text", () => {
@@ -13,7 +13,7 @@ describe("transfer request text", () => {
     ).toBe("李经理 2026-11-18 申请");
     expect(
       transferWho({ requestedByName: "李经理", createdAt: "2026-11-18T02:00:00.000Z", reviewedByName: "王总", reviewedAt: "2026-11-19T02:00:00.000Z", status: "REJECTED" }),
-    ).toBe("李经理 2026-11-18 申请，王总 2026-11-19 没同意");
+    ).toBe("李经理 2026-11-18 申请，王总 2026-11-19 未同意");
   });
   test("status is shape plus colour", () => {
     expect(transferStatusLabel("PENDING")).toEqual({ kind: "warn", text: "等公司同意" });
@@ -27,5 +27,15 @@ describe("调走还是兼任", () => {
     expect(transferModeText({ mode: "MOVE", sourceProjectName: "城市更新" })).toBe("调走：同意后在城市更新办退场");
     expect(transferModeText({ mode: "CONCURRENT", sourceProjectName: "城市更新" })).toBe("兼任：城市更新的身份照旧");
     expect(transferModeText({ sourceProjectName: "城市更新" })).toBe("兼任：城市更新的身份照旧");
+  });
+  test("handled requests read in the past tense with one wording for rejected", () => {
+    expect(
+      transferModeText({ mode: "MOVE", sourceProjectName: "城市更新", status: "APPROVED", enteredAt: "2026-11-24T16:00:00.000Z" }),
+    ).toBe("已调走，城市更新于 2026-11-24 办退场");
+    expect(transferModeText({ mode: "CONCURRENT", sourceProjectName: "城市更新", status: "APPROVED" })).toBe("已兼任，城市更新的身份照旧");
+    expect(transferModeText({ mode: "MOVE", sourceProjectName: "城市更新", status: "REJECTED" })).toBe("未同意，仍在城市更新（申请的是调走）");
+    expect(transferReviewReason({ reviewReason: "人手不够", status: "REJECTED" })).toBe("未同意的理由：人手不够");
+    expect(transferReviewReason({ reviewReason: "下周一到", status: "APPROVED" })).toBe("同意时的备注：下周一到");
+    expect(transferReviewReason({ reviewReason: null, status: "APPROVED" })).toBeNull();
   });
 });

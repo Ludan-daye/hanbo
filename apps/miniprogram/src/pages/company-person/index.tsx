@@ -23,7 +23,6 @@ import { useCachedRead } from "../../hooks/use-cached-read";
 import { useManagedCompanyId } from "../../hooks/use-management-scope";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
-import { displayProjectRole } from "../../routing/features";
 import { errorMessage } from "../../services/error-messages";
 import {
   fetchCompanyPerson,
@@ -37,9 +36,12 @@ import { chinaToday, formatChinaDate } from "../../services/time";
 import { useSession } from "../../store/session";
 
 import {
+  hasManagementPosts,
+  historyLines,
   membershipRoles,
   membershipStatus,
   offboardSummary,
+  offboardWords,
 } from "../company-admins/admins-view";
 
 const MODES: ReadonlyArray<{ readonly value: OffboardMode; readonly label: string }> = [
@@ -70,7 +72,8 @@ export default function CompanyPersonPage(): JSX.Element {
     "任职没读到",
   );
   const [saved, setSaved] = useState<CompanyPerson | null>(null);
-  const [mode, setMode] = useState<OffboardMode>("REVOKE_ADMIN");
+  // 没选过时按他有没有管理职务来：有就默认只收回职务，没有就默认全部退场。
+  const [chosenMode, setMode] = useState<OffboardMode | null>(null);
   const [date, setDate] = useState<string>(chinaToday());
   const [busy, setBusy] = useState<boolean>(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -92,15 +95,18 @@ export default function CompanyPersonPage(): JSX.Element {
         )}
       </Screen>
     );
+  const mode: OffboardMode =
+    chosenMode ?? (hasManagementPosts(person) ? "REVOKE_ADMIN" : "EXIT_ALL");
+  const words = offboardWords(mode);
   const summary = offboardSummary(person, mode);
   const own = state.me?.profile.id === person.profileId;
   const active = person.memberships.filter((row) => row.status !== "EXITED");
   const offboard = async (): Promise<void> => {
     if (busy || summary.projects.length === 0) return;
     const answer = await Taro.showModal({
-      title: mode === "EXIT_ALL" ? "所有项目都退场" : "收回管理职务",
+      title: words.title,
       content: summary.text,
-      confirmText: "确认离岗",
+      confirmText: words.confirm,
       confirmColor: "#D7261E",
     });
     if (!answer.confirm) return;
@@ -124,8 +130,7 @@ export default function CompanyPersonPage(): JSX.Element {
     <Screen header={header}>
       <SignLine
         title={person.displayName ?? "姓名待补录"}
-        sub={`${person.phone}${person.isBound ? "" : "，还没绑定微信"}`}
-        value={`${active.length} 个项目`}
+        sub={`${person.phone}${person.isBound ? "" : "，还没绑定微信"}；${active.length === 0 ? "本公司的项目都已退场" : `在 ${active.length} 个项目`}`}
       />
       <SectionTitle>在本公司的任职</SectionTitle>
       {person.memberships.map((membership) => (
@@ -150,11 +155,11 @@ export default function CompanyPersonPage(): JSX.Element {
           </CardMeta>
           {membership.history.length > 1 ? (
             <View className="m-fade">
-              {membership.history.slice(0, 5).map((row, index) => (
-                <CardMeta key={`${row.recordedAt}-${index}`}>
-                  {`${formatChinaDate(row.recordedAt)} ${displayProjectRole(row.projectRoleLabel)}${row.teamName ? `，${row.teamName}` : ""}，${membershipStatus(row).text}`}
-                </CardMeta>
-              ))}
+              {historyLines(membership.history)
+                .slice(0, 5)
+                .map((line, index) => (
+                  <CardMeta key={`${membership.memberId}-${index}`}>{line}</CardMeta>
+                ))}
             </View>
           ) : null}
         </Card>
@@ -179,7 +184,7 @@ export default function CompanyPersonPage(): JSX.Element {
           <Notice>{summary.text}</Notice>
           {failure !== null ? <Notice tone="error">{failure}</Notice> : null}
           <BottomBar
-            primary={busy ? "办理中…" : "离岗"}
+            primary={busy ? "办理中…" : words.button}
             busy={busy}
             disabled={summary.projects.length === 0}
             onPrimary={() => void offboard()}

@@ -1320,8 +1320,10 @@
   text-align: inherit;
   background: transparent;
 }
-.ui-form-row__input,
-.ui-search__input {
+// 只对 H5 的外壳（taro-input-core）用 flex：小程序里这个类直接落在原生 input 上，
+// 再给它 display:flex 会让右对齐失效，字和占位符停在行中间（成员资料、公司资料里看得到）。
+taro-input-core.ui-form-row__input,
+taro-input-core.ui-search__input {
   display: flex;
   align-items: center;
 }

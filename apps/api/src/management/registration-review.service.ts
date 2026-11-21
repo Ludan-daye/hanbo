@@ -57,7 +57,8 @@ export class RegistrationReviewService {
         entityId: member.worker.id,
       },
     });
-    if (recent === 0)
+    // Nothing filled in yet means nothing was read: no 查看用工资料 entry.
+    if (recent === 0 && member.worker.registrationCompletedAt !== null)
       await this.prisma.auditLog.create({
         data: {
           action: "WORKER_REGISTRATION_VIEWED",

@@ -34,3 +34,14 @@
 .ui-screen--sign .team-makeups__reject .ui-btn--text[disabled] {
   color: var(--ph);
 }
+
+// 已通过的红章：浮在右上角，正文绕开它（不用 Card stamped 整张让出右边一栏）。
+.team-makeups__stamp {
+  float: right;
+  margin: -8rpx -8rpx 8rpx 16rpx;
+}
+.team-makeups__stamp .ui-stamp {
+  position: relative;
+  top: 0;
+  right: 0;
+}

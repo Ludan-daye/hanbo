@@ -1,3 +1,4 @@
+import type { RegistrationState } from "./registration-state.js";
 import type {
   MemberStatusValue,
   ParticipantTypeValue,
@@ -72,7 +73,7 @@ export type CompanyPeoplePageQuery = {
   readonly participantType: ParticipantTypeValue | null;
   readonly permissionRole: "PROJECT_ADMIN" | "TEAM_LEADER" | "WORKER" | null;
   readonly projectId: string | null;
-  readonly registrationStatus: "NEEDS_UPDATE" | "PENDING" | "VERIFIED" | null;
+  readonly registrationStatus: RegistrationState | null;
   readonly search: string;
   readonly status: MemberStatusValue | null;
 };
@@ -96,8 +97,8 @@ export type CompanyPeoplePageResponse = {
       readonly status: MemberStatusValue;
       readonly teamName: string | null;
     }[];
-    /** Workers only: 用工登记 verification. */
-    readonly registrationStatus: "NEEDS_UPDATE" | "PENDING" | "VERIFIED" | null;
+    /** Workers only: 用工登记 state; NOT_SUBMITTED when never filled in. */
+    readonly registrationStatus: RegistrationState | null;
   }[];
   readonly page: number;
   readonly pageSize: number;

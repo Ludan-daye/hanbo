@@ -87,10 +87,14 @@ describe("company-level operation log", () => {
       auditTargetRef({ action: "PERSONNEL_OFFBOARDED", entityType: "manager_profile", entityId: "p1", metadata: { participantType: "MANAGER" } }),
     ).toEqual({ kind: "profile", participantType: "MANAGER", id: "p1" });
     expect(auditSentence({ action: "PERSONNEL_OFFBOARDED", metadata: { mode: "REVOKE_ADMIN", projectIds: ["a", "b"] } }, "王经理", "陈工")).toBe(
-      "王经理 收回了 陈工 在2 个项目的管理职务",
+      "王经理 收回了 陈工 在 2 个项目的管理职务",
     );
+    expect(auditSentence({ action: "project.member.update", metadata: { via: "OFFBOARD" } }, "王经理", "陈工")).toBe(
+      "王经理 为离岗调整了 陈工 在本项目的身份",
+    );
+    expect(auditSentence({ action: "project.member.update", metadata: {} }, "王经理", "陈工")).toBe("王经理 修改了 陈工 的人员资料");
     expect(auditSentence({ action: "PERSONNEL_OFFBOARDED", metadata: { mode: "EXIT_ALL", projectIds: ["a"] } }, "王经理", "陈工")).toBe(
-      "王经理 让 陈工 在1 个项目办了退场",
+      "王经理 让 陈工 在 1 个项目办了退场",
     );
     expect(auditSentence({ action: "WORKER_REGISTRATION_VIEWED", metadata: { memberId: "m" } }, "李工", "张建国")).toBe("李工 查看了 张建国 的用工资料");
     expect(auditSentence({ action: "COMPANY_DEFAULTS_SAVED", metadata: {} }, "王经理", null)).toBe("王经理 保存了公司默认的打卡安排和工时规则");

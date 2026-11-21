@@ -47,6 +47,7 @@ const STATUS_OPTIONS = [
 ] as const;
 const REGISTRATION_OPTIONS = [
   { value: "ALL", label: "不限" },
+  { value: "NOT_SUBMITTED", label: "没填用工资料" },
   { value: "PENDING", label: "资料待核实" },
   { value: "NEEDS_UPDATE", label: "资料需更正" },
   { value: "VERIFIED", label: "已核实" },
@@ -76,7 +77,10 @@ export default function CompanyPeople(): JSX.Element {
   const [filters, setFilters] = useState<Filters>(() => ({
     ...(params.projectId ? { projectId: decodeURIComponent(params.projectId) } : {}),
     ...(params.status === "ACTIVE" || params.status === "EXITED" ? { status: params.status } : {}),
-    ...(params.registrationStatus === "PENDING" || params.registrationStatus === "NEEDS_UPDATE" || params.registrationStatus === "VERIFIED"
+    ...(params.registrationStatus === "PENDING" ||
+    params.registrationStatus === "NOT_SUBMITTED" ||
+    params.registrationStatus === "NEEDS_UPDATE" ||
+    params.registrationStatus === "VERIFIED"
       ? { registrationStatus: params.registrationStatus }
       : {}),
   }));
@@ -240,7 +244,7 @@ export default function CompanyPeople(): JSX.Element {
           <SectionTitle>{`共 ${total} 人`}</SectionTitle>
           <Sheet gap>
             {items.map((item) => {
-              const line = companyPersonLine(item);
+              const line = companyPersonLine(item, filters);
               return (
                 <Row
                   key={`${item.participantType}:${item.profileId}`}

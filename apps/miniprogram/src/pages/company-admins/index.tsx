@@ -45,7 +45,8 @@ export default function CompanyAdmins(): JSX.Element {
     "项目负责人没读到",
   );
   const lines = projectAdminLines(data.data);
-  const missing = lines.filter((line) => line.missing).length;
+  // 标题的数和下面写着“还没有项目管理员”的块一样多（暂停、完工的也算，只是不标红）。
+  const without = lines.filter((line) => line.admins.length === 0).length;
   const header = <PageHeader title="项目负责人" />;
   if (companyId === null)
     return (
@@ -64,9 +65,8 @@ export default function CompanyAdmins(): JSX.Element {
       ) : (
         <>
           <SignLine
-            title={missing > 0 ? `${missing} 个项目没有管理员` : "每个项目都有管理员"}
-            sub="项目管理员的任免由公司管理员办理"
-            value={String(lines.length)}
+            title={without > 0 ? `${without} 个项目没有管理员` : "每个项目都有管理员"}
+            sub={`共 ${lines.length} 个项目。点“任命管理员”到项目人员里指定`}
           />
           {lines.length === 0 ? (
             <StateView kind="empty" title="还没有项目" sub="新建项目时选好管理员。" />
@@ -85,13 +85,9 @@ export default function CompanyAdmins(): JSX.Element {
                   {line.admins.length === 0 ? (
                     <Row
                       title="还没有项目管理员"
-                      sub="到项目人员里把一个人的身份改成项目管理员"
                       status={line.missing ? { kind: "bad", text: "缺管理员" } : undefined}
                       hazard={line.missing}
-                      chevron
-                      onClick={() =>
-                        go(`/pages/participants/index?projectId=${encodeURIComponent(line.projectId)}`)
-                      }
+                      mute={!line.missing}
                     />
                   ) : (
                     line.admins.map((admin) => (

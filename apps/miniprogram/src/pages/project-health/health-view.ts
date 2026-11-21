@@ -25,6 +25,12 @@ export const healthLines = (
       count: project.registrationPending,
       url: `/pages/company-people/index?companyId=${encodeURIComponent(companyId)}&${p}&status=ACTIVE&registrationStatus=PENDING`,
     },
+    {
+      key: "registrations-missing",
+      title: "没填用工资料",
+      count: project.registrationMissing,
+      url: `/pages/company-people/index?companyId=${encodeURIComponent(companyId)}&${p}&status=ACTIVE&registrationStatus=NOT_SUBMITTED`,
+    },
     { key: "credit", title: "信用低于 60 分", count: project.lowCredit, url: `/pages/safety-review/index?${p}` },
   ];
   return rows.filter((row) => row.count > 0);
@@ -35,7 +41,7 @@ export const healthOrder = (
   projects: ProjectHealth["projects"],
 ): ProjectHealth["projects"] => {
   const total = (row: ProjectHealth["projects"][number]): number =>
-    row.violationPending + row.appealPending + row.facePending + row.registrationPending + row.lowCredit;
+    row.violationPending + row.appealPending + row.facePending + row.registrationPending + row.registrationMissing + row.lowCredit;
   return [...projects].sort(
     (a, b) =>
       Number(a.status === "COMPLETED") - Number(b.status === "COMPLETED") ||

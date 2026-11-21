@@ -46,6 +46,8 @@ describe("项目管理员那一行", () => {
     expect(managerSummary([{ name: "陈工" }, { name: "李工" }])).toBe(
       "陈工 等 2 人",
     );
+    // 新建项目里只录了新管理员也写名字，不再是“请选择”。
+    expect(managerSummary([...[], { name: "新经理", phone: "13900000000" }])).toBe("新经理");
   });
 
   it("副行写手机号和有没有绑定微信，不用间隔号", () => {
@@ -159,6 +161,16 @@ describe("公司人员一人一行", () => {
     expect(companyPersonLine({ ...item, registrationStatus: "PENDING" }).status).toEqual({ kind: "warn", text: "资料待核实" });
     expect(companyPersonLine({ ...item, faceStatus: "NONE" }).status).toEqual({ kind: "warn", text: "没交底照" });
     expect(companyPersonLine({ ...item, participantType: "MANAGER", registrationStatus: null }).status).toBeNull();
+  });
+  it("没填用工资料和资料待核实分开写", () => {
+    expect(companyPersonLine({ ...item, registrationStatus: "NOT_SUBMITTED" }).status).toEqual({ kind: "warn", text: "没填用工资料" });
+    expect(companyPersonLine({ ...item, registrationStatus: "PENDING" }).status?.text).toBe("资料待核实");
+  });
+  it("按底照或资料筛选时先写筛的那一项", () => {
+    const both = { ...item, registrationStatus: "PENDING" as const, faceStatus: "NONE" as const };
+    expect(companyPersonLine(both).status?.text).toBe("资料待核实");
+    expect(companyPersonLine(both, { faceStatus: "NONE" }).status?.text).toBe("没交底照");
+    expect(companyPersonLine({ ...both, registrationStatus: "NOT_SUBMITTED" }, { registrationStatus: "NOT_SUBMITTED" }).status?.text).toBe("没填用工资料");
   });
   it("都退场了写原来在哪", () => {
     const gone = { ...item, projects: [item.projects[2]!] };

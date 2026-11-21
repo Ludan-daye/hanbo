@@ -39,7 +39,8 @@ const STATUS: Readonly<
   PREPARING: { kind: "warn", text: "筹备中" },
   SUSPENDED: { kind: "warn", text: "已暂停" },
 };
-type Filter = "ALL" | ProjectStatus;
+/** OTHER“其他”：不在进行中的（筹备中、已暂停、已完工），首页“另有 N 个项目”点进来就是它；卡片上的状态写明是哪一种。 */
+type Filter = "ALL" | "ACTIVE" | "OTHER";
 
 const plannedPeriod = (project: CompanyProject): string =>
   project.plannedEndDate === null
@@ -54,7 +55,10 @@ export default function CompanyProjects(): JSX.Element {
   const [items, setItems] = useState<readonly CompanyProject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState<string>("");
-  const [filter, setFilter] = useState<Filter>("ALL");
+  const requestedFilter = Taro.useRouter().params.filter;
+  const [filter, setFilter] = useState<Filter>(
+    requestedFilter === "OTHER" || requestedFilter === "ACTIVE" ? requestedFilter : "ALL",
+  );
   const [opened, setOpened] = useState<string | null>(null);
   useEffect(() => {
     if (companyId === null) return;
@@ -74,7 +78,8 @@ export default function CompanyProjects(): JSX.Element {
   }, [companyId, revision]);
   const visible = (items ?? []).filter(
     (project) =>
-      (filter === "ALL" || project.status === filter) &&
+      (filter === "ALL" ||
+        (filter === "ACTIVE") === (project.status === "ACTIVE")) &&
       `${project.name} ${project.address}`.includes(search.trim()),
   );
 
@@ -102,9 +107,14 @@ export default function CompanyProjects(): JSX.Element {
             value: "ALL",
             label: items === null ? "全部" : `全部 ${items.length}`,
           },
-          { value: "ACTIVE", label: "进行中" },
-          { value: "PREPARING", label: "筹备中" },
-          { value: "COMPLETED", label: "已完工" },
+          {
+            value: "ACTIVE",
+            label: items === null ? "进行中" : `进行中 ${items.filter((row) => row.status === "ACTIVE").length}`,
+          },
+          {
+            value: "OTHER",
+            label: items === null ? "其他" : `其他 ${items.filter((row) => row.status !== "ACTIVE").length}`,
+          },
         ]}
         value={filter}
         onChange={setFilter}
@@ -158,7 +168,9 @@ export default function CompanyProjects(): JSX.Element {
                     {project.adminNames.length === 0
                       ? "还没有项目管理员"
                       : `管理员 ${project.adminNames.join("、")}`}
-                    {project.activeMembers === undefined
+                    {/* 完工的项目没有“在场”可言，状态已经写着已完工。 */}
+                    {project.activeMembers === undefined ||
+                    project.status === "COMPLETED"
                       ? ""
                       : `，在场 ${project.activeMembers} 人`}
                   </CardMeta>

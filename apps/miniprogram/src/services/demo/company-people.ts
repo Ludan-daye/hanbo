@@ -198,11 +198,25 @@ export const demoCompanyPeoplePage = (
       .sort((a, b) => b.version - a.version)[0];
     return latest === undefined ? "NONE" : (latest.status as CompanyPeopleItem["faceStatus"]);
   };
-  const registration = (person: ManagedParticipant): CompanyPeopleItem["registrationStatus"] =>
-    person.participantType === "WORKER"
-      ? ((state.registrationReviews?.[person.profileId]?.status as CompanyPeopleItem["registrationStatus"]) ?? "PENDING")
-      : null;
+  // 和服务端一样：没填是 NOT_SUBMITTED，填了没核实是 PENDING。
+  const registration = (person: ManagedParticipant): CompanyPeopleItem["registrationStatus"] => {
+    if (person.participantType !== "WORKER") return null;
+    const reviewed = state.registrationReviews?.[person.profileId]?.status as CompanyPeopleItem["registrationStatus"] | undefined;
+    if (reviewed === "VERIFIED") return reviewed;
+    if (state.workerRegistrations?.[person.profileId] === undefined) return "NOT_SUBMITTED";
+    return reviewed ?? "PENDING";
+  };
+  // 不筛项目时“已退场”是在本公司所有项目都退场了，和服务端一样。
+  const stillHere = (person: ManagedParticipant): boolean =>
+    state.people.some(
+      (row) =>
+        projects.has(row.projectId) &&
+        row.profileId === person.profileId &&
+        row.participantType === person.participantType &&
+        row.status !== "EXITED",
+    );
   const keys = [...new Map(matching.map((person) => [`${person.participantType}:${person.profileId}`, person])).values()]
+    .filter((person) => query.status !== "EXITED" || query.projectId !== undefined || !stillHere(person))
     .filter((person) => query.registrationStatus === undefined || registration(person) === query.registrationStatus)
     .filter((person) => query.faceStatus === undefined || face(person.profileId) === query.faceStatus)
     .sort((a, b) => a.phone.localeCompare(b.phone));

@@ -57,7 +57,11 @@ export default function Invitation(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
   const projectId = useManagedProjectId(state.me);
-  const [target, setTarget] = useState<BindingTargetType>("WORKER");
+  // 新建项目后“去邀请”带 target=MANAGER，直接停在管理员一栏。
+  const requestedTarget = Taro.useRouter().params.target;
+  const [target, setTarget] = useState<BindingTargetType>(
+    requestedTarget === "MANAGER" ? "MANAGER" : "WORKER",
+  );
   const [items, setItems] = useState<ReadonlyArray<ProjectParticipant> | null>(
     null,
   );

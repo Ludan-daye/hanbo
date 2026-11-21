@@ -30,7 +30,13 @@ import {
 } from "../../services/transfers";
 import { useSession } from "../../store/session";
 
-import { transferModeText, transferPost, transferRoute, transferWho } from "./transfer-view";
+import {
+  transferModeText,
+  transferPost,
+  transferReviewReason,
+  transferRoute,
+  transferWho,
+} from "./transfer-view";
 
 type Tab = "PENDING" | "DONE";
 
@@ -216,7 +222,7 @@ export default function TransferApprovals(): JSX.Element {
             <CardMeta>{transferPost(row)}</CardMeta>
             <CardMeta>{transferModeText(row)}</CardMeta>
             <CardMeta>{transferWho(row)}</CardMeta>
-            {row.reviewReason ? <CardMeta>{`原因：${row.reviewReason}`}</CardMeta> : null}
+            {transferReviewReason(row) !== null ? <CardMeta>{transferReviewReason(row)}</CardMeta> : null}
             {actionError?.id === row.id ? (
               <Notice tone="error">{actionError.text}</Notice>
             ) : null}

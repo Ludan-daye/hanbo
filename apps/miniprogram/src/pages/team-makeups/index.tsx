@@ -85,7 +85,20 @@ const ReviewedCard = ({
   const approved = item.status === "APPROVED";
   const opinion = `审批意见：${item.approvalReason ?? "没有填写"}`;
   return (
-    <Card gap stamped={approved}>
+    <Card gap>
+      {/* 章浮在右上角，下面的字绕开它、过了章就用满整行，不再整张卡都让出一条窄栏。 */}
+      {approved ? (
+        <View className="team-makeups__stamp">
+          <Stamp
+            text="已通过"
+            sub={
+              item.approvedAt === null
+                ? undefined
+                : workTimestamp(item.approvedAt).slice(0, 5)
+            }
+          />
+        </View>
+      ) : null}
       <CardTitle
         status={approved ? undefined : { kind: "bad", text: "已驳回" }}
       >
@@ -104,16 +117,6 @@ const ReviewedCard = ({
           ? "处理时间没有记录"
           : `${workTimestamp(item.approvedAt)} 处理`}
       </CardMeta>
-      {approved ? (
-        <Stamp
-          text="已通过"
-          sub={
-            item.approvedAt === null
-              ? undefined
-              : workTimestamp(item.approvedAt).slice(0, 5)
-          }
-        />
-      ) : null}
     </Card>
   );
 };

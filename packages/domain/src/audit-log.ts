@@ -215,7 +215,9 @@ export const auditSentence = (
       case "project.member.create":
         return `新增了人员 ${person}`;
       case "project.member.update":
-        return `修改了 ${person} 的人员资料`;
+        return meta.via === "OFFBOARD"
+          ? `为离岗调整了 ${person} 在本项目的身份`
+          : `修改了 ${person} 的人员资料`;
       case "project.member.reuse":
         return `从其他项目调入了 ${person}`;
       case "PERSONNEL_TRANSFER_REQUESTED":
@@ -234,7 +236,7 @@ export const auditSentence = (
         return `查看了 ${person} 的用工资料`;
       case "PERSONNEL_OFFBOARDED": {
         const count = Array.isArray(meta.projectIds) ? meta.projectIds.length : 0;
-        const where = count > 0 ? `${count} 个项目` : "本公司各项目";
+        const where = count > 0 ? ` ${count} 个项目` : "本公司各项目";
         return meta.mode === "EXIT_ALL"
           ? `让 ${person} 在${where}办了退场`
           : `收回了 ${person} 在${where}的管理职务`;

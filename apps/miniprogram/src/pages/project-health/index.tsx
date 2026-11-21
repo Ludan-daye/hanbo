@@ -22,7 +22,7 @@ import { useSession } from "../../store/session";
 import { healthLines, healthOrder } from "./health-view";
 
 /**
- * 各项目一览（2026-11-21 Q10，单独一页）：每个项目的违规、申诉、底照、资料未核实和低信用人数，
+ * 各项目一览（2026-11-21 Q10，单独一页）：每个项目的违规、申诉、底照、资料待核实、没填用工资料和低信用人数，
  * 点一行进对应的列表。首页只放“等你处理”，这里放全量。
  */
 export default function ProjectHealthPage(): JSX.Element {
@@ -60,8 +60,7 @@ export default function ProjectHealthPage(): JSX.Element {
     <Screen header={header}>
       <SignLine
         title={busy === 0 ? "各项目都没有积压" : `${busy} 个项目有要处理的事`}
-        sub="违规、申诉、底照、资料核实和低信用人数"
-        value={`${projects.length} 个项目`}
+        sub={`共 ${projects.length} 个项目。违规、申诉、底照、用工资料和低信用人数`}
       />
       {projects.map((project) => {
         const lines = healthLines(project, companyId);

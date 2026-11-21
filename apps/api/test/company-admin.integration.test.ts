@@ -267,12 +267,17 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
           [p3, "PREPARING"],
         ]);
         const daily = await get("company", `/reports/companies/${companyId}/daily?date=${date}`);
+        type Day = { isMissingPunch: boolean; isPresent: boolean; isScheduled: boolean };
+        const rows = daily.participants as Day[];
+        // 应到 = 到岗 + 未到 + 还没到点, and 未到 never includes someone already present.
         expect(overview.attendance).toEqual({
           expected: daily.totals.scheduledDays,
-          missing: daily.totals.missingPunchCount,
+          missing: rows.filter((row) => row.isScheduled && !row.isPresent && row.isMissingPunch).length,
           present: daily.totals.actualAttendedDays,
+          waiting: rows.filter((row) => row.isScheduled && !row.isPresent && !row.isMissingPunch).length,
           workedMinutes: daily.totals.workedMinutes,
         });
+        expect(overview.attendance.present + overview.attendance.missing + overview.attendance.waiting).toBe(overview.attendance.expected);
         let activeExpected = 0;
         for (const project of overview.projects) {
           const own = await get("company", `/management/projects/${project.projectId}/overview?date=${date}`);
@@ -286,8 +291,9 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
                   expected: own.attendance.expected,
                   missing: own.attendance.missing,
                   present: own.attendance.present,
+                  waiting: own.attendance.waiting,
                 }
-              : { expected: 0, missing: 0, present: 0 },
+              : { expected: 0, missing: 0, present: 0, waiting: 0 },
           );
           expect(project.todos).toEqual({
             facePending: own.todos.facePending,
@@ -363,16 +369,19 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
     });
 
     describe("a preparing project's attendance plan", (): void => {
-      test("can be read by the company admin, still not changed", async (): Promise<void> => {
+      test("is listed for the company admin and can be adjusted before the project starts", async (): Promise<void> => {
+        const scopes = (await get("company", "/attendance/planning/scopes")) as { projectId: string; scopeType: string }[];
+        expect(scopes).toEqual(expect.arrayContaining([expect.objectContaining({ projectId: p3, scopeType: "PROJECT" })]));
         const path = `/attendance/planning/${p3}/PROJECT/${p3}`;
-        const plan = (await get("company", path)) as { points: unknown[] };
+        const plan = (await get("company", path)) as { id: string | null; points: unknown[] };
         expect(plan.points.length).toBeGreaterThan(0);
         const saved = await http()
           .post(path)
           .auth(auth("company"), { type: "bearer" })
-          .send({ endsOn: null, expectedId: null, name: "筹备期", points: plan.points, startsOn: "2030-01-01", workdays: [1, 2, 3, 4, 5] })
-          .expect(404);
-        expect(saved.body.message).toBe("PROJECT_NOT_FOUND");
+          .send({ endsOn: null, expectedId: plan.id, name: "筹备期", points: plan.points, startsOn: "2030-01-01", workdays: [1, 2, 3, 4, 5] })
+          .expect(201);
+        expect(saved.body.name).toBe("筹备期");
+        await database.attendancePlan.delete({ where: { id: saved.body.id } });
       });
     });
 
@@ -488,9 +497,10 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
             data: { projectId, workerId: workerIds.get("w2")!, enteredAt: new Date("2026-11-01T00:00:00+08:00"), projectRoleLabel: "木工", status: "ACTIVE" },
           });
         await database.workerProfile.update({ where: { id: workerIds.get("w1")! }, data: { realNameStatus: "VERIFIED" } });
+        // w2 has filled in 用工登记 (待核实); the others never did (还没填).
         await database.workerProfile.update({
           where: { id: workerIds.get("w2")! },
-          data: { nameSearchHashes: [...personnelNameSearchHashes("工人w2", key)] },
+          data: { nameSearchHashes: [...personnelNameSearchHashes("工人w2", key)], registrationCompletedAt: new Date() },
         });
       });
 
@@ -521,10 +531,25 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         const verified = await page("company", "registrationStatus=VERIFIED");
         expect(verified.items.map((row) => row.profileId)).toEqual([workerIds.get("w1")]);
         expect(verified.items.every((row) => row.participantType === "WORKER")).toBe(true);
+        // Submitted-but-unverified and never-submitted are different filters and badges.
+        const submitted = await page("company", "registrationStatus=PENDING");
+        expect(submitted.items.map((row) => row.profileId)).toEqual([workerIds.get("w2")]);
+        expect(submitted.items[0]!.registrationStatus).toBe("PENDING");
+        const missing = await page("company", "registrationStatus=NOT_SUBMITTED");
+        expect(missing.total).toBeGreaterThan(0);
+        expect(missing.items.every((row) => row.registrationStatus === "NOT_SUBMITTED")).toBe(true);
+        expect(missing.items.map((row) => row.profileId)).not.toContain(workerIds.get("w2"));
+        expect(missing.items.map((row) => row.profileId)).not.toContain(workerIds.get("w1"));
         const photos = await page("company", "faceStatus=PENDING");
         expect(photos.items.map((row) => row.profileId)).toEqual([workerIds.get("w1")]);
         const byName = await page("company", `search=${encodeURIComponent("工人w2")}`);
         expect(byName.items.map((row) => row.profileId)).toEqual([workerIds.get("w2")]);
+        // 已退场 without a project means gone from every project of the company.
+        const left = await database.projectWorkerMember.findFirstOrThrow({ where: { projectId: p1, workerId: workerIds.get("w2")! } });
+        await database.projectWorkerMember.update({ where: { id: left.id }, data: { exitedAt: new Date("2026-11-10T00:00:00+08:00"), status: "EXITED" } });
+        expect((await page("company", "status=EXITED")).items.map((row) => row.profileId)).not.toContain(workerIds.get("w2"));
+        expect((await page("company", `status=EXITED&projectId=${p1}`)).items.map((row) => row.profileId)).toContain(workerIds.get("w2"));
+        await database.projectWorkerMember.update({ where: { id: left.id }, data: { exitedAt: null, status: "ACTIVE" } });
         const managers = await page("company", "participantType=MANAGER");
         expect(managers.items.every((row) => row.participantType === "MANAGER")).toBe(true);
       });
@@ -622,6 +647,10 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       });
 
       test("reading a worker's registration leaves one record per viewer every 10 minutes", async (): Promise<void> => {
+        // Nothing filled in yet: opening the page reads nothing and leaves no record.
+        await get("company", `/management/projects/${p1}/participants/${memberIds.get("leader")}/registration`);
+        expect(await database.auditLog.count({ where: { action: "WORKER_REGISTRATION_VIEWED", entityId: workerIds.get("leader")! } })).toBe(0);
+        await database.workerProfile.update({ where: { id: workerIds.get("w1")! }, data: { registrationCompletedAt: new Date() } });
         const path = `/management/projects/${p1}/participants/${memberIds.get("w1")}/registration`;
         await get("company", path);
         await get("company", path);
@@ -638,13 +667,16 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         const path = `/management/companies/${companyId}/project-health`;
         await get("pa1", path, 403);
         const health = (await get("company", path)) as {
-          projects: { projectId: string; violationPending: number; facePending: number; registrationPending: number; lowCredit: number }[];
+          projects: { projectId: string; violationPending: number; facePending: number; registrationMissing: number; registrationPending: number; lowCredit: number }[];
         };
         const of = (projectId: string) => health.projects.find((row) => row.projectId === projectId)!;
         expect(of(p2).violationPending).toBe(1);
         expect(of(p1).facePending).toBe(1);
         const pending = (await get("company", `/management/companies/${companyId}/people-page?projectId=${p1}&status=ACTIVE&registrationStatus=PENDING&participantType=WORKER`)) as { total: number };
         expect(of(p1).registrationPending).toBe(pending.total);
+        const missing = (await get("company", `/management/companies/${companyId}/people-page?projectId=${p1}&status=ACTIVE&registrationStatus=NOT_SUBMITTED&participantType=WORKER`)) as { total: number };
+        expect(of(p1).registrationMissing).toBe(missing.total);
+        expect(of(p1).registrationMissing + of(p1).registrationPending).toBeGreaterThan(0);
         expect(of(p1).lowCredit).toBe(0);
       });
     });
@@ -657,12 +689,12 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         const role = await database.role.findUniqueOrThrow({ where: { code: "PROJECT_ADMIN" } });
         await database.userRole.create({ data: { userId: "ca-pa2", roleId: role.id, scopeType: "PROJECT", scopeId: p3 } });
         const pa2 = await tokenFor("ca-pa2");
-        const worker = async (name: string, phone: string) => {
+        const worker = async (name: string, phone: string, enteredAt = "2026-10-01T00:00:00+08:00") => {
           const profile = await database.workerProfile.create({
             data: { encryptedName: encryptPersonnelName(name, key, randomBytes(12)), phone, workType: "木工", realNameStatus: "PENDING", faceProfileStatus: "PENDING", employmentStatus: "ACTIVE" },
           });
           return database.projectWorkerMember.create({
-            data: { projectId: p2, workerId: profile.id, teamId: t2, enteredAt: new Date("2026-10-01T00:00:00+08:00"), projectRoleLabel: "木工", status: "ACTIVE" },
+            data: { projectId: p2, workerId: profile.id, teamId: t2, enteredAt: new Date(enteredAt), projectRoleLabel: "木工", status: "ACTIVE" },
           });
         };
         const ask = async (sourceMemberId: string, mode?: string) => {
@@ -683,6 +715,13 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         expect(source.status).toBe("EXITED");
         expect(source.exitedAt?.toISOString()).toBe(new Date("2026-11-24T00:00:00+08:00").toISOString());
         expect(await database.projectWorkerMember.count({ where: { projectId: p3, workerId: moving.workerId, status: "ACTIVE" } })).toBe(1);
+        expect(source.requiresAttendance).toBe(true);
+        // Moved on the day they entered the source: that day is not 应到 in both projects.
+        const sameDay = await worker("当天调走", "13910000303", "2026-11-25T00:00:00+08:00");
+        await approve((await ask(sameDay.id)).id);
+        const closed = await database.projectWorkerMember.findUniqueOrThrow({ where: { id: sameDay.id } });
+        expect(closed).toMatchObject({ requiresAttendance: false, status: "EXITED" });
+        expect(closed.exitedAt?.toISOString()).toBe(closed.enteredAt.toISOString());
         const staying = await worker("兼任乙", "13910000302");
         const kept = await ask(staying.id, "CONCURRENT");
         await approve(kept.id);

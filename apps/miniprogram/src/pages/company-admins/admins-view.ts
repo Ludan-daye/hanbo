@@ -1,4 +1,5 @@
 import { displayProjectRole } from "../../routing/features";
+import { formatChinaDate } from "../../services/time";
 import type {
   CompanyPerson,
   CompanyPersonMembership,
@@ -80,7 +81,7 @@ export const offboardSummary = (
       text:
         mode === "EXIT_ALL"
           ? "他在本公司的项目都已退场。"
-          : "他在本公司没有管理职务了。",
+          : "他在本公司没有项目管理员或班组长职务，不用收回。要让他离开，请选“所有项目都退场”。",
     };
   return {
     projects,
@@ -100,3 +101,29 @@ export const membershipStatus = (
     : membership.status === "SUSPENDED"
       ? { kind: "warn", text: "暂停" }
       : { kind: "idle", text: "已退场" };
+
+/** 他有没有管理职务（项目管理员、班组长）可以收回：没有时离岗默认选“所有项目都退场”。 */
+export const hasManagementPosts = (person: CompanyPerson): boolean =>
+  person.memberships.some(manages);
+
+/** 离岗确认框和按钮的字，跟着选的方式走。 */
+export const offboardWords = (
+  mode: OffboardMode,
+): { readonly title: string; readonly confirm: string; readonly button: string } =>
+  mode === "EXIT_ALL"
+    ? { title: "所有项目都退场", confirm: "确认退场", button: "全部退场" }
+    : { title: "收回管理职务", confirm: "确认收回", button: "收回管理职务" };
+
+/**
+ * 任职变化记录，新的在前。只有最新一条是现在的样子（写状态）；更早的都已被后来的变更取代，
+ * 写成“某天 至 某天 身份”，不再写“在场”，免得看着像他现在还是项目管理员。
+ */
+export const historyLines = (
+  history: CompanyPersonMembership["history"],
+): readonly string[] =>
+  history.map((row, index) => {
+    const role = `${displayProjectRole(row.projectRoleLabel)}${row.teamName ? `，${row.teamName}` : ""}`;
+    const from = formatChinaDate(row.recordedAt);
+    if (index === 0) return `${from} 起 ${role}，${membershipStatus(row).text}`;
+    return `${from} 至 ${formatChinaDate(history[index - 1]!.recordedAt)} ${role}${row.status === "SUSPENDED" ? "，暂停" : ""}`;
+  });

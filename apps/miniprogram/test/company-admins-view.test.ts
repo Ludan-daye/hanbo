@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  hasManagementPosts,
+  historyLines,
   membershipRoles,
   offboardSummary,
+  offboardWords,
   projectAdminLines,
 } from "../src/pages/company-admins/admins-view";
 import type { CompanyPerson, CompanyPersonMembership } from "../src/services/management.types";
@@ -76,6 +79,27 @@ describe("company person texts", () => {
     expect(offboardSummary(person, "REVOKE_ADMIN").projects).toEqual(["滨江花园"]);
     expect(offboardSummary(person, "EXIT_ALL").projects).toEqual(["滨江花园", "城市更新"]);
     expect(offboardSummary(person, "EXIT_ALL").text).toContain("考勤、补卡记录都保留");
-    expect(offboardSummary({ ...person, memberships: [] }, "REVOKE_ADMIN").text).toBe("他在本公司没有管理职务了。");
+    const plain = { ...person, memberships: [person.memberships[1]!] };
+    expect(hasManagementPosts(person)).toBe(true);
+    expect(hasManagementPosts(plain)).toBe(false);
+    expect(offboardSummary(plain, "REVOKE_ADMIN").text).toContain("不用收回");
+    expect(offboardSummary(plain, "REVOKE_ADMIN").text).toContain("所有项目都退场");
+  });
+
+  test("the dialog and the button say what the chosen mode does", () => {
+    expect(offboardWords("EXIT_ALL")).toEqual({ title: "所有项目都退场", confirm: "确认退场", button: "全部退场" });
+    expect(offboardWords("REVOKE_ADMIN")).toEqual({ title: "收回管理职务", confirm: "确认收回", button: "收回管理职务" });
+  });
+
+  test("only the newest history row is current; superseded roles read as ended periods", () => {
+    const lines = historyLines([
+      { projectRoleLabel: "WORKER", recordedAt: "2026-11-21T08:00:00.000Z", status: "EXITED", teamName: null },
+      { projectRoleLabel: "WORKER", recordedAt: "2026-11-21T07:00:00.000Z", status: "ACTIVE", teamName: null },
+      { projectRoleLabel: "PROJECT_ADMIN", recordedAt: "2026-11-20T02:00:00.000Z", status: "ACTIVE", teamName: null },
+    ]);
+    expect(lines[0]).toBe("2026-11-21 起 普通工人，已退场");
+    expect(lines[1]).toBe("2026-11-21 至 2026-11-21 普通工人");
+    expect(lines[2]).toBe("2026-11-20 至 2026-11-21 项目管理员");
+    expect(lines.slice(1).join("")).not.toContain("在场");
   });
 });

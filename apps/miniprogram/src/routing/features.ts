@@ -116,7 +116,7 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
     { title: "打卡安排", sub: "设置授权项目下级的打卡要求", icon: "clock", url: "/pages/schedules/index" },
     {
       title: "公司项目",
-      sub: "查看在建与筹备中的项目",
+      sub: "本公司全部项目，进行中、筹备、暂停和完工",
       icon: "building",
       url: "/pages/company-projects/index",
     },
@@ -134,7 +134,7 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
     },
     {
       title: "各项目一览",
-      sub: "违规、底照、资料核实和低信用",
+      sub: "违规、底照、用工资料和低信用",
       icon: "chart",
       url: "/pages/project-health/index",
     },

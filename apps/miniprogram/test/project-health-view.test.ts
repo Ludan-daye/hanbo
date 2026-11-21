@@ -8,6 +8,7 @@ const project = (overrides: Partial<Parameters<typeof healthLines>[0]>) => ({
   lowCredit: 0,
   name: "滨江花园",
   projectId: "p-1",
+  registrationMissing: 0,
   registrationPending: 0,
   status: "ACTIVE" as const,
   violationPending: 0,
@@ -23,6 +24,9 @@ describe("project health", () => {
     ]);
     expect(lines[1]!.url).toBe("/pages/company-people/index?companyId=c-1&projectId=p-1&status=ACTIVE&registrationStatus=PENDING");
     expect(healthLines(project({}), "c-1")).toEqual([]);
+    const missing = healthLines(project({ registrationMissing: 4 }), "c-1");
+    expect(missing.map((line) => [line.title, line.count])).toEqual([["没填用工资料", 4]]);
+    expect(missing[0]!.url).toContain("registrationStatus=NOT_SUBMITTED");
   });
 
   test("busy projects first, completed ones last", () => {
