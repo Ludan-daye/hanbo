@@ -62,10 +62,18 @@ const projectWriteFieldsSchema = z.object({
 });
 
 const createProjectRequestSchema = projectWriteFieldsSchema.extend({
-  managerProfileIds: z.array(z.string().trim().min(1)).min(1).max(20)
-    .refine((ids): boolean => new Set(ids).size === ids.length, "Duplicate project administrators.")
+  managerProfileIds: z.array(z.string().trim().min(1)).max(20)
+    .refine((ids): boolean => new Set(ids).size === ids.length, "Duplicate project administrators."),
+  // Q4 (2026-11-21): administrators not yet in any project of the company, bound later by invitation.
+  newManagers: z.array(z.object({
+    name: z.string().trim().min(1).max(30),
+    phone: z.string().regex(/^1\d{10}$/)
+  }).strict()).max(3).default([])
+    .refine((rows): boolean => new Set(rows.map((row) => row.phone)).size === rows.length, "Duplicate new administrator phones.")
 }).refine((value): boolean => value.plannedEndDate === null || value.plannedEndDate >= value.plannedStartDate, {
   path: ["plannedEndDate"], message: "Project end date must follow the start date."
+}).refine((value): boolean => value.managerProfileIds.length + value.newManagers.length > 0, {
+  path: ["managerProfileIds"], message: "Choose or enter at least one project administrator."
 });
 
 const createTeamRequestSchema = z.object({

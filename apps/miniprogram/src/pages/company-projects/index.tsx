@@ -153,6 +153,16 @@ export default function CompanyProjects(): JSX.Element {
                 {project.address ? (
                   <CardMeta>{project.address}</CardMeta>
                 ) : null}
+                {project.adminNames !== undefined ? (
+                  <CardMeta>
+                    {project.adminNames.length === 0
+                      ? "还没有项目管理员"
+                      : `管理员 ${project.adminNames.join("、")}`}
+                    {project.activeMembers === undefined
+                      ? ""
+                      : `，在场 ${project.activeMembers} 人`}
+                  </CardMeta>
+                ) : null}
               </View>
               {open ? (
                 <View className="m-fade">

@@ -37,6 +37,8 @@ export type ProjectWriteFields = {
 
 export type CreateProjectRequest = ProjectWriteFields & {
   readonly managerProfileIds: readonly string[];
+  /** New manager profiles created with the project; they get access once they bind by invitation. */
+  readonly newManagers?: readonly { readonly name: string; readonly phone: string }[] | undefined;
 };
 
 export type ProjectManagerCandidate = {
@@ -57,6 +59,9 @@ export type ProjectResponse = {
   readonly plannedEndDate: string | null;
   readonly plannedStartDate: string;
   readonly status: ProjectStatusValue;
+  /** Company project list only: active members, and the names of the active project admins. */
+  readonly activeMembers?: number;
+  readonly adminNames?: readonly string[];
 };
 
 export type ManagedProjectResponse = ProjectResponse & {

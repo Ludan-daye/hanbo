@@ -339,16 +339,30 @@ export class ManagementService {
       });
     }
 
+    const newManagers = request.newManagers ?? [];
     return this.prisma.$transaction(async (transaction): Promise<ProjectResponse> => {
       // Serialize profile changes and account binding while assigning the new membership.
-      await transaction.$queryRaw`SELECT "id" FROM "manager_profiles" WHERE "id" IN (${Prisma.join(request.managerProfileIds)}) ORDER BY "id" FOR SHARE`;
-      await transaction.$queryRaw`SELECT "id" FROM "worker_profiles" WHERE "id" IN (${Prisma.join(request.managerProfileIds)}) ORDER BY "id" FOR SHARE`;
+      if (request.managerProfileIds.length > 0) {
+        await transaction.$queryRaw`SELECT "id" FROM "manager_profiles" WHERE "id" IN (${Prisma.join(request.managerProfileIds)}) ORDER BY "id" FOR SHARE`;
+        await transaction.$queryRaw`SELECT "id" FROM "worker_profiles" WHERE "id" IN (${Prisma.join(request.managerProfileIds)}) ORDER BY "id" FOR SHARE`;
+      }
+      // A new administrator whose phone already belongs to someone in this company is that person: pick them instead.
+      for (const entry of newManagers) {
+        const existing =
+          (await transaction.managerProfile.findFirst({ where: { phone: entry.phone, OR: [
+            { projectMemberships: { some: { project: { companyId } } } },
+            { user: { roles: { some: { scopeType: "COMPANY", scopeId: companyId } } } }
+          ] }, select: { id: true } })) ??
+          (await transaction.workerProfile.findFirst({ where: { phone: entry.phone, projectMemberships: { some: { project: { companyId } } } }, select: { id: true } }));
+        if (existing !== null)
+          throw new ConflictException({ message: "PROJECT_MANAGER_PHONE_EXISTS", phone: entry.phone, profileId: existing.id });
+      }
       const workers = await transaction.workerProfile.findMany({ where: { ...eligibleWorkerManagers(companyId), id: { in: [...request.managerProfileIds] } }, select: { id: true, userId: true } });
       const managers = await transaction.managerProfile.findMany({
         where: { ...eligibleProjectManagers(companyId), id: { in: [...request.managerProfileIds] } },
         select: { id: true, userId: true }
       });
-      if (managers.length + workers.length === 0 || managers.length + workers.length !== request.managerProfileIds.length) {
+      if (managers.length + workers.length + newManagers.length === 0 || managers.length + workers.length !== request.managerProfileIds.length) {
         throw new BadRequestException({ message: "PROJECT_MANAGERS_NOT_ELIGIBLE", companyId });
       }
       const project = await transaction.project.create({
@@ -393,10 +407,19 @@ export class ManagementService {
         await transaction.projectWorkerMember.create({ data: { projectId: project.id, workerId: worker.id, projectRoleLabel: "PROJECT_ADMIN", teamId: null, status: "ACTIVE", requiresAttendance: true, enteredAt: new Date() } });
         if (worker.userId !== null) await transaction.userRole.create({ data: { roleId: projectAdminRole.id, scopeId: project.id, scopeType: "PROJECT", userId: worker.userId } });
       }
+      // Unbound until they accept an invitation; binding grants the role then (AuthService.grantManagerMembershipRoles).
+      const createdManagerIds: string[] = [];
+      for (const entry of newManagers) {
+        const profile = await transaction.managerProfile.create({ data: { name: entry.name, phone: entry.phone, status: "ACTIVE", workType: "施工管理" } });
+        await transaction.projectManagerMember.create({
+          data: { projectId: project.id, managerId: profile.id, roleCode: "PROJECT_ADMIN", teamScopeId: null, status: "ACTIVE", requiresAttendance: true }
+        });
+        createdManagerIds.push(profile.id);
+      }
       await transaction.auditLog.create({
         data: {
-          actorUserId, action: "project.create", entityType: "project", entityId: project.id,
-          metadata: { companyId, managerProfileIds: [...request.managerProfileIds] }
+          actorUserId, action: "project.create", entityType: "project", entityId: project.id, projectId: project.id,
+          metadata: { companyId, managerProfileIds: [...request.managerProfileIds], newManagerProfileIds: createdManagerIds }
         }
       });
 
@@ -514,7 +537,33 @@ export class ManagementService {
       orderBy: { createdAt: "asc" },
       where: { companyId }
     });
-    return projects.map(createProjectResponse);
+    // One read per member table; counting and admin names are done here.
+    const projectIds = projects.map((project) => project.id);
+    const [workers, managers] = await Promise.all([
+      this.prisma.projectWorkerMember.findMany({
+        where: { projectId: { in: projectIds }, status: "ACTIVE" },
+        select: { projectId: true, projectRoleLabel: true, status: true, worker: { select: { encryptedName: true } } },
+        orderBy: [{ enteredAt: "asc" }, { id: "asc" }]
+      }),
+      this.prisma.projectManagerMember.findMany({
+        where: { projectId: { in: projectIds }, status: "ACTIVE" },
+        select: { projectId: true, roleCode: true, status: true, manager: { select: { name: true } } },
+        orderBy: [{ enteredAt: "asc" }, { id: "asc" }]
+      })
+    ]);
+    const activeWorkers = workers.filter((row) => row.status === "ACTIVE");
+    const activeManagers = managers.filter((row) => row.status === "ACTIVE");
+    return projects.map((project): ProjectResponse => ({
+      ...createProjectResponse(project),
+      activeMembers:
+        activeWorkers.filter((row) => row.projectId === project.id).length +
+        activeManagers.filter((row) => row.projectId === project.id).length,
+      adminNames: [
+        ...activeManagers.filter((row) => row.projectId === project.id && row.roleCode === "PROJECT_ADMIN").map((row) => row.manager.name),
+        ...activeWorkers.filter((row) => row.projectId === project.id && row.projectRoleLabel === "PROJECT_ADMIN").map((row) =>
+          row.worker.encryptedName.startsWith("name-v1:") ? decryptPersonnelName(row.worker.encryptedName, this.env.PERSONNEL_ENCRYPTION_KEY) : "姓名待补录")
+      ]
+    }));
   }
 
   async listCompanyParticipants(companyId: string): Promise<readonly CompanyParticipantResponse[]> {

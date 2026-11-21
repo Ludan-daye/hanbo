@@ -127,6 +127,12 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       url: "/pages/transfer-approvals/index",
     },
     {
+      title: "项目负责人",
+      sub: "各项目的管理员，任免和离岗",
+      icon: "users",
+      url: "/pages/company-admins/index",
+    },
+    {
       title: "公司人员",
       sub: "跨项目人员与班组总览",
       icon: "users",

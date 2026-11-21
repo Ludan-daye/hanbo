@@ -213,6 +213,9 @@ export type CompanyProject = {
   readonly geofenceRadiusM: number;
   readonly plannedStartDate: string;
   readonly plannedEndDate: string | null;
+  /** 只有公司项目列表带：在场人数和现在的项目管理员。 */
+  readonly activeMembers?: number;
+  readonly adminNames?: readonly string[];
 };
 
 export type ManagedProject = CompanyProject & {
@@ -320,6 +323,8 @@ export type DefaultAttendanceConfiguration = {
 
 export type CreateProjectBody = {
   readonly managerProfileIds: readonly string[];
+  /** 还不在本公司任何项目里的新管理员（姓名＋手机号），建好后用邀请码绑定。 */
+  readonly newManagers?: readonly { readonly name: string; readonly phone: string }[];
   readonly name: string;
   readonly address: string;
   readonly centerLatitude: string;
@@ -393,3 +398,57 @@ export type ReportPersonDetail = {
   readonly endDate: string;
   readonly days: readonly ReportPersonDay[];
 };
+
+/** 项目负责人页：公司每个项目现在由谁管（在场的项目管理员）。 */
+export type ProjectAdmins = {
+  readonly projects: readonly {
+    readonly admins: readonly {
+      readonly displayName: string | null;
+      readonly isBound: boolean;
+      readonly memberId: string;
+      readonly participantType: ParticipantType;
+      readonly phone: string;
+      readonly profileId: string;
+    }[];
+    readonly name: string;
+    readonly projectId: string;
+    readonly status: ProjectStatus;
+  }[];
+};
+
+/** 一个人在本公司各项目的任职（看不到别家公司的）。 */
+export type CompanyPersonMembership = {
+  readonly enteredAt: string;
+  readonly evaluationScore: number | null;
+  readonly exitedAt: string | null;
+  readonly history: readonly {
+    readonly recordedAt: string;
+    readonly status: MemberStatus;
+    readonly teamName: string | null;
+    readonly projectRoleLabel: string;
+  }[];
+  readonly memberId: string;
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly projectRoleLabel: string;
+  readonly projectStatus: ProjectStatus;
+  readonly roles: readonly {
+    readonly roleCode: "PROJECT_ADMIN" | "TEAM_LEADER" | "WORKER";
+    readonly teamId: string | null;
+    readonly teamName: string | null;
+  }[];
+  readonly status: MemberStatus;
+  readonly teamId: string | null;
+  readonly teamName: string | null;
+  readonly updatedAt: string;
+};
+export type CompanyPerson = {
+  readonly displayName: string | null;
+  readonly isBound: boolean;
+  readonly memberships: readonly CompanyPersonMembership[];
+  readonly participantType: ParticipantType;
+  readonly phone: string;
+  readonly profileId: string;
+};
+/** 离岗：默认只收回管理职务；EXIT_ALL 是在本公司所有项目办退场。 */
+export type OffboardMode = "REVOKE_ADMIN" | "EXIT_ALL";

@@ -1083,6 +1083,29 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     expect(readDemoState().people.some((row) => row.projectId === "demo-project" && row.memberId === approved.createdMemberId)).toBe(true);
   });
 
+  test("a company admin sees who runs each project, offboards a manager and adds a new one", async () => {
+    await login("dev-company");
+    const admins = await client.request<{ projects: { projectId: string; admins: { profileId: string; participantType: string }[] }[] }>(
+      "/management/companies/demo-company/project-admins", { method: "GET" });
+    const own = admins.projects.find((row) => row.projectId === "demo-project")!.admins[0]!;
+    expect(own.profileId).toBe("profile-project");
+    const person = await client.request<{ memberships: { projectId: string }[] }>(
+      `/management/companies/demo-company/people/${own.participantType}/profile-project`, { method: "GET" });
+    expect(person.memberships.map((row) => row.projectId)).toContain("demo-project");
+    const revoked = await client.request<{ memberships: { projectRoleLabel: string }[] }>(
+      `/management/companies/demo-company/people/${own.participantType}/profile-project/offboard`,
+      { method: "POST", data: { mode: "REVOKE_ADMIN", effectiveDate: chinaToday() } });
+    expect(revoked.memberships.every((row) => row.projectRoleLabel !== "PROJECT_ADMIN")).toBe(true);
+    await expect(client.request(`/management/companies/demo-company/people/${own.participantType}/profile-project/offboard`,
+      { method: "POST", data: { mode: "REVOKE_ADMIN", effectiveDate: chinaToday() } })).rejects.toThrow("没有要收回");
+    const project = await client.request<CompanyProject>("/management/companies/demo-company/projects", {
+      method: "POST", data: { name: "新管理员工地", address: "测试地址", centerLatitude: "31", centerLongitude: "121", geofenceRadiusM: 300,
+        status: "PREPARING", plannedStartDate: chinaToday(), plannedEndDate: null, managerProfileIds: [], newManagers: [{ name: "新经理", phone: "13800009991" }] }
+    });
+    const listed = await client.request<(CompanyProject & { adminNames: string[] })[]>("/management/companies/demo-company/projects", { method: "GET" });
+    expect(listed.find((row) => row.id === project.id)?.adminNames).toEqual(["新经理"]);
+  });
+
   test("selected project managers receive access without losing their original project", async () => {
     await login("dev-company");
     const project = await client.request<CompanyProject>("/management/companies/demo-company/projects", {

@@ -9,6 +9,7 @@ import { memberRoleAssignments, memberRoleFields } from "../member-roles";
 import { demoMyProject } from "./my-project";
 import { demoReportPerson, saveDemoEvaluation } from "./report-details";
 import { demoProjectManagers } from "./project-managers";
+import { demoCompanyPerson, demoOffboard, demoProjectAdmins } from "./company-people";
 import { demoPlanRequest, effectiveDemoPlan, demoPlanLevel } from "./plans";
 import Taro from "@tarojs/taro";
 import { FRONTEND_DEMO } from "../../config/env";
@@ -973,6 +974,14 @@ const routeDemo = (
       );
     }
     if (scope === "companies") {
+      if (resource === "project-admins" && method === "GET")
+        return response(state, demoProjectAdmins(state, scopeId));
+      if (resource === "people" && parts[4] && parts[5]) {
+        if (method === "GET" && parts[6] === undefined)
+          return response(state, demoCompanyPerson(state, scopeId, parts[4], parts[5]));
+        if (method === "POST" && parts[6] === "offboard")
+          return demoOffboard(state, userId, scopeId, parts[4], parts[5], (options.data ?? {}) as { mode?: unknown; effectiveDate?: unknown });
+      }
       if (resource === "project-manager-candidates") {
         const search = (query.search ?? "").trim().toLowerCase();
         return response(state, demoProjectManagers(state, scopeId)
@@ -983,16 +992,30 @@ const routeDemo = (
         if (method === "GET")
           return response(
             state,
-            state.projects.filter((row) => row.companyId === scopeId),
+            state.projects
+              .filter((row) => row.companyId === scopeId)
+              .map((row) => ({
+                ...row,
+                activeMembers: state.people.filter((person) => person.projectId === row.id && person.status === "ACTIVE").length,
+                adminNames: state.people
+                  .filter((person) => person.projectId === row.id && person.status === "ACTIVE" && person.projectRoleLabel === "PROJECT_ADMIN")
+                  .map((person) => person.displayName ?? "姓名待补录"),
+              })),
           );
         const body = options.data as CreateProjectBody;
-        if (!Array.isArray(body.managerProfileIds) || body.managerProfileIds.length === 0 ||
-          body.managerProfileIds.length > 20 || new Set(body.managerProfileIds).size !== body.managerProfileIds.length)
+        const newManagers = body.newManagers ?? [];
+        if (!Array.isArray(body.managerProfileIds) || body.managerProfileIds.length + newManagers.length === 0 ||
+          body.managerProfileIds.length > 20 || newManagers.length > 3 || new Set(body.managerProfileIds).size !== body.managerProfileIds.length)
           throw new ApiError(400, "请至少选择一名项目管理员，且不能重复。", {});
+        const companyPeople = state.people.filter((person) => state.projects.some((project) => project.id === person.projectId && project.companyId === scopeId));
+        for (const entry of newManagers) {
+          const existing = companyPeople.find((person) => person.phone === entry.phone);
+          if (existing) throw new ApiError(409, "这个手机号在本公司已有档案，请在管理员列表里直接选他。", { message: "PROJECT_MANAGER_PHONE_EXISTS", profileId: existing.profileId });
+        }
         const managers = demoProjectManagers(state, scopeId).filter((person) => body.managerProfileIds.includes(person.profileId));
         if (managers.length !== body.managerProfileIds.length)
           throw new ApiError(400, "所选管理员已停用或不属于本公司，请重新选择。", {});
-        const { managerProfileIds, ...fields } = body;
+        const { managerProfileIds, newManagers: _newManagers, ...fields } = body;
         const project: ManagedProject = {
           ...fields,
           code: null,
@@ -1012,8 +1035,16 @@ const routeDemo = (
           updatedAt: now, profileUpdatedAt: state.people.find((person) => person.profileId === manager.profileId)?.profileUpdatedAt ?? now,
           nameStatus: "AVAILABLE"
         }));
+        // 新录入的管理员：新档案，还没绑定微信。
+        const created: readonly ManagedParticipant[] = newManagers.map((entry) => ({
+          memberId: demoId("member"), profileId: demoId("profile"), projectId: project.id,
+          displayName: entry.name, phone: entry.phone, participantType: "MANAGER",
+          projectRoleLabel: "PROJECT_ADMIN", teamId: null, teamName: null, requiresAttendance: true,
+          status: "ACTIVE", workType: "施工管理", enteredAt: now, exitedAt: null,
+          updatedAt: now, profileUpdatedAt: now, nameStatus: "AVAILABLE"
+        }));
         return response(
-          { ...state, projects: [...state.projects, project], people: [...state.people, ...people] },
+          { ...state, projects: [...state.projects, project], people: [...state.people, ...people, ...created] },
           project,
         );
       }

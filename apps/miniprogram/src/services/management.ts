@@ -3,6 +3,9 @@ import type {
   DefaultAttendanceConfiguration,
   CompanyOverview,
   CompanyParticipant,
+  CompanyPerson,
+  OffboardMode,
+  ProjectAdmins,
   CompanyProject,
   CreateProjectBody,
   DailyReport,
@@ -253,4 +256,34 @@ export const fetchDefaultAttendanceConfiguration = async (
   apiClient.request<DefaultAttendanceConfiguration>(
     `/attendance/projects/${projectId}/default-configuration`,
     { method: "GET" },
+  );
+
+const companyBase = (companyId: string): string =>
+  `/management/companies/${encodeURIComponent(companyId)}`;
+
+/** 项目负责人：公司每个项目现在的项目管理员。 */
+export const fetchProjectAdmins = (companyId: string): Promise<ProjectAdmins> =>
+  apiClient.request(`${companyBase(companyId)}/project-admins`, { method: "GET" });
+
+/** 一个人在本公司各项目的任职、进退场和评分。 */
+export const fetchCompanyPerson = (
+  companyId: string,
+  participantType: "WORKER" | "MANAGER",
+  profileId: string,
+): Promise<CompanyPerson> =>
+  apiClient.request(
+    `${companyBase(companyId)}/people/${participantType}/${encodeURIComponent(profileId)}`,
+    { method: "GET" },
+  );
+
+/** 离岗：一次收回他在本公司的所有管理职务，或在所有项目办退场。 */
+export const offboardCompanyPerson = (
+  companyId: string,
+  participantType: "WORKER" | "MANAGER",
+  profileId: string,
+  body: { readonly mode: OffboardMode; readonly effectiveDate: string },
+): Promise<CompanyPerson> =>
+  apiClient.request(
+    `${companyBase(companyId)}/people/${participantType}/${encodeURIComponent(profileId)}/offboard`,
+    { method: "POST", data: body },
   );

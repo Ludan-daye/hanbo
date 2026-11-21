@@ -11,6 +11,7 @@ import {
   FormRow,
   Notice,
   PageHeader,
+  Row,
   Screen,
   SectionTitle,
   Sheet,
@@ -57,6 +58,32 @@ export default function CreateProject(): JSX.Element {
   const [managers, setManagers] = useState<readonly ProjectManagerCandidate[]>(
     [],
   );
+  // 还不在本公司任何项目里的新管理员：姓名＋手机号，建好项目后用邀请码绑定（Q4）。
+  const [newManagers, setNewManagers] = useState<
+    readonly { readonly name: string; readonly phone: string }[]
+  >([]);
+  const [draftName, setDraftName] = useState("");
+  const [draftPhone, setDraftPhone] = useState("");
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const addNewManager = (): void => {
+    const name = draftName.trim();
+    const phone = draftPhone.trim();
+    if (name.length === 0 || !/^1\d{10}$/.test(phone)) {
+      setDraftError("请填写姓名和 11 位手机号。");
+      return;
+    }
+    if (
+      newManagers.some((row) => row.phone === phone) ||
+      managers.some((row) => row.phone === phone)
+    ) {
+      setDraftError("这个手机号已经在管理员里了。");
+      return;
+    }
+    setNewManagers([...newManagers, { name, phone }]);
+    setDraftName("");
+    setDraftPhone("");
+    setDraftError(null);
+  };
   // 同一个页面里的两屏：表单，和选项目管理员。
   const [view, setView] = useState<"form" | "managers">("form");
 
@@ -74,8 +101,8 @@ export default function CreateProject(): JSX.Element {
 
   const submit = async (): Promise<void> => {
     if (busy) return;
-    if (managers.length === 0) {
-      setError("请至少选择一名项目管理员。");
+    if (managers.length + newManagers.length === 0) {
+      setError("请至少选择或录入一名项目管理员。");
       return;
     }
     const trimmedName = name.trim();
@@ -96,8 +123,9 @@ export default function CreateProject(): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      await createCompanyProject(companyId, {
+      const created = await createCompanyProject(companyId, {
         managerProfileIds: managers.map((person) => person.profileId),
+        ...(newManagers.length > 0 ? { newManagers } : {}),
         name: trimmedName,
         ...location,
         address: location.address.trim(),
@@ -106,8 +134,22 @@ export default function CreateProject(): JSX.Element {
         plannedEndDate: endsOn,
       });
       await Taro.showToast({ icon: "success", title: "已创建" });
+      // 有还没绑定微信的管理员：建好就去邀请绑定。
+      const invite =
+        newManagers.length > 0 || managers.some((person) => !person.isBound)
+          ? (
+              await Taro.showModal({
+                title: "去邀请绑定",
+                content: "有管理员还没绑定微信，绑定后才能管理这个项目。现在去生成邀请码吗？",
+                confirmText: "去邀请",
+                cancelText: "以后再说",
+              })
+            ).confirm
+          : false;
       await Taro.redirectTo({
-        url: `/pages/company-projects/index?companyId=${companyId}`,
+        url: invite
+          ? `/pages/invitation/index?projectId=${encodeURIComponent(created.id)}`
+          : `/pages/company-projects/index?companyId=${companyId}`,
       });
     } catch (e) {
       setError(errorMessage(e, "项目没建成，请稍后重试。"));
@@ -119,7 +161,7 @@ export default function CreateProject(): JSX.Element {
   // 四样齐了按钮才亮：名称、管理员、工地位置、地址。
   const missing = [
     name.trim().length === 0 ? "项目名称" : null,
-    managers.length === 0 ? "项目管理员" : null,
+    managers.length + newManagers.length === 0 ? "项目管理员" : null,
     location === null
       ? "工地位置"
       : location.address.trim().length === 0
@@ -170,7 +212,52 @@ export default function CreateProject(): JSX.Element {
               ) : undefined}
             </FormRow>
           </Sheet>
-          {managers.some((person) => !person.isBound) ? (
+          <SectionTitle>录入新管理员</SectionTitle>
+          {newManagers.length > 0 ? (
+            <Sheet gap>
+              {newManagers.map((row) => (
+                <Row
+                  key={row.phone}
+                  title={row.name}
+                  sub={row.phone}
+                  value="移除"
+                  onClick={
+                    busy
+                      ? undefined
+                      : () =>
+                          setNewManagers(
+                            newManagers.filter((item) => item.phone !== row.phone),
+                          )
+                  }
+                />
+              ))}
+            </Sheet>
+          ) : null}
+          {newManagers.length < 3 ? (
+            <>
+              <Sheet gap>
+                <FormInput
+                  label="姓名"
+                  value={draftName}
+                  placeholder="还不在本公司项目里的人"
+                  disabled={busy}
+                  onInput={setDraftName}
+                />
+                <FormInput
+                  label="手机号"
+                  value={draftPhone}
+                  placeholder="绑定时核对用"
+                  disabled={busy}
+                  onInput={setDraftPhone}
+                />
+              </Sheet>
+              {draftError !== null ? <Notice tone="error">{draftError}</Notice> : null}
+              <Button variant="outline" disabled={busy} onClick={addNewManager}>
+                加为管理员
+              </Button>
+            </>
+          ) : null}
+          {newManagers.length > 0 || managers.some((person) => !person.isBound) ? (
             <Notice>
               选的人里有还没绑定微信的，建好项目后用邀请码让他绑定。
             </Notice>

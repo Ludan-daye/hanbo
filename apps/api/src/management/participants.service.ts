@@ -813,7 +813,36 @@ export class ParticipantsService {
       });
     const authorization: AuthorizationData =
       await this.authorization.loadAuthorizationData(actorUserId);
-    await this.prisma.$transaction(async (transaction): Promise<void> => {
+    await this.prisma.$transaction(
+      async (transaction): Promise<void> =>
+        this.updateInTransaction(
+          transaction,
+          projectId,
+          memberId,
+          actorUserId,
+          previous,
+          body,
+          authorization,
+        ),
+    );
+    return this.get(projectId, memberId);
+  }
+
+  /**
+   * The body of `update` inside a caller's transaction, so a company-level action
+   * (offboarding someone from every project) commits or rolls back as one.
+   * `previous` must be what `get` returned; stale rows fail the guarded writes.
+   */
+  async updateInTransaction(
+    transaction: Prisma.TransactionClient,
+    projectId: string,
+    memberId: string,
+    actorUserId: string,
+    previous: ManagedParticipantResponse,
+    body: ParticipantWriteRequest,
+    authorization: AuthorizationData,
+  ): Promise<void> {
+    {
       await this.validateTeam(transaction, projectId, body.teamId);
       await this.checkPhone(transaction, projectId, body.phone, memberId);
       // Serialize profile edits, binding and reuse before inspecting shared memberships.
@@ -984,8 +1013,7 @@ export class ParticipantsService {
           },
         },
       });
-    });
-    return this.get(projectId, memberId);
+    }
   }
 
   private async updateWorker(

@@ -306,5 +306,103 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         expect((await get("company", "/makeups/pending?onlyMine=yes", 400)).message).toBe("INVALID_MAKEUP_INBOX_QUERY");
       });
     });
+
+    describe("who runs each project, and offboarding", (): void => {
+      const projectFields = {
+        address: "测试工地",
+        centerLatitude: "31.2304000",
+        centerLongitude: "121.4737000",
+        geofenceRadiusM: 300,
+        name: "新开工地",
+        plannedEndDate: null,
+        plannedStartDate: "2026-11-21",
+        status: "PREPARING",
+      };
+
+      test("lists each project's admins for this company's admins only", async (): Promise<void> => {
+        const path = `/management/companies/${companyId}/project-admins`;
+        await get("pa1", path, 403);
+        await get("other", path, 403);
+        const body = (await get("company", path)) as {
+          projects: { projectId: string; admins: { profileId: string; displayName: string; isBound: boolean }[] }[];
+        };
+        const admins = (projectId: string) =>
+          body.projects.find((row) => row.projectId === projectId)!.admins;
+        expect(admins(p1)).toEqual([expect.objectContaining({ profileId: managerId, displayName: "项目经理甲", isBound: true })]);
+        expect(admins(p2)).toEqual([]);
+        expect(admins(p3).map((row) => row.profileId)).toEqual([managerId]);
+        const projects = (await get("company", `/management/companies/${companyId}/projects`)) as {
+          id: string; adminNames: string[]; activeMembers: number;
+        }[];
+        expect(projects.find((row) => row.id === p1)).toMatchObject({ adminNames: ["项目经理甲"], activeMembers: 3 });
+        expect(projects.find((row) => row.id === p2)).toMatchObject({ adminNames: [], activeMembers: 1 });
+      });
+
+      test("a person's posts cover this company's projects only", async (): Promise<void> => {
+        const person = await get("company", `/management/companies/${companyId}/people/MANAGER/${managerId}`);
+        expect(person.memberships.map((row: { projectId: string }) => row.projectId).sort()).toEqual([p1, p3]);
+        expect(person.memberships[0].roles).toEqual([{ roleCode: "PROJECT_ADMIN", teamId: null, teamName: null }]);
+        await get("other", `/management/companies/${companyId}/people/MANAGER/${managerId}`, 403);
+        expect((await get("other", `/management/companies/${otherCompanyId}/people/MANAGER/${managerId}`, 404)).message).toBe("COMPANY_PERSON_NOT_FOUND");
+        expect((await get("company", `/management/companies/${companyId}/people/ADMIN/${managerId}`, 400)).message).toBe("INVALID_PARTICIPANT_TYPE");
+      });
+
+      test("offboarding revokes every management post in one go, then exits", async (): Promise<void> => {
+        const base = `/management/companies/${companyId}/people`;
+        const post = (user: UserKey, path: string, body: object, status: number) =>
+          http().post(path).auth(auth(user), { type: "bearer" }).send(body).expect(status);
+        await post("pa1", `${base}/MANAGER/${managerId}/offboard`, { effectiveDate: "2026-11-21" }, 403);
+        expect((await post("company", `${base}/MANAGER/${managerId}/offboard`, { effectiveDate: "2026-11-31" }, 400)).body.message).toBe("INVALID_OFFBOARD_REQUEST");
+        // Nobody offboards themselves.
+        const own = await database.managerProfile.create({ data: { userId: users.company, name: "公司管理员本人", phone: "13910000666", status: "ACTIVE" } });
+        await database.projectManagerMember.create({ data: { projectId: p2, managerId: own.id, roleCode: "WORKER", status: "ACTIVE" } });
+        expect((await post("company", `${base}/MANAGER/${own.id}/offboard`, { effectiveDate: "2026-11-21", mode: "EXIT_ALL" }, 409)).body.message).toBe("CANNOT_CHANGE_OWN_MANAGEMENT_ASSIGNMENT");
+
+        const revoked = (await post("company", `${base}/MANAGER/${managerId}/offboard`, { effectiveDate: "2026-11-21" }, 201)).body;
+        expect(revoked.memberships.map((row: { projectRoleLabel: string; status: string }) => [row.projectRoleLabel, row.status])).toEqual([
+          ["WORKER", "ACTIVE"],
+          ["WORKER", "ACTIVE"],
+        ]);
+        expect(await database.userRole.count({ where: { userId: users.pa1, role: { code: "PROJECT_ADMIN" } } })).toBe(0);
+        expect(await database.userRole.count({ where: { userId: users.pa1, role: { code: "WORKER" } } })).toBe(2);
+        const updates = await database.auditLog.findMany({ where: { action: "project.member.update", entityId: { in: [memberIds.get(`pa1:${p1}`)!, memberIds.get(`pa1:${p3}`)!] } } });
+        expect(updates.map((row) => row.projectId).sort()).toEqual([p1, p3]);
+        expect(await database.auditLog.count({ where: { action: "PERSONNEL_OFFBOARDED", entityId: managerId } })).toBe(1);
+        expect((await post("company", `${base}/MANAGER/${managerId}/offboard`, { effectiveDate: "2026-11-21" }, 409)).body.message).toBe("OFFBOARD_NOTHING_TO_CHANGE");
+
+        // A team leader loses the role and the team.
+        await post("company", `${base}/WORKER/${workerIds.get("leader")}/offboard`, { effectiveDate: "2026-11-21", mode: "REVOKE_ADMIN" }, 201);
+        expect((await database.team.findUniqueOrThrow({ where: { id: t1 } })).leaderWorkerMemberId).toBeNull();
+        expect(await database.teamLeaderChange.count({ where: { teamId: t1, reason: "MEMBER_TRANSFERRED" } })).toBe(1);
+        expect(await database.userRole.count({ where: { userId: users.leader, role: { code: "TEAM_LEADER" } } })).toBe(0);
+        expect((await database.projectWorkerMember.findUniqueOrThrow({ where: { id: memberIds.get("leader")! } })).projectRoleLabel).toBe("钢筋工");
+
+        const exited = (await post("company", `${base}/MANAGER/${managerId}/offboard`, { effectiveDate: "2026-11-21", mode: "EXIT_ALL" }, 201)).body;
+        expect(exited.memberships.map((row: { status: string }) => row.status)).toEqual(["EXITED", "EXITED"]);
+        expect(await database.userRole.count({ where: { userId: users.pa1 } })).toBe(0);
+        // Makeup requests stay as they were.
+        expect(await database.makeupRequest.count({ where: { requesterUserId: users.pa1, status: "PENDING" } })).toBe(1);
+      });
+
+      test("a new project can take a new administrator, who is bound later by invitation", async (): Promise<void> => {
+        const path = `/management/companies/${companyId}/projects`;
+        const create = (body: object, status: number) =>
+          http().post(path).auth(auth("company"), { type: "bearer" }).send(body).expect(status);
+        expect((await create({ ...projectFields, managerProfileIds: [] }, 400)).body.message).toBe("INVALID_CREATE_PROJECT_REQUEST");
+        const before = await database.project.count({ where: { companyId } });
+        const duplicate = (await create({ ...projectFields, managerProfileIds: [], newManagers: [{ name: "重名", phone: "13910000555" }] }, 409)).body;
+        expect(duplicate).toMatchObject({ message: "PROJECT_MANAGER_PHONE_EXISTS", profileId: managerId });
+        expect(await database.project.count({ where: { companyId } })).toBe(before);
+        const created = (await create({ ...projectFields, managerProfileIds: [], newManagers: [{ name: "新经理", phone: "13910000777" }] }, 201)).body as { id: string };
+        const admins = (await get("company", `/management/companies/${companyId}/project-admins`)) as {
+          projects: { projectId: string; admins: { displayName: string; isBound: boolean }[] }[];
+        };
+        expect(admins.projects.find((row) => row.projectId === created.id)!.admins).toEqual([
+          expect.objectContaining({ displayName: "新经理", isBound: false }),
+        ]);
+        const audit = await database.auditLog.findFirstOrThrow({ where: { action: "project.create", entityId: created.id } });
+        expect(audit.projectId).toBe(created.id);
+      });
+    });
   },
 );
