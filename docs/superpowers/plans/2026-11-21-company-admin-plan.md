@@ -254,3 +254,48 @@
 - Q12 公司管理员不能任命公司管理员；可改联系人、电话、地址，名称和信用代码只能由超级管理员改。
 
 另外并入本轮（第 3 级测试时发现）：TEMPORARY_INVITATION_CREATED／ACCEPTED 审计写入 projectId；`seed.test-logins.ts` 增加第六个测试账号 `dev-worker-2`（纯工人，不在任何项目），供临时工流程测试。
+
+## 实施记录（2026-11-21）
+
+分支 `project-admin`，从 `df3f3aa` 起每期一个提交；每期都跑过 `corepack pnpm test`、`typecheck`、小程序 `tsc --noEmit`、`test:database`（含迁移重放和 drift 检查）和 `build:h5:demo`。新的数据库集成测试是 `apps/api/test/company-admin.integration.test.ts`，已加进 `scripts/test-database.ts`。
+
+- **第一期（Q1、Q2，G10 分页）** `648d25e`：`GET /management/companies/:companyId/overview`（company.manage）；补卡收件箱每条带 `onlyYou`，`GET /makeups/pending?onlyMine=true`；调人申请列表改为 `{ items, nextCursor }`，每页 30 条，可按项目筛。首页只列进行中的项目，其余合成“另有 N 个”。与计划不同：
+  - “只有你能批”的口径是：项目里除申请人和本人以外，没有职级高于申请人的项目级或班组级授权。公司级授权不算，所以同一公司有两个公司管理员时，两人都会看到这一条。
+  - 收件箱改成分批扫描、凑满一页再返回，“需要你批”就不会出现空页。
+  - 补卡页的“需要你批／全部”用 `Chips`，没有用第二个 `Segmented`，因为上面已经有一个“待审批／我已处理”。
+  - `onlyMine` 的测试放在数据库套件里，没有放进 `makeup.e2e`：那里的假 Prisma 不支持收件箱。
+  - 没有新加索引，要先在测试服务器上量耗时。
+- **第二期（Q3、Q4）** `fb9a45c`：`GET .../project-admins`、`GET .../people/:participantType/:profileId`（计划里的 `/roles` 合并进来，第三期的履历和评分也在里面）、`POST .../offboard`；新建项目可以带 `newManagers`；公司项目列表带 `adminNames`、`activeMembers`。与计划不同：
+  - 人员详情做成单独的 `pages/company-person`，没有做子视图（第三期本来就要这一页）。
+  - 离岗时还会清掉此人负责的班组，哪怕他仍留在那个班组里。
+  - 不能给公司管理员、超级管理员办离岗。
+  - 离岗日期写成当天 0 点的退场时间。
+  - 离岗请求不带 `expectedVersion`，并发靠成员更新里原有的版本检查。
+  - 新管理员的手机号和本公司任何档案重复时（含已退场的人）都返回 `PROJECT_MANAGER_PHONE_EXISTS`。
+  - 参与人更新抽出了 `updateInTransaction`。
+- **第三期（Q8）** `de30900`：`GET .../people-page`，一人一行，筛选都在服务端。与计划不同：
+  - 排序按手机号，因为姓名是加密的。
+  - 带 `registrationStatus` 时只出工人。
+  - 旧的 `GET .../participants` 保留了。
+- **第四期（Q6、Q7、Q12）** `3f0056c`：迁移 `20261121090000_company_attendance_defaults`；`GET/PUT .../attendance-defaults`；新建项目的 `applyCompanyDefaults` 默认打开，会写入项目排班和第一版工时规则，生效日取计划开工和今天中较晚的一天；“信用规则”对非超级管理员只读；公司资料用 `GET/PUT .../profile`（只能改联系人、电话、地址）。另外：
+  - domain 新增 `attendanceDefaultsError`、`worktimeRuleError`。
+  - 工时规则和安全信用接口里的中文 message 改成了常量，只留下一处 zod refine 的 issue 文案。
+  - 与计划不同：1.3-6 的推断不成立。现在没有排班的项目会退回平台的“每日两次”，新项目本来就能打卡；套用公司默认，是为了让新项目从第一天起就用公司的打卡点和工时规则。表里存的是打卡点和工作日，和现在的排班模型一致，没有按计划存 segments、startsOn。
+  - 公司资料没有用计划里的 `PUT /management/companies/:companyId`，改成单独的 `/profile`。
+  - 打卡点编辑是从打卡安排页照搬的，没有抽成公共组件。
+- **第五期（Q9、Q10）** `1658a5c`：迁移 `20261121100000_audit_log_company`。
+  - `companyId` 的来源：插入审计时，有项目的行由触发器按 projectId 补上；公司级的行由代码直接写；旧行在迁移里回填。
+  - 公司操作记录改按 companyId 查，多了“公司”类型。
+  - 查看用工资料写 `WORKER_REGISTRATION_VIEWED`，同一查看者同一人 10 分钟内只记一次。
+  - 新增 `GET .../project-health`，配“各项目一览”页。低信用是信用低于 60 分，用 `SafetyCreditService.summariesIn` 现算。
+- **Q11、Q5** `cce415d`：迁移 `20261121110000_transfer_request_mode`。调人申请的 `mode` 默认 MOVE；已有的申请当时是按兼任办的，标为 CONCURRENT。同意调走时，原项目成员在加入新项目的同一事务里，按新进场日前一天办退场。项目状态只能由公司管理员或超级管理员改，否则返回 `PROJECT_STATUS_REQUIRES_COMPANY_ADMIN`。
+- **附加** 有两项：
+  - TEMPORARY_INVITATION_CREATED、REVOKED、ACCEPTED 都写上 projectId（第五期迁移里也回填了）。
+  - `0fd9b94` 加了 `dev-worker-2`（测试临时工，13800000106），用自己的 openid `test-login-worker-2`，因为开发种子里 `dev-worker-2` 已经是项目成员“李二”。`seed.test-logins.ts` 第一次运行时会把它建成未绑定、无角色的账号。
+- **没做、留到以后**：
+  - 任命公司管理员（属于五级）。
+  - G13 打卡安排的范围按项目选。
+  - G14 订阅通知。
+  - 在测试服务器上量公司概览和各项目一览的耗时。
+  - 补卡表的索引。
+  - CLAUDE.md 里“五个测试账号”的说法没有改。
