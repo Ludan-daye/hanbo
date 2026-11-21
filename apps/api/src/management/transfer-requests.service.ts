@@ -64,10 +64,12 @@ export class TransferRequestsService {
     );
     const projects = await this.prisma.project.findMany({
       where: { companyId: target.companyId, id: { not: projectId } },
-      select: { id: true, name: true },
+      select: { id: true, name: true, status: true },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
-    return projects.filter((project) => !managed.has(project.id));
+    return projects
+      .filter((project) => !managed.has(project.id))
+      .map((project) => ({ ...project, status: project.status as ReuseProjectResponse["status"] }));
   }
 
   /** People of a source project, for picking: no full phone numbers. */
@@ -414,6 +416,7 @@ export class TransferRequestsService {
       metadata: {
         createdMemberId: row.createdMemberId,
         mode: row.mode,
+        reviewReason: row.reviewReason,
         sourceMemberId: row.sourceMemberId,
         sourceProjectId: row.sourceProjectId,
       },
@@ -475,7 +478,12 @@ export class TransferRequestsService {
         ),
       ),
     ];
-    const [projects, teams, workers, managers, users] = await Promise.all([
+    // 调走 that went through: the exit date actually stored on the source membership.
+    const moved = (type: "WORKER" | "MANAGER"): string[] =>
+      rows
+        .filter((row) => row.status === "APPROVED" && row.mode === "MOVE" && row.participantType === type)
+        .map((row) => row.sourceMemberId);
+    const [projects, teams, workers, managers, users, sourceWorkers, sourceManagers] = await Promise.all([
       this.prisma.project.findMany({
         where: {
           id: {
@@ -502,7 +510,21 @@ export class TransferRequestsService {
         where: { id: { in: userIds } },
         select: { encryptedRealName: true, id: true, nickname: true },
       }),
+      this.prisma.projectWorkerMember.findMany({
+        where: { id: { in: moved("WORKER") } },
+        select: { exitedAt: true, id: true },
+      }),
+      this.prisma.projectManagerMember.findMany({
+        where: { id: { in: moved("MANAGER") } },
+        select: { exitedAt: true, id: true },
+      }),
     ]);
+    const sourceExitedAt = (row: PersonnelTransferRequest): string | null => {
+      if (row.status !== "APPROVED" || row.mode !== "MOVE") return null;
+      const members: readonly { exitedAt: Date | null; id: string }[] =
+        row.participantType === "WORKER" ? sourceWorkers : sourceManagers;
+      return members.find((member) => member.id === row.sourceMemberId)?.exitedAt?.toISOString() ?? null;
+    };
     const projectName = (id: string): string =>
       projects.find((project) => project.id === id)?.name ?? "";
     const userName = (id: string | null): string | null => {
@@ -533,6 +555,7 @@ export class TransferRequestsService {
         reviewedAt: row.reviewedAt?.toISOString() ?? null,
         reviewedByName: userName(row.reviewedByUserId),
         reviewReason: row.reviewReason,
+        sourceExitedAt: sourceExitedAt(row),
         sourceProjectId: row.sourceProjectId,
         sourceProjectName: projectName(row.sourceProjectId),
         status: row.status as TransferStatusValue,

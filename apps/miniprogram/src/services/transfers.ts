@@ -40,6 +40,8 @@ export type TransferRequest = {
   readonly reviewedAt: string | null;
   readonly reviewedByName: string | null;
   readonly reviewReason: string | null;
+  /** 同意的调走：原项目里实际记下的退场日（同一天进的是进场当天）。旧数据没有。 */
+  readonly sourceExitedAt?: string | null;
   readonly sourceProjectId: string;
   readonly sourceProjectName: string;
   readonly status: TransferStatus;

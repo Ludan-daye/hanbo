@@ -39,6 +39,7 @@ import { validateProjectLocation } from "../../services/project-location";
 import { fetchProject, updateProject } from "../../services/workflows";
 import { useSession } from "../../store/session";
 
+import { statusChangeConfirm } from "./status-change";
 import "./index.scss";
 
 const STATUSES: ReadonlyArray<{
@@ -149,6 +150,15 @@ export default function ProjectDetail(): JSX.Element {
     } catch (cause: unknown) {
       setFormError(errorMessage(cause, "请在地图上重新选择工地范围。"));
       return;
+    }
+    // 改成暂停、完工先说清后果再保存。
+    const confirm = saved ? statusChangeConfirm(saved.status, project.status) : null;
+    if (confirm !== null) {
+      const answer = await Taro.showModal({
+        ...confirm,
+        cancelText: "先不改",
+      }).catch(() => ({ confirm: false }));
+      if (!answer.confirm) return;
     }
     setBusy(true);
     setFormError(null);

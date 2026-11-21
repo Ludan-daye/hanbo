@@ -550,7 +550,7 @@ export class ParticipantsService {
       await this.authorization.loadAuthorizationData(actorUserId);
     const projects = await this.prisma.project.findMany({
       where: { companyId: target.companyId, id: { not: projectId } },
-      select: { id: true, name: true, companyId: true },
+      select: { id: true, name: true, companyId: true, status: true },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     return projects
@@ -571,6 +571,7 @@ export class ParticipantsService {
         (project): ReuseProjectResponse => ({
           id: project.id,
           name: project.name,
+          status: project.status as ReuseProjectResponse["status"],
         }),
       );
   }

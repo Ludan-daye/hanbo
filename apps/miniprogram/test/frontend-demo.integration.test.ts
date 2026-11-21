@@ -519,6 +519,7 @@ describe("standalone frontend workflows using persistent demo storage", () => {
       { method: "GET" },
     );
     expect(sources.map((source) => source.id)).toContain("demo-project");
+    expect(sources.find((source) => source.id === "demo-project")?.status).toBe("ACTIVE");
     const source = await client.request<ManagedParticipant>(
       "/management/projects/demo-project/participants/member-worker",
       { method: "GET" },

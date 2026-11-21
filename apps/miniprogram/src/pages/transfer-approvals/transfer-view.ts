@@ -11,16 +11,17 @@ export const transferRoute = (
 
 /**
  * 调走还是兼任。等处理时说同意后会怎样；办完了用过去时说结果：
- * 同意的调走“已调走，原项目于某天办退场”（进场前一天），没同意的说人还在原项目。
+ * 同意的调走“已调走，原项目于某天办退场”，日子是原项目里实际记下的退场日
+ * （一般是进场前一天，同一天进的就是当天），不自己推算；没同意的说人还在原项目。
  */
 export const transferModeText = (
   row: Pick<TransferRequest, "mode" | "sourceProjectName"> &
-    Partial<Pick<TransferRequest, "enteredAt" | "status">>,
+    Partial<Pick<TransferRequest, "sourceExitedAt" | "status">>,
 ): string => {
   const move = row.mode === "MOVE";
   if (row.status === "APPROVED")
     return move
-      ? `已调走，${row.sourceProjectName}${row.enteredAt ? `于 ${formatChinaDate(new Date(Date.parse(row.enteredAt) - 86_400_000).toISOString())} ` : ""}办退场`
+      ? `已调走，${row.sourceProjectName}${row.sourceExitedAt ? `于 ${formatChinaDate(row.sourceExitedAt)} ` : ""}办退场`
       : `已兼任，${row.sourceProjectName}的身份照旧`;
   if (row.status === "REJECTED")
     return `未同意，仍在${row.sourceProjectName}（申请的是${move ? "调走" : "兼任"}）`;
@@ -53,4 +54,10 @@ export const transferWho = (
   const asked = `${row.requestedByName ?? "项目管理员"} ${formatChinaDate(row.createdAt)} 申请`;
   if (row.status === "PENDING" || row.reviewedAt === null) return asked;
   return `${asked}，${row.reviewedByName ?? "公司管理员"} ${formatChinaDate(row.reviewedAt)} ${row.status === "APPROVED" ? "同意" : "未同意"}`;
+};
+
+/** “不同意”时输入框里的字：去掉首尾空白，没写就不带理由。 */
+export const typedReason = (typed: string): string | null => {
+  const reason = typed.trim();
+  return reason.length > 0 ? reason : null;
 };

@@ -678,6 +678,19 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         expect(of(p1).registrationMissing).toBe(missing.total);
         expect(of(p1).registrationMissing + of(p1).registrationPending).toBeGreaterThan(0);
         expect(of(p1).lowCredit).toBe(0);
+        // A completed (or paused) project owes no paperwork: its members' forms and photos
+        // drop out of 各项目一览 and the company home 等你处理.
+        for (const status of ["COMPLETED", "SUSPENDED"] as const) {
+          await database.project.update({ where: { id: p1 }, data: { status } });
+          try {
+            const closed = ((await get("company", path)) as typeof health).projects.find((row) => row.projectId === p1)!;
+            expect(closed).toMatchObject({ facePending: 0, registrationMissing: 0, registrationPending: 0 });
+            const home = (await get("company", `/management/companies/${companyId}/overview?date=2026-11-18`)) as CompanyOverviewResponse;
+            expect(home.projects.find((row) => row.projectId === p1)?.todos.facePending).toBe(0);
+          } finally {
+            await database.project.update({ where: { id: p1 }, data: { status: "ACTIVE" } });
+          }
+        }
       });
     });
 
@@ -710,21 +723,29 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         const moving = await worker("调走甲", "13910000301");
         const moved = await ask(moving.id);
         expect(moved.mode).toBe("MOVE");
-        await approve(moved.id);
+        const movedView = (await approve(moved.id)).body as { sourceExitedAt: string | null };
         const source = await database.projectWorkerMember.findUniqueOrThrow({ where: { id: moving.id } });
+        expect(movedView.sourceExitedAt).toBe(source.exitedAt?.toISOString());
         expect(source.status).toBe("EXITED");
         expect(source.exitedAt?.toISOString()).toBe(new Date("2026-11-24T00:00:00+08:00").toISOString());
         expect(await database.projectWorkerMember.count({ where: { projectId: p3, workerId: moving.workerId, status: "ACTIVE" } })).toBe(1);
         expect(source.requiresAttendance).toBe(true);
         // Moved on the day they entered the source: that day is not 应到 in both projects.
         const sameDay = await worker("当天调走", "13910000303", "2026-11-25T00:00:00+08:00");
-        await approve((await ask(sameDay.id)).id);
+        const sameDayRequest = await ask(sameDay.id);
+        await approve(sameDayRequest.id);
         const closed = await database.projectWorkerMember.findUniqueOrThrow({ where: { id: sameDay.id } });
         expect(closed).toMatchObject({ requiresAttendance: false, status: "EXITED" });
         expect(closed.exitedAt?.toISOString()).toBe(closed.enteredAt.toISOString());
+        // The done list shows the exit date actually stored, not a computed day-before.
+        const done = (await http().get(`/management/companies/${companyId}/transfer-requests?status=DONE`).auth(auth("company"), { type: "bearer" }).expect(200)).body as {
+          items: { id: string; sourceExitedAt: string | null }[];
+        };
+        expect(done.items.find((row) => row.id === sameDayRequest.id)?.sourceExitedAt).toBe(closed.enteredAt.toISOString());
         const staying = await worker("兼任乙", "13910000302");
         const kept = await ask(staying.id, "CONCURRENT");
-        await approve(kept.id);
+        const keptView = (await approve(kept.id)).body as { sourceExitedAt: string | null };
+        expect(keptView.sourceExitedAt).toBeNull();
         expect((await database.projectWorkerMember.findUniqueOrThrow({ where: { id: staying.id } })).status).toBe("ACTIVE");
         expect(await database.projectWorkerMember.count({ where: { projectId: p3, workerId: staying.workerId } })).toBe(1);
         const audit = await database.auditLog.findFirstOrThrow({ where: { action: "PERSONNEL_TRANSFER_APPROVED", entityId: moved.id } });

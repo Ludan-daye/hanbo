@@ -2,6 +2,7 @@ import type {
   MemberStatusValue,
   ParticipantTypeValue,
   ProjectParticipantResponse,
+  ProjectStatusValue,
 } from "./management.types.js";
 
 export type AdditionalMemberRole = {
@@ -70,4 +71,6 @@ export type ReuseParticipantRequest = {
 export type ReuseProjectResponse = {
   readonly id: string;
   readonly name: string;
+  /** A completed or paused source: its people are not 在场 there any more. */
+  readonly status: ProjectStatusValue;
 };

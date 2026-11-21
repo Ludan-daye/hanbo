@@ -1,4 +1,4 @@
-import { Picker } from "@tarojs/components";
+import { Input, Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
@@ -36,7 +36,10 @@ import {
   transferReviewReason,
   transferRoute,
   transferWho,
+  typedReason,
 } from "./transfer-view";
+
+import "./index.scss";
 
 type Tab = "PENDING" | "DONE";
 
@@ -71,6 +74,9 @@ export default function TransferApprovals(): JSX.Element {
     };
   }, [companyId, revision]);
   const [busy, setBusy] = useState<string | null>(null);
+  // 点了“不同意”的那条：卡片里展开理由输入框，确认后才提交；理由可以不写。
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [reasons, setReasons] = useState<Readonly<Record<string, string>>>({});
   const [actionError, setActionError] = useState<{
     readonly id: string;
     readonly text: string;
@@ -126,29 +132,28 @@ export default function TransferApprovals(): JSX.Element {
     decision: "approve" | "reject",
   ): Promise<void> => {
     if (!companyId || busy !== null) return;
-    const answer = await Taro.showModal(
-      decision === "approve"
-        ? {
-            title: "同意调人",
-            content:
-              row.mode === "MOVE"
-                ? `${row.displayName ?? "他"}会加入${row.targetProjectName}，${row.sourceProjectName}在进场前一天办退场；原项目的考勤记录保留。`
-                : `${row.displayName ?? "他"}会加入${row.targetProjectName}，${row.sourceProjectName}的身份照旧（兼任）。`,
-            confirmText: "同意",
-          }
-        : {
-            title: "不同意",
-            content: `${row.displayName ?? "他"}留在原项目，申请会显示为未同意。`,
-            confirmText: "不同意",
-            confirmColor: "#D7261E",
-          },
-    );
-    if (!answer.confirm) return;
+    if (decision === "approve") {
+      const answer = await Taro.showModal({
+        title: "同意调人",
+        content:
+          row.mode === "MOVE"
+            ? `${row.displayName ?? "他"}会加入${row.targetProjectName}，${row.sourceProjectName}在进场前一天办退场；原项目的考勤记录保留。`
+            : `${row.displayName ?? "他"}会加入${row.targetProjectName}，${row.sourceProjectName}的身份照旧（兼任）。`,
+        confirmText: "同意",
+      });
+      if (!answer.confirm) return;
+    }
     setBusy(row.id);
     setActionError(null);
     try {
-      await reviewTransfer(companyId, row.id, decision, null);
+      await reviewTransfer(
+        companyId,
+        row.id,
+        decision,
+        decision === "reject" ? typedReason(reasons[row.id] ?? "") : null,
+      );
       setRows((current) => (current ?? []).filter((item) => item.id !== row.id));
+      setRejecting(null);
       await Taro.showToast({
         icon: "success",
         title: decision === "approve" ? "已调入" : "已处理",
@@ -226,7 +231,40 @@ export default function TransferApprovals(): JSX.Element {
             {actionError?.id === row.id ? (
               <Notice tone="error">{actionError.text}</Notice>
             ) : null}
-            {row.status === "PENDING" ? (
+            {row.status === "PENDING" && rejecting === row.id ? (
+              <View className="m-fade">
+                <CardMeta>{`${row.displayName ?? "他"}留在原项目，申请会显示为未同意。理由会写在申请上，项目管理员能看到。`}</CardMeta>
+                <Input
+                  className="transfer-approvals__input"
+                  value={reasons[row.id] ?? ""}
+                  placeholder="未同意的理由（可不写）"
+                  placeholderClass="transfer-approvals__placeholder"
+                  maxlength={200}
+                  disabled={busy !== null}
+                  onInput={(event) => {
+                    const value = event.detail.value;
+                    setReasons((current) => ({ ...current, [row.id]: value }));
+                  }}
+                />
+                <CardActions>
+                  <Button
+                    variant="outline"
+                    loading={busy === row.id}
+                    disabled={busy !== null}
+                    onClick={() => void decide(row, "reject")}
+                  >
+                    {busy === row.id ? "处理中…" : "确认不同意"}
+                  </Button>
+                  <Button
+                    variant="text"
+                    disabled={busy !== null}
+                    onClick={() => setRejecting(null)}
+                  >
+                    取消
+                  </Button>
+                </CardActions>
+              </View>
+            ) : row.status === "PENDING" ? (
               <CardActions>
                 {/* 一屏只有一个黑按钮：排在最前面的那条。 */}
                 <Button
@@ -240,7 +278,10 @@ export default function TransferApprovals(): JSX.Element {
                 <Button
                   variant="text"
                   disabled={busy !== null}
-                  onClick={() => void decide(row, "reject")}
+                  onClick={() => {
+                    setActionError(null);
+                    setRejecting(row.id);
+                  }}
                 >
                   不同意
                 </Button>

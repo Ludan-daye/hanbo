@@ -35,6 +35,7 @@ import type {
   ProjectParticipant,
   ProjectTeam,
   ReusePersonForm,
+  ReuseProject,
   TeamForm,
 } from "../management.types";
 import type { SubmitAttendanceRecordBody, SubmitMakeupBody } from "../me.types";
@@ -241,11 +242,14 @@ const demoOnlyYou = (
   });
 };
 /** 本公司里当前用户不管的项目：从那里要人得向公司管理员申请。 */
+/** 进行中、筹备中的项目才欠用工资料和底照（与服务端 company-overview 同口径）。 */
+const owesPaperwork = (project: { readonly status: string }): boolean =>
+  project.status === "ACTIVE" || project.status === "PREPARING";
 const demoTransferSources = (
   state: DemoState,
   userId: string,
   projectId: string,
-): readonly { readonly id: string; readonly name: string }[] => {
+): readonly ReuseProject[] => {
   const target = state.projects.find((row) => row.id === projectId);
   return state.projects
     .filter(
@@ -254,7 +258,7 @@ const demoTransferSources = (
         row.companyId === target?.companyId &&
         !canManageDemoProject(state, userId, row.id),
     )
-    .map((row) => ({ id: row.id, name: row.name }));
+    .map((row) => ({ id: row.id, name: row.name, status: row.status }));
 };
 /** 公司管理员看、同意或不同意调人申请；同意时走演示版的人员复用。 */
 const demoReviewTransfer = (
@@ -265,6 +269,7 @@ const demoReviewTransfer = (
   decision: string | undefined,
   status: string | undefined,
   projectId?: string,
+  body?: unknown,
 ): DemoResponse => {
   const all = (state.transfers ?? []).filter((row) => row.companyId === companyId);
   if (requestId === undefined)
@@ -276,12 +281,15 @@ const demoReviewTransfer = (
   const request = all.find((row) => row.id === requestId);
   if (!request) throw new ApiError(404, "TRANSFER_REQUEST_NOT_FOUND", { message: "TRANSFER_REQUEST_NOT_FOUND" });
   if (request.status !== "PENDING") throw new ApiError(409, "TRANSFER_REQUEST_NOT_PENDING", { message: "TRANSFER_REQUEST_NOT_PENDING" });
+  const reason = (body as { readonly reason?: unknown } | undefined)?.reason;
   const reviewed = {
     reviewedAt: new Date().toISOString(),
     reviewedByName: state.accountProfiles?.[userId]?.realName ?? "公司管理员",
+    reviewReason: typeof reason === "string" && reason.trim() ? reason.trim() : null,
   };
   let next: DemoState = state;
   let createdMemberId: string | null = null;
+  let sourceExitedAt: string | null = null;
   if (decision === "approve") {
     const source = state.people.find((row) => row.memberId === request.sourceMemberId && row.projectId === request.sourceProjectId);
     if (!source) throw new ApiError(404, "来源人员不存在。", {});
@@ -305,24 +313,28 @@ const demoReviewTransfer = (
     // 调走（Q11）：原项目在进场前一天办退场；兼任不动原项目。
     if (request.mode === "MOVE" && source.status !== "EXITED") {
       const dayBefore = new Date(Date.parse(request.enteredAt) - 86_400_000).toISOString();
-      const exitedAt = dayBefore < source.enteredAt ? source.enteredAt : dayBefore;
+      // 和服务端一样：退场不能早于进场，同一天的就当天退场、当天不参与考勤。
+      const sameDay = Date.parse(dayBefore) < Date.parse(source.enteredAt);
+      const exitedAt = sameDay ? source.enteredAt : dayBefore;
+      sourceExitedAt = exitedAt;
       next = {
         ...next,
         people: next.people.map((row) =>
           row.projectId === source.projectId && row.memberId === source.memberId
-            ? { ...row, status: "EXITED" as const, exitedAt, updatedAt: new Date().toISOString() }
+            ? { ...row, status: "EXITED" as const, exitedAt, requiresAttendance: sameDay ? false : row.requiresAttendance, updatedAt: new Date().toISOString() }
             : row,
         ),
         teams: next.teams.map((team) =>
           team.projectId === source.projectId && team.leader?.memberId === source.memberId ? { ...team, leader: null } : team,
         ),
       };
-    }
+    } else if (request.mode === "MOVE") sourceExitedAt = source.exitedAt;
   } else if (decision !== "reject") throw new ApiError(405, "调人申请不支持此操作。", {});
   const updated: DemoTransfer = {
     ...request,
     ...reviewed,
     createdMemberId,
+    sourceExitedAt,
     status: decision === "approve" ? "APPROVED" : "REJECTED",
   };
   return response(
@@ -585,7 +597,8 @@ const demoCompanyOverview = (
       name: project.name,
       projectId: project.id,
       status: project.status,
-      todos: { facePending: overview.todos.facePending, violationPending: overview.todos.violationPending },
+      // 和真实接口一样：暂停、完工的项目不欠底照。
+      todos: { facePending: owesPaperwork(project) ? overview.todos.facePending : 0, violationPending: overview.todos.violationPending },
     })),
     todos: {
       makeupOnlyYou: inbox("/makeups/pending?onlyMine=true").length,
@@ -1024,18 +1037,20 @@ const routeDemo = (
               const board = routeDemo(state, userId, `/safety-credit/projects/${project.id}`, { method: "GET" }).data as {
                 readonly workers?: readonly { readonly score: number }[];
               };
+              // 和真实接口一样：暂停、完工的项目不再算用工资料、底照的待办。
+              const owes = owesPaperwork(project);
               return {
                 appealPending: overview.todos.appealPending,
-                facePending: overview.todos.facePending,
+                facePending: owes ? overview.todos.facePending : 0,
                 lowCredit: (board.workers ?? []).filter((row) => row.score < 60).length,
                 name: project.name,
                 projectId: project.id,
-                registrationMissing: demoCompanyPeoplePage(state, scopeId, {
+                registrationMissing: owes ? demoCompanyPeoplePage(state, scopeId, {
                   page: "1", pageSize: "100", participantType: "WORKER", projectId: project.id, registrationStatus: "NOT_SUBMITTED", status: "ACTIVE",
-                }).total,
-                registrationPending: demoCompanyPeoplePage(state, scopeId, {
+                }).total : 0,
+                registrationPending: owes ? demoCompanyPeoplePage(state, scopeId, {
                   page: "1", pageSize: "100", participantType: "WORKER", projectId: project.id, registrationStatus: "PENDING", status: "ACTIVE",
-                }).total,
+                }).total : 0,
                 status: project.status,
                 violationPending: overview.todos.violationPending,
               };
@@ -1121,7 +1136,7 @@ const routeDemo = (
         );
       }
       if (resource === "transfer-requests")
-        return demoReviewTransfer(state, userId, scopeId, parts[4], parts[5], query.status, query.projectId);
+        return demoReviewTransfer(state, userId, scopeId, parts[4], parts[5], query.status, query.projectId, options.data);
       if (resource === "participants")
         return response(
           state,
@@ -1157,7 +1172,7 @@ const routeDemo = (
                 row.companyId === project.companyId &&
                 canManageDemoProject(state, userId, row.id),
             )
-            .map((row) => ({ id: row.id, name: row.name })),
+            .map((row) => ({ id: row.id, name: row.name, status: row.status })),
         );
       if (resource === "reused-participants") {
         const body = options.data as ReusePersonForm;
@@ -1282,6 +1297,7 @@ const routeDemo = (
           reviewedAt: null,
           reviewedByName: null,
           reviewReason: null,
+          sourceExitedAt: null,
           sourceMemberId: source.memberId,
           sourceProjectId: body.sourceProjectId,
           sourceProjectName: state.projects.find((row) => row.id === body.sourceProjectId)?.name ?? "",

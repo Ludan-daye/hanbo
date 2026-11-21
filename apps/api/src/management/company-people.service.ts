@@ -144,6 +144,8 @@ export class CompanyPeopleService {
           evaluationScore: member.evaluation?.score ?? null,
           exitedAt: member.exitedAt?.toISOString() ?? null,
           history: member.history.map((row) => ({
+            enteredAt: row.enteredAt.toISOString(),
+            exitedAt: row.exitedAt?.toISOString() ?? null,
             projectRoleLabel: row.projectRoleLabel ?? row.roleCode ?? "",
             recordedAt: row.recordedAt.toISOString(),
             status: row.status as MemberStatusValue,
@@ -202,6 +204,8 @@ export class CompanyPeopleService {
         evaluationScore: member.evaluation?.score ?? null,
         exitedAt: member.exitedAt?.toISOString() ?? null,
         history: member.history.map((row) => ({
+          enteredAt: row.enteredAt.toISOString(),
+          exitedAt: row.exitedAt?.toISOString() ?? null,
           projectRoleLabel: row.roleCode ?? row.projectRoleLabel ?? "",
           recordedAt: row.recordedAt.toISOString(),
           status: row.status as MemberStatusValue,

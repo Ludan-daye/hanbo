@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { transferModeText, transferPost, transferReviewReason, transferRoute, transferWho } from "../src/pages/transfer-approvals/transfer-view";
+import { transferModeText, transferPost, transferReviewReason, transferRoute, transferWho, typedReason } from "../src/pages/transfer-approvals/transfer-view";
 import { transferStatusLabel } from "../src/services/transfers";
 
 describe("transfer request text", () => {
@@ -30,12 +30,25 @@ describe("调走还是兼任", () => {
   });
   test("handled requests read in the past tense with one wording for rejected", () => {
     expect(
-      transferModeText({ mode: "MOVE", sourceProjectName: "城市更新", status: "APPROVED", enteredAt: "2026-11-24T16:00:00.000Z" }),
+      transferModeText({ mode: "MOVE", sourceProjectName: "城市更新", status: "APPROVED", sourceExitedAt: "2026-11-23T16:00:00.000Z" }),
     ).toBe("已调走，城市更新于 2026-11-24 办退场");
+    // Same-day move: the stored exit is the entry day, not a computed day before.
+    expect(
+      transferModeText({ mode: "MOVE", sourceProjectName: "项目丁", status: "APPROVED", sourceExitedAt: "2026-11-20T16:00:00.000Z" }),
+    ).toBe("已调走，项目丁于 2026-11-21 办退场");
+    expect(transferModeText({ mode: "MOVE", sourceProjectName: "城市更新", status: "APPROVED", sourceExitedAt: null })).toBe("已调走，城市更新办退场");
     expect(transferModeText({ mode: "CONCURRENT", sourceProjectName: "城市更新", status: "APPROVED" })).toBe("已兼任，城市更新的身份照旧");
     expect(transferModeText({ mode: "MOVE", sourceProjectName: "城市更新", status: "REJECTED" })).toBe("未同意，仍在城市更新（申请的是调走）");
     expect(transferReviewReason({ reviewReason: "人手不够", status: "REJECTED" })).toBe("未同意的理由：人手不够");
     expect(transferReviewReason({ reviewReason: "下周一到", status: "APPROVED" })).toBe("同意时的备注：下周一到");
     expect(transferReviewReason({ reviewReason: null, status: "APPROVED" })).toBeNull();
+  });
+});
+
+describe("不同意的理由", () => {
+  test("typed reason is trimmed and optional", () => {
+    expect(typedReason("  人手不够 ")).toBe("人手不够");
+    expect(typedReason("   ")).toBeNull();
+    expect(typedReason("")).toBeNull();
   });
 });

@@ -272,7 +272,12 @@ export type TeamForm = {
   readonly leader: TeamLeaderReference | null;
   readonly expectedUpdatedAt: string;
 };
-export type ReuseProject = { readonly id: string; readonly name: string };
+export type ReuseProject = {
+  readonly id: string;
+  readonly name: string;
+  /** 来源项目完工或暂停时，那里的人不算“在场”。 */
+  readonly status: ProjectStatus;
+};
 export type ReusePersonForm = {
   readonly additionalRoles?: readonly AdditionalMemberRole[];
   readonly sourceProjectId: string;
@@ -435,6 +440,9 @@ export type CompanyPersonMembership = {
   readonly evaluationScore: number | null;
   readonly exitedAt: string | null;
   readonly history: readonly {
+    /** 这一版记录里的进场、退场日期。 */
+    readonly enteredAt: string;
+    readonly exitedAt: string | null;
     readonly recordedAt: string;
     readonly status: MemberStatus;
     readonly teamName: string | null;

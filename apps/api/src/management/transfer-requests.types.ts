@@ -33,6 +33,11 @@ export type TransferRequestResponse = {
   readonly reviewedAt: string | null;
   readonly reviewedByName: string | null;
   readonly reviewReason: string | null;
+  /**
+   * Exit date stored on the source membership for an approved 调走 (the day before entry,
+   * or the source entry day when that would precede it); null otherwise.
+   */
+  readonly sourceExitedAt: string | null;
   readonly sourceProjectId: string;
   readonly sourceProjectName: string;
   readonly status: TransferStatusValue;

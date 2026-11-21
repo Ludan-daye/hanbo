@@ -72,6 +72,8 @@ export const demoCompanyPerson = (
         .filter((row) => row.person.memberId === person.memberId && row.person.projectId === person.projectId)
         .sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))
         .map((row) => ({
+          enteredAt: row.person.enteredAt,
+          exitedAt: row.person.exitedAt,
           projectRoleLabel: row.person.projectRoleLabel,
           recordedAt: row.recordedAt,
           status: row.person.status,

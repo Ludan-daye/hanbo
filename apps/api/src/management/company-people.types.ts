@@ -33,6 +33,9 @@ export type CompanyPersonResponse = {
     readonly evaluationScore: number | null;
     /** Entries, exits and team moves in this project, newest first. */
     readonly history: readonly {
+      /** The membership's entry and exit as they stood in this version. */
+      readonly enteredAt: string;
+      readonly exitedAt: string | null;
       readonly recordedAt: string;
       readonly status: MemberStatusValue;
       readonly teamName: string | null;

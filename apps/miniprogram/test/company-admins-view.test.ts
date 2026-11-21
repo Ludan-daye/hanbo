@@ -79,7 +79,9 @@ describe("company person texts", () => {
     expect(offboardSummary(person, "REVOKE_ADMIN").projects).toEqual(["滨江花园"]);
     expect(offboardSummary(person, "EXIT_ALL").projects).toEqual(["滨江花园", "城市更新"]);
     expect(offboardSummary(person, "EXIT_ALL").text).toContain("考勤、补卡记录都保留");
+    expect(offboardSummary(person, "EXIT_ALL").text).toContain("收回这 2 个项目的权限");
     const plain = { ...person, memberships: [person.memberships[1]!] };
+    expect(offboardSummary(plain, "EXIT_ALL").text).toContain("收回这个项目的权限");
     expect(hasManagementPosts(person)).toBe(true);
     expect(hasManagementPosts(plain)).toBe(false);
     expect(offboardSummary(plain, "REVOKE_ADMIN").text).toContain("不用收回");
@@ -91,15 +93,34 @@ describe("company person texts", () => {
     expect(offboardWords("REVOKE_ADMIN")).toEqual({ title: "收回管理职务", confirm: "确认收回", button: "收回管理职务" });
   });
 
-  test("only the newest history row is current; superseded roles read as ended periods", () => {
+  test("one line per role period; superseded roles read as ended periods", () => {
+    const entered = "2026-11-19T16:00:00.000Z"; // 2026-11-20 China time
     const lines = historyLines([
-      { projectRoleLabel: "WORKER", recordedAt: "2026-11-21T08:00:00.000Z", status: "EXITED", teamName: null },
-      { projectRoleLabel: "WORKER", recordedAt: "2026-11-21T07:00:00.000Z", status: "ACTIVE", teamName: null },
-      { projectRoleLabel: "PROJECT_ADMIN", recordedAt: "2026-11-20T02:00:00.000Z", status: "ACTIVE", teamName: null },
+      { enteredAt: entered, exitedAt: "2026-11-21T16:00:00.000Z", projectRoleLabel: "WORKER", recordedAt: "2026-11-23T08:00:00.000Z", status: "EXITED", teamName: null },
+      { enteredAt: entered, exitedAt: null, projectRoleLabel: "WORKER", recordedAt: "2026-11-21T07:00:00.000Z", status: "ACTIVE", teamName: null },
+      { enteredAt: entered, exitedAt: null, projectRoleLabel: "PROJECT_ADMIN", recordedAt: "2026-11-20T02:00:00.000Z", status: "ACTIVE", teamName: null },
     ]);
-    expect(lines[0]).toBe("2026-11-21 起 普通工人，已退场");
-    expect(lines[1]).toBe("2026-11-21 至 2026-11-21 普通工人");
-    expect(lines[2]).toBe("2026-11-20 至 2026-11-21 项目管理员");
+    expect(lines).toEqual([
+      "2026-11-21 至 2026-11-22 普通工人，已退场",
+      "2026-11-20 至 2026-11-21 项目管理员",
+    ]);
     expect(lines.slice(1).join("")).not.toContain("在场");
+  });
+
+  test("history dates come from the membership's entry and exit, not when rows were written", () => {
+    // Entered 11-15, exited 11-20; the history rows were only written on 11-21.
+    const lines = historyLines([
+      { enteredAt: "2026-11-14T16:00:00.000Z", exitedAt: "2026-11-19T16:00:00.000Z", projectRoleLabel: "WORKER", recordedAt: "2026-11-21T08:00:00.000Z", status: "EXITED", teamName: null },
+      { enteredAt: "2026-11-14T16:00:00.000Z", exitedAt: null, projectRoleLabel: "WORKER", recordedAt: "2026-11-21T07:00:00.000Z", status: "ACTIVE", teamName: null },
+    ]);
+    expect(lines).toEqual(["2026-11-15 至 2026-11-20 普通工人，已退场"]);
+    const active = historyLines([
+      { enteredAt: "2026-11-14T16:00:00.000Z", exitedAt: null, projectRoleLabel: "TEAM_LEADER", recordedAt: "2026-11-21T08:00:00.000Z", status: "ACTIVE", teamName: "钢筋一班" },
+      { enteredAt: "2026-11-14T16:00:00.000Z", exitedAt: null, projectRoleLabel: "WORKER", recordedAt: "2026-11-14T16:30:00.000Z", status: "ACTIVE", teamName: "钢筋一班" },
+    ]);
+    expect(active).toEqual([
+      "2026-11-21 起 班组长，钢筋一班，在场",
+      "2026-11-15 至 2026-11-21 普通工人，钢筋一班",
+    ]);
   });
 });

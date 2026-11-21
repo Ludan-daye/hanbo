@@ -67,17 +67,13 @@ const TRANSFER_MODES: ReadonlyArray<{ readonly value: TransferMode; readonly lab
 import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
 
+import { sourceStatus } from "./reuse-view";
+
 /**
  * 来源项目：自己也管的项目直接复用；本公司别的项目要向公司管理员申请（决定 6）。
  */
 type SourceProject = ReuseProject & { readonly request: boolean };
 
-const sourceStatus = (status: ManagedParticipant["status"]): string =>
-  status === "EXITED"
-    ? "原项目已退场"
-    : status === "SUSPENDED"
-      ? "原项目暂停"
-      : "原项目在场";
 
 export default function PersonReuse(): JSX.Element {
   useSessionGuard();
@@ -313,7 +309,7 @@ export default function PersonReuse(): JSX.Element {
             sub={joinText([
               selected.workType ?? "工种待补录",
               selected.phone,
-              sourceStatus(selected.status),
+              sourceStatus(selected.status, source?.status),
             ])}
           />
         </Sheet>
@@ -540,7 +536,7 @@ export default function PersonReuse(): JSX.Element {
                   avatar={personInitial(person.displayName)}
                   sub={joinText([
                     person.workType ?? "工种待补录",
-                    sourceStatus(person.status),
+                    sourceStatus(person.status, source?.status),
                   ])}
                   onClick={() => choose(person)}
                 >

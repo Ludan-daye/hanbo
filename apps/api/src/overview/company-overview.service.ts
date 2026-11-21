@@ -11,6 +11,17 @@ import { registrationState } from "../management/registration-state.js";
 /** 信用低于这个分数算“低信用”。 */
 const LOW_CREDIT = 60;
 
+/**
+ * Projects whose people still owe paperwork: 用工资料 and 底照 backlogs only count in
+ * ongoing (ACTIVE) or preparing projects. Nobody punches in a SUSPENDED or COMPLETED
+ * project, so its members' missing forms and pending photos are not the company's to-do.
+ */
+const OWES_PAPERWORK: readonly string[] = ["ACTIVE", "PREPARING"];
+const paperworkProjectIds = (
+  projects: readonly { readonly id: string; readonly status: string }[],
+): string[] =>
+  projects.filter((project) => OWES_PAPERWORK.includes(project.status)).map((project) => project.id);
+
 @Injectable()
 export class CompanyOverviewService {
   constructor(
@@ -41,7 +52,7 @@ export class CompanyOverviewService {
         where: { projectId: { in: projectIds }, appeals: { some: { status: "PENDING" } } },
         _count: { _all: true },
       }),
-      this.pendingFacesByProject(projectIds),
+      this.pendingFacesByProject(paperworkProjectIds(projects)),
       this.prisma.projectWorkerMember.findMany({
         where: { projectId: { in: projectIds }, status: "ACTIVE" },
         select: { projectId: true, workerId: true, worker: { select: { realNameStatus: true, registrationCompletedAt: true } } },
@@ -61,14 +72,18 @@ export class CompanyOverviewService {
         lowCredit: distinct(project.id, (row) => (credit.get(row.workerId)?.score ?? 100) < LOW_CREDIT),
         name: project.name,
         projectId: project.id,
-        registrationMissing: distinct(
-          project.id,
-          (row) => registrationState(row.worker.realNameStatus, row.worker.registrationCompletedAt) === "NOT_SUBMITTED",
-        ),
-        registrationPending: distinct(
-          project.id,
-          (row) => registrationState(row.worker.realNameStatus, row.worker.registrationCompletedAt) === "PENDING",
-        ),
+        registrationMissing: OWES_PAPERWORK.includes(project.status)
+          ? distinct(
+              project.id,
+              (row) => registrationState(row.worker.realNameStatus, row.worker.registrationCompletedAt) === "NOT_SUBMITTED",
+            )
+          : 0,
+        registrationPending: OWES_PAPERWORK.includes(project.status)
+          ? distinct(
+              project.id,
+              (row) => registrationState(row.worker.realNameStatus, row.worker.registrationCompletedAt) === "PENDING",
+            )
+          : 0,
         status: project.status as ProjectHealthResponse["projects"][number]["status"],
         violationPending: count(violations, project.id),
       })),
@@ -105,7 +120,7 @@ export class CompanyOverviewService {
           where: { projectId: { in: projectIds }, status: "PENDING" },
           _count: { _all: true },
         }),
-        this.pendingFacesByProject(projectIds),
+        this.pendingFacesByProject(paperworkProjectIds(projects)),
       ]);
     return {
       attendance: {

@@ -153,15 +153,15 @@ export default function CompanyPersonPage(): JSX.Element {
             {membership.exitedAt ? `，${formatChinaDate(membership.exitedAt)} 退场` : ""}
             {membership.evaluationScore === null ? "" : `，项目评分 ${membership.evaluationScore}`}
           </CardMeta>
-          {membership.history.length > 1 ? (
-            <View className="m-fade">
-              {historyLines(membership.history)
-                .slice(0, 5)
-                .map((line, index) => (
+          {/* 只有一段身份时和上面两行重复，不列。 */}
+          {((lines) =>
+            lines.length > 1 ? (
+              <View className="m-fade">
+                {lines.slice(0, 5).map((line, index) => (
                   <CardMeta key={`${membership.memberId}-${index}`}>{line}</CardMeta>
                 ))}
-            </View>
-          ) : null}
+              </View>
+            ) : null)(historyLines(membership.history))}
         </Card>
       ))}
       {own ? (

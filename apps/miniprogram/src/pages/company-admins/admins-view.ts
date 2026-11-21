@@ -87,7 +87,7 @@ export const offboardSummary = (
     projects,
     text:
       mode === "EXIT_ALL"
-        ? `在 ${projects.join("、")} 办退场，账号收回这些项目的权限。考勤、补卡记录都保留。`
+        ? `在 ${projects.join("、")} 办退场，账号收回${projects.length === 1 ? "这个项目" : `这 ${projects.length} 个项目`}的权限。考勤、补卡记录都保留。`
         : `收回 ${projects.join("、")} 的项目管理员、班组长职务和班组负责人，他仍以普通成员留在项目里。考勤、补卡记录都保留。`,
   };
 };
@@ -114,16 +114,58 @@ export const offboardWords = (
     ? { title: "所有项目都退场", confirm: "确认退场", button: "全部退场" }
     : { title: "收回管理职务", confirm: "确认收回", button: "收回管理职务" };
 
+type HistoryRow = CompanyPersonMembership["history"][number];
+
+const laterDay = (a: string, b: string): string => (a > b ? a : b);
+const earlierDay = (a: string, b: string): string => (a < b ? a : b);
+
 /**
- * 任职变化记录，新的在前。只有最新一条是现在的样子（写状态）；更早的都已被后来的变更取代，
- * 写成“某天 至 某天 身份”，不再写“在场”，免得看着像他现在还是项目管理员。
+ * 任职变化记录，新的在前，一个身份一段一行（同一身份只是改了退场、考勤等不另起一行）。
+ * 日期用任职本身的进场、退场日：最早一段从进场日起，后面换身份的从记下变更那天起（不早于进场日），
+ * 退场的一段止于退场日。只有最新一段写现状（在场／暂停／已退场）；更早的都已被后来的变更取代，
+ * 写成“某天 至 某天 身份”，不写“在场”，免得看着像他现在还是项目管理员。
+ * 记录最多带 20 条，再早的变更看不到时最早一段的起点按进场日算。
  */
 export const historyLines = (
   history: CompanyPersonMembership["history"],
-): readonly string[] =>
-  history.map((row, index) => {
-    const role = `${displayProjectRole(row.projectRoleLabel)}${row.teamName ? `，${row.teamName}` : ""}`;
-    const from = formatChinaDate(row.recordedAt);
-    if (index === 0) return `${from} 起 ${role}，${membershipStatus(row).text}`;
-    return `${from} 至 ${formatChinaDate(history[index - 1]!.recordedAt)} ${role}${row.status === "SUSPENDED" ? "，暂停" : ""}`;
+): readonly string[] => {
+  const periods: HistoryRow[][] = [];
+  for (const row of [...history].reverse()) {
+    const current = periods[periods.length - 1];
+    const last = current?.[current.length - 1];
+    const sameRole =
+      last !== undefined &&
+      last.projectRoleLabel === row.projectRoleLabel &&
+      last.teamName === row.teamName &&
+      // 退场后又进场是新的一段。
+      !(last.status === "EXITED" && row.status !== "EXITED");
+    if (current !== undefined && sameRole) current.push(row);
+    else periods.push([row]);
+  }
+  const starts: string[] = [];
+  periods.forEach((period, index) => {
+    const first = period[0]!;
+    const entered = formatChinaDate(first.enteredAt);
+    let start = index === 0 ? entered : laterDay(formatChinaDate(first.recordedAt), entered);
+    if (index > 0) start = laterDay(start, starts[index - 1]!);
+    const end = period[period.length - 1]!;
+    if (end.status === "EXITED" && end.exitedAt !== null)
+      start = earlierDay(start, formatChinaDate(end.exitedAt));
+    starts.push(start);
   });
+  return periods
+    .map((period, index) => {
+      const end = period[period.length - 1]!;
+      const role = `${displayProjectRole(end.projectRoleLabel)}${end.teamName ? `，${end.teamName}` : ""}`;
+      const start = starts[index]!;
+      const exited = end.status === "EXITED";
+      const exitDay = exited ? formatChinaDate(end.exitedAt ?? end.recordedAt) : null;
+      if (index === periods.length - 1)
+        return exitDay === null
+          ? `${start} 起 ${role}，${membershipStatus(end).text}`
+          : `${start} 至 ${exitDay} ${role}，已退场`;
+      const until = exitDay ?? starts[index + 1]!;
+      return `${start} 至 ${until} ${role}${end.status === "SUSPENDED" ? "，暂停" : ""}`;
+    })
+    .reverse();
+};

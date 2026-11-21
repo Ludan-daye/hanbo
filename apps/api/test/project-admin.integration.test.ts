@@ -687,8 +687,11 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       const base = `/management/projects/${projectId}`;
       const sources = (
         await http().get(`${base}/transfer-sources`).auth(auth("admin"), { type: "bearer" }).expect(200)
-      ).body as { id: string }[];
+      ).body as { id: string; status: string }[];
       expect(sources.map((row) => row.id)).toEqual([otherProjectId]);
+      // The source's project status lets the picker say 原项目已完工 instead of 在场.
+      const otherStatus = (await database.project.findUniqueOrThrow({ where: { id: otherProjectId } })).status;
+      expect(sources[0]!.status).toBe(otherStatus);
       const candidates = (
         await http()
           .get(`${base}/transfer-candidates?sourceProjectId=${otherProjectId}&page=1&pageSize=20&search=`)
@@ -783,6 +786,10 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
           .expect(201)
       ).body;
       expect(rejected).toMatchObject({ status: "REJECTED", reviewReason: "那边还要用" });
+      const rejectAudit = await database.auditLog.findFirstOrThrow({
+        where: { action: "PERSONNEL_TRANSFER_REJECTED", entityId: second.id },
+      });
+      expect(rejectAudit.metadata).toMatchObject({ reviewReason: "那边还要用" });
       expect(await database.projectWorkerMember.count({ where: { projectId, workerId: worker.id } })).toBe(0);
       const actions = (
         await database.auditLog.findMany({ where: { entityType: "personnel_transfer_request" } })
