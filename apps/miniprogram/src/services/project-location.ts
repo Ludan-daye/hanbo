@@ -71,6 +71,33 @@ export const locationFromMapSelection = (
   return location;
 };
 
+/** 考勤半径可选范围和常用值（米）。 */
+export const RADIUS_MIN_M = 50;
+export const RADIUS_MAX_M = 3000;
+export const RADIUS_PRESETS_M = [100, 200, 300, 500, 800, 1000] as const;
+
+/** 把输入的半径换成整数米并检查范围；不合法时抛出可直接给用户看的错误。 */
+export const parseRadiusInput = (input: string): number => {
+  const text = input.trim();
+  if (!/^\d+$/.test(text)) throw new RangeError("半径请填整数米数。");
+  const radiusM = Number(text);
+  if (radiusM < RADIUS_MIN_M || radiusM > RADIUS_MAX_M) {
+    throw new RangeError(
+      `半径请填 ${RADIUS_MIN_M} 到 ${RADIUS_MAX_M} 米之间。`,
+    );
+  }
+  return radiusM;
+};
+
+export const locationWithRadius = (
+  location: ProjectLocation,
+  radiusM: number,
+): ProjectLocation => {
+  const next = { ...location, geofenceRadiusM: radiusM };
+  validateProjectLocation(next);
+  return next;
+};
+
 /** Round outward so the selected edge remains within the stored circle. */
 export const locationFromMapBoundary = (
   location: ProjectLocation,
@@ -86,8 +113,12 @@ export const locationFromMapBoundary = (
       accuracyM: null,
     },
   );
-  if (distanceM < 1)
-    throw new RangeError("边界与中心太近，请在地图上选择更远的边界位置。");
+  if (distanceM < RADIUS_MIN_M)
+    throw new RangeError(
+      `边界离中心太近，半径至少 ${RADIUS_MIN_M} 米，请点远一些。`,
+    );
+  if (distanceM > RADIUS_MAX_M)
+    throw new RangeError(`边界离中心太远，半径最多 ${RADIUS_MAX_M} 米。`);
   return { ...location, geofenceRadiusM: Math.ceil(distanceM) };
 };
 

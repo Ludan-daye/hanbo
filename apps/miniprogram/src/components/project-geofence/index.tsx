@@ -1,4 +1,4 @@
-import { Map, Text, View } from "@tarojs/components";
+import { Input, Map, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useMemo, useState } from "react";
 
@@ -7,10 +7,15 @@ import { errorMessage, isUserCancel } from "../../services/error-messages";
 import {
   locationFromMapBoundary,
   locationFromMapSelection,
+  locationWithRadius,
+  parseRadiusInput,
   projectMapBounds,
+  RADIUS_MAX_M,
+  RADIUS_MIN_M,
+  RADIUS_PRESETS_M,
   type ProjectLocation,
 } from "../../services/project-location";
-import { Button, Notice, Photo } from "../ui/index";
+import { Button, Chips, Notice, Photo } from "../ui/index";
 
 import "./index.scss";
 
@@ -34,6 +39,7 @@ export const ProjectGeofence = ({
 }): JSX.Element => {
   const [selecting, setSelecting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [custom, setCustom] = useState<string>("");
   const bounds = useMemo(
     () => (value === null ? [] : projectMapBounds(value)),
     [value?.centerLatitude, value?.centerLongitude, value?.geofenceRadiusM],
@@ -74,6 +80,24 @@ export const ProjectGeofence = ({
     }
   };
 
+  const setRadius = (radiusM: number): void => {
+    if (value === null || disabled) return;
+    setError(null);
+    try {
+      onChange(locationWithRadius(value, radiusM));
+    } catch (cause: unknown) {
+      setError(locationError(cause));
+    }
+  };
+  const applyCustom = (): void => {
+    try {
+      setRadius(parseRadiusInput(custom));
+      setCustom("");
+    } catch (cause: unknown) {
+      setError(errorMessage(cause, "半径没改成，请重新填写。"));
+    }
+  };
+
   const caption =
     value === null ? null : (
       <View className="project-geofence__caption">
@@ -81,6 +105,39 @@ export const ProjectGeofence = ({
           半径 <Text className="num">{value.geofenceRadiusM}</Text> 米
         </View>
         <View className="project-geofence__address">{value.address}</View>
+      </View>
+    );
+  const radiusPicker =
+    value === null || disabled ? null : (
+      <View className="project-geofence__radius-picker">
+        <View className="project-geofence__label">考勤半径</View>
+        <Chips
+          options={RADIUS_PRESETS_M.map((radiusM) => ({
+            value: String(radiusM),
+            label: `${radiusM} 米`,
+          }))}
+          selected={[String(value.geofenceRadiusM)]}
+          onToggle={(radiusM) => setRadius(Number(radiusM))}
+        />
+        <View className="project-geofence__custom">
+          <Input
+            className="project-geofence__custom-input"
+            type="number"
+            value={custom}
+            maxlength={4}
+            placeholder={`其他半径，${RADIUS_MIN_M}–${RADIUS_MAX_M} 米`}
+            placeholderClass="project-geofence__placeholder"
+            onInput={(event) => setCustom(event.detail.value)}
+            onConfirm={applyCustom}
+          />
+          <Button
+            variant="outline"
+            disabled={custom.trim().length === 0}
+            onClick={applyCustom}
+          >
+            用这个半径
+          </Button>
+        </View>
       </View>
     );
 
@@ -129,8 +186,9 @@ export const ProjectGeofence = ({
                 }
               />
               {caption}
+              {radiusPicker}
               <Notice>
-                橙色圆圈里可以打卡。点地图上的一处，范围的边就定到那里。
+                橙色圆圈里可以打卡。选一个半径，或者点地图上的一处，范围的边就定到那里。
               </Notice>
             </>
           )}
@@ -154,6 +212,7 @@ export const ProjectGeofence = ({
         <>
           <Notice>地图选址只能在微信小程序里用。</Notice>
           {caption}
+          {radiusPicker}
         </>
       )}
       {error !== null ? <Notice tone="error">{error}</Notice> : null}

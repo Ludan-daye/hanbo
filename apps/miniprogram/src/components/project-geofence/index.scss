@@ -20,3 +20,31 @@
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+.project-geofence__radius-picker {
+  margin: 28rpx 0 8rpx;
+}
+.project-geofence__label {
+  margin: 0 12rpx 16rpx;
+  font-size: 30rpx;
+  color: var(--muted);
+}
+.project-geofence__custom {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+.project-geofence__custom-input {
+  flex: 1;
+  min-width: 0;
+  height: 88rpx;
+  padding: 0 24rpx;
+  font-size: 32rpx;
+  background: var(--sheet);
+  border: 2rpx solid var(--line);
+  border-radius: var(--r-btn);
+  box-sizing: border-box;
+}
+.project-geofence__placeholder {
+  color: var(--ph);
+}

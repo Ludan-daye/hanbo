@@ -54,7 +54,7 @@ const projectWriteFieldsSchema = z.object({
   address: nonEmptyStringSchema,
   centerLatitude: z.string().refine((value: string): boolean => isCoordinate(value, -90, 90)),
   centerLongitude: z.string().refine((value: string): boolean => isCoordinate(value, -180, 180)),
-  geofenceRadiusM: z.number().int().positive(),
+  geofenceRadiusM: z.number().int().min(50).max(3000),
   name: nonEmptyStringSchema,
   plannedEndDate: z.union([dateOnlySchema, z.null()]),
   plannedStartDate: dateOnlySchema,
