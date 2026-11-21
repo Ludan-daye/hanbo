@@ -284,6 +284,7 @@ model BindingInvitation {
 }
 
 model Company {
+  attendanceDefaults CompanyAttendanceDefault[]
   transferRequests PersonnelTransferRequest[]
   id            String         @id @default(uuid())
   name          String
@@ -1060,6 +1061,27 @@ model ProjectWorktimeRule {
   @@unique([projectId, version])
   @@index([projectId, startsOn, version])
   @@map("project_worktime_rules")
+}
+
+/// The company's default attendance plan and worktime rule (2026-11-21 Q6): applied once
+/// when a project is created, never written back. Append-only versions.
+model CompanyAttendanceDefault {
+  id              String   @id @default(uuid())
+  companyId       String
+  version         Int
+  name            String
+  points          Json
+  workdays        Int[]
+  projectKind     String
+  lunchStart      String?
+  lunchEnd        String?
+  overtimeStart   String?
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, version])
+  @@map("company_attendance_defaults")
 }
 
 /// A project admin asks for a person from another project of the same company;

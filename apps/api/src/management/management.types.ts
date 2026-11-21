@@ -36,6 +36,8 @@ export type ProjectWriteFields = {
 };
 
 export type CreateProjectRequest = ProjectWriteFields & {
+  /** Defaults to true when omitted. */
+  readonly applyCompanyDefaults?: boolean | undefined;
   readonly managerProfileIds: readonly string[];
   /** New manager profiles created with the project; they get access once they bind by invitation. */
   readonly newManagers?: readonly { readonly name: string; readonly phone: string }[] | undefined;
@@ -62,6 +64,8 @@ export type ProjectResponse = {
   /** Company project list only: active members, and the names of the active project admins. */
   readonly activeMembers?: number;
   readonly adminNames?: readonly string[];
+  /** Create only: the company defaults version copied into the project, or null. */
+  readonly appliedDefaultsVersion?: number | null;
 };
 
 export type ManagedProjectResponse = ProjectResponse & {

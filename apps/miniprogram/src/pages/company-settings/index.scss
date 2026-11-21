@@ -1,0 +1,20 @@
+// 公司设置。公共样式在 components/ui/kit.scss，这里只放公共组件里没有的（和打卡安排页同样的两条）。
+
+// 包着选择器的表单行：分隔线画在外面这一层上。
+.company-settings__pick {
+  border-bottom: 2rpx solid var(--hair);
+}
+.company-settings__pick:last-child {
+  border-bottom: 0;
+}
+
+// 工作日：名称在上，七个格子在下，独占一行
+.company-settings__days {
+  padding: 32rpx 40rpx;
+  border-bottom: 2rpx solid var(--hair);
+}
+.company-settings__days-label {
+  margin-bottom: 20rpx;
+  font-size: 36rpx;
+  font-weight: 600;
+}

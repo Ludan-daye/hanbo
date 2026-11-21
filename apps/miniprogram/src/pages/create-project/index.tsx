@@ -1,6 +1,6 @@
 import { Picker, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 
 import {
@@ -9,6 +9,7 @@ import {
   Chips,
   FormInput,
   FormRow,
+  FormSwitch,
   Notice,
   PageHeader,
   Row,
@@ -28,8 +29,12 @@ import {
   type ProjectLocation,
 } from "../../services/project-location";
 import { useManagedCompanyId } from "../../hooks/use-management-scope";
-import { createCompanyProject } from "../../services/management";
+import {
+  createCompanyProject,
+  fetchCompanyDefaults,
+} from "../../services/management";
 import type {
+  CompanyAttendanceDefaults,
   ProjectManagerCandidate,
   ProjectStatus,
 } from "../../services/management.types";
@@ -37,6 +42,7 @@ import { chinaToday } from "../../services/time";
 import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
 
+import { createProjectDefaultsText } from "../company-settings/settings-view";
 import "./index.scss";
 
 const STATUS_OPTIONS: ReadonlyArray<{ label: string; value: ProjectStatus }> = [
@@ -84,6 +90,25 @@ export default function CreateProject(): JSX.Element {
     setDraftPhone("");
     setDraftError(null);
   };
+  // 套用公司默认的打卡安排和工时规则（Q6），默认打开；读不到公司默认也能建，只是不写摘要。
+  const [applyDefaults, setApplyDefaults] = useState<boolean>(true);
+  const [defaults, setDefaults] = useState<CompanyAttendanceDefaults | null>(null);
+  const [defaultsError, setDefaultsError] = useState<string | null>(null);
+  useEffect(() => {
+    if (companyId === null) return;
+    let cancelled = false;
+    void fetchCompanyDefaults(companyId).then(
+      (value) => {
+        if (!cancelled) setDefaults(value);
+      },
+      (cause: unknown) => {
+        if (!cancelled) setDefaultsError(errorMessage(cause, "公司默认没读到"));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
   // 同一个页面里的两屏：表单，和选项目管理员。
   const [view, setView] = useState<"form" | "managers">("form");
 
@@ -126,6 +151,7 @@ export default function CreateProject(): JSX.Element {
       const created = await createCompanyProject(companyId, {
         managerProfileIds: managers.map((person) => person.profileId),
         ...(newManagers.length > 0 ? { newManagers } : {}),
+        applyCompanyDefaults: applyDefaults,
         name: trimmedName,
         ...location,
         address: location.address.trim(),
@@ -262,6 +288,20 @@ export default function CreateProject(): JSX.Element {
               选的人里有还没绑定微信的，建好项目后用邀请码让他绑定。
             </Notice>
           ) : null}
+          <Sheet gap>
+            <FormSwitch
+              label="套用公司默认"
+              sub="打卡安排和工时规则"
+              checked={applyDefaults}
+              disabled={busy}
+              onChange={setApplyDefaults}
+            />
+          </Sheet>
+          <Notice>
+            {applyDefaults
+              ? defaultsError ?? createProjectDefaultsText(defaults)
+              : "不套用：项目先用平台默认（每日两次），项目管理员再去“打卡安排”“工时规则”里改。"}
+          </Notice>
           <SectionTitle>工地位置和考勤范围</SectionTitle>
           <ProjectGeofence
             value={location}

@@ -38,7 +38,7 @@ export class WorktimeService {
 
   async get(projectId: string): Promise<WorktimeConfiguration> {
     const project = await this.db.project.findUnique({ where: { id: projectId }, select: { id: true } });
-    if (project === null) throw new NotFoundException({ message: "项目不存在。" });
+    if (project === null) throw new NotFoundException({ message: "PROJECT_NOT_FOUND" });
     const rules = await this.rulesForProjects([projectId]);
     return configuration(rules.get(projectId) ?? []);
   }
@@ -47,10 +47,10 @@ export class WorktimeService {
     return this.db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`project-worktime:${projectId}`}, 0))`;
       const project = await tx.project.findUnique({ where: { id: projectId } });
-      if (project === null || project.status !== "ACTIVE") throw new NotFoundException({ message: "项目不存在或已停用。" });
+      if (project === null || project.status !== "ACTIVE") throw new NotFoundException({ message: "PROJECT_NOT_ACTIVE" });
       const rows = await tx.projectWorktimeRule.findMany({ where: { projectId }, orderBy: { version: "asc" } });
       const latest = rows.at(-1)?.version ?? 0;
-      if (latest !== input.expectedVersion) throw new ConflictException({ message: "工时规则已更新，请刷新后保存。" });
+      if (latest !== input.expectedVersion) throw new ConflictException({ message: "WORKTIME_RULE_VERSION_CONFLICT" });
       const created = await tx.projectWorktimeRule.create({ data: {
         projectId, version: latest + 1, startsOn: new Date(input.startsOn), createdByUserId: actorId, ...input.config,
       } });

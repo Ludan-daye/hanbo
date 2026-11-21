@@ -54,6 +54,9 @@ export type DemoLeaderChange = {
   readonly changedByName: string | null;
 };
 export type DemoState = {
+  /** 公司默认打卡和工时（按版本追加），公司资料里可改的几项。 */
+  readonly companyDefaults?: readonly import("./company-settings").DemoCompanyDefault[];
+  readonly companyProfiles?: Readonly<Record<string, import("./company-settings").DemoCompanyProfile>>;
   readonly teamLeaderChanges?: readonly DemoLeaderChange[];
   readonly safetyCredit?: DemoSafetyCredit;
   readonly worktimeRules?: readonly (WorktimeRuleVersion & { readonly projectId: string })[];

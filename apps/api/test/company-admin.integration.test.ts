@@ -458,5 +458,71 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
         expect(managers.items.every((row) => row.participantType === "MANAGER")).toBe(true);
       });
     });
+
+    describe("company defaults and profile", (): void => {
+      const defaults = {
+        name: "一天三次",
+        points: [
+          { code: "AM_START", graceMins: 5, kind: "START", label: "上午上班", time: "07:30" },
+          { code: "AM_END", graceMins: 0, kind: "END", label: "上午下班", time: "11:30" },
+          { code: "PM_START", graceMins: 5, kind: "START", label: "下午上班", time: "13:00" },
+          { code: "PM_END", graceMins: 0, kind: "END", label: "下午下班", time: "17:30" },
+        ],
+        workdays: [1, 2, 3, 4, 5, 6],
+        worktime: { lunchEnd: "13:00", lunchStart: "11:30", overtimeStart: "18:30", projectKind: "REGULAR" },
+      };
+      const path = `/management/companies/${companyId}/attendance-defaults`;
+      const put = (user: UserKey, body: object, status: number) =>
+        http().put(path).auth(auth(user), { type: "bearer" }).send(body).expect(status);
+
+      test("only company admins save, versions guard concurrent edits, bad rules are refused", async (): Promise<void> => {
+        const empty = await get("company", path);
+        expect(empty).toMatchObject({ current: null, latestVersion: 0, fallback: { name: "每日两次" } });
+        await put("pa1", { ...defaults, expectedVersion: 0 }, 403);
+        const broken = await put("company", { ...defaults, expectedVersion: 0, workdays: [1, 1] }, 400);
+        expect(broken.body).toMatchObject({ message: "INVALID_COMPANY_DEFAULTS", reason: "工作日不能重复。" });
+        await put("company", { ...defaults, expectedVersion: 0, worktime: { ...defaults.worktime, lunchEnd: null } }, 400);
+        const saved = (await put("company", { ...defaults, expectedVersion: 0 }, 200)).body;
+        expect(saved.current).toMatchObject({ name: "一天三次", version: 1, workdays: [1, 2, 3, 4, 5, 6] });
+        expect((await put("company", { ...defaults, expectedVersion: 0 }, 409)).body.message).toBe("COMPANY_DEFAULTS_VERSION_CONFLICT");
+        expect(await database.auditLog.count({ where: { action: "COMPANY_DEFAULTS_SAVED" } })).toBe(1);
+      });
+
+      test("a new project starts with the company defaults unless told not to", async (): Promise<void> => {
+        const fields = {
+          address: "测试工地", centerLatitude: "31.2304000", centerLongitude: "121.4737000", geofenceRadiusM: 300,
+          plannedEndDate: null, plannedStartDate: "2026-01-01", status: "ACTIVE", managerProfileIds: [],
+        };
+        const create = async (name: string, phone: string, extra: object) =>
+          (await http().post(`/management/companies/${companyId}/projects`).auth(auth("company"), { type: "bearer" })
+            .send({ ...fields, ...extra, name, newManagers: [{ name: `经理${phone.slice(-2)}`, phone }] }).expect(201)).body as { id: string; appliedDefaultsVersion: number | null };
+        const applied = await create("套用默认的工地", "13910000881", {});
+        expect(applied.appliedDefaultsVersion).toBe(1);
+        const plan = await get("company", `/attendance/planning/${applied.id}/PROJECT/${applied.id}`);
+        expect(plan).toMatchObject({ name: "一天三次", workdays: [1, 2, 3, 4, 5, 6] });
+        expect(plan.points.map((point: { code: string }) => point.code)).toEqual(["AM_START", "AM_END", "PM_START", "PM_END"]);
+        // Effective from today: the planned start is in the past.
+        expect(plan.startsOn <= new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)).toBe(true);
+        const worktime = await get("company", `/worktime/projects/${applied.id}`);
+        expect(worktime.current.config).toEqual(defaults.worktime);
+        const plain = await create("不套用的工地", "13910000882", { applyCompanyDefaults: false });
+        expect(plain.appliedDefaultsVersion).toBeNull();
+        expect(await database.attendancePlan.count({ where: { projectId: plain.id } })).toBe(0);
+        expect(await database.projectWorktimeRule.count({ where: { projectId: plain.id } })).toBe(0);
+      });
+
+      test("company admins change contacts and address, never the name", async (): Promise<void> => {
+        const profilePath = `/management/companies/${companyId}/profile`;
+        const before = await get("company", profilePath);
+        await get("pa1", profilePath, 403);
+        const send = (body: object, status: number) =>
+          http().put(profilePath).auth(auth("company"), { type: "bearer" }).send(body).expect(status);
+        expect((await send({ name: "改名", address: null, contactName: null, contactPhone: null, expectedUpdatedAt: before.updatedAt }, 400)).body.message).toBe("INVALID_COMPANY_PROFILE");
+        const saved = (await send({ address: "上海市浦东新区", contactName: "王经理", contactPhone: "13910000999", expectedUpdatedAt: before.updatedAt }, 200)).body;
+        expect(saved).toMatchObject({ address: "上海市浦东新区", contactName: "王经理", contactPhone: "13910000999", name: before.name });
+        expect((await send({ address: null, contactName: null, contactPhone: null, expectedUpdatedAt: before.updatedAt }, 409)).body.message).toBe("COMPANY_CHANGED_RELOAD_BEFORE_SAVING");
+        expect(await database.auditLog.count({ where: { action: "COMPANY_PROFILE_UPDATED", entityId: companyId } })).toBe(1);
+      });
+    });
   },
 );

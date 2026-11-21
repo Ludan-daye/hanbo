@@ -36,6 +36,16 @@ export type ClassifiedWorktime = WorktimeTotals & {
 export const defaultWorktimeRule: WorktimeRule = {
   projectKind: "REGULAR", lunchStart: null, lunchEnd: null, overtimeStart: "18:00",
 };
+/** 工时规则的校验（公司默认和项目规则同一套）：午休两端同时有或同时没有，结束晚于开始。没问题返回 null。 */
+export const worktimeRuleError = (rule: WorktimeRule): string | null => {
+  const clock = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+  if (rule.projectKind !== "REGULAR" && rule.projectKind !== "REPAIR") return "请选择项目类型。";
+  for (const value of [rule.lunchStart, rule.lunchEnd, rule.overtimeStart])
+    if (value !== null && !clock.test(value)) return "时间要写成 08:00 这样。";
+  if ((rule.lunchStart === null) !== (rule.lunchEnd === null)) return "午休开始、结束时间须同时设置。";
+  if (rule.lunchStart !== null && rule.lunchEnd !== null && rule.lunchStart >= rule.lunchEnd) return "午休结束要晚于开始。";
+  return null;
+};
 export const legacyWorktimeRule: WorktimeRuleVersion = {
   config: { ...defaultWorktimeRule, overtimeStart: null }, startsOn: "0001-01-01", version: 0,
 };

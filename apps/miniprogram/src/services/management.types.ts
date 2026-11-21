@@ -216,6 +216,8 @@ export type CompanyProject = {
   /** 只有公司项目列表带：在场人数和现在的项目管理员。 */
   readonly activeMembers?: number;
   readonly adminNames?: readonly string[];
+  /** 只有新建项目的回应带：套用的公司默认版本，没套用是 null。 */
+  readonly appliedDefaultsVersion?: number | null;
 };
 
 export type ManagedProject = CompanyProject & {
@@ -323,6 +325,8 @@ export type DefaultAttendanceConfiguration = {
 
 export type CreateProjectBody = {
   readonly managerProfileIds: readonly string[];
+  /** 套用公司默认的打卡安排和工时规则；不传就是套用。 */
+  readonly applyCompanyDefaults?: boolean;
   /** 还不在本公司任何项目里的新管理员（姓名＋手机号），建好后用邀请码绑定。 */
   readonly newManagers?: readonly { readonly name: string; readonly phone: string }[];
   readonly name: string;
@@ -487,4 +491,36 @@ export type CompanyPeopleQuery = {
   readonly status?: MemberStatus | null;
   readonly registrationStatus?: "NEEDS_UPDATE" | "PENDING" | "VERIFIED" | null;
   readonly faceStatus?: "APPROVED" | "NONE" | "PENDING" | "REJECTED" | null;
+};
+
+/** 公司默认的打卡安排和工时规则（2026-11-21 Q6）：只在新建项目时套用一次。 */
+export type CompanyAttendanceDefaultValues = {
+  readonly name: string;
+  readonly points: readonly import("@construction/domain").ScheduledAttendancePoint[];
+  readonly workdays: readonly number[];
+  readonly worktime: import("@construction/domain").WorktimeRule;
+};
+export type CompanyAttendanceDefaults = {
+  readonly companyId: string;
+  readonly current:
+    | (CompanyAttendanceDefaultValues & {
+        readonly createdAt: string;
+        readonly createdByName: string | null;
+        readonly version: number;
+      })
+    | null;
+  readonly fallback: CompanyAttendanceDefaultValues;
+  readonly latestVersion: number;
+};
+/** 公司资料：公司管理员只能改联系人、电话、地址（Q12）。 */
+export type CompanyProfile = {
+  readonly address: string | null;
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+  readonly creditCode: string | null;
+  readonly id: string;
+  readonly name: string;
+  readonly shortName: string | null;
+  readonly status: string;
+  readonly updatedAt: string;
 };

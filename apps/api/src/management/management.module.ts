@@ -6,6 +6,8 @@ import { PrismaModule } from "../infrastructure/database/prisma.module.js";
 
 import { CompanyPeopleController } from "./company-people.controller.js";
 import { CompanyPeopleService } from "./company-people.service.js";
+import { CompanySettingsController } from "./company-settings.controller.js";
+import { CompanySettingsService } from "./company-settings.service.js";
 import { ManagementController } from "./management.controller.js";
 import { ManagementService } from "./management.service.js";
 import { ParticipantsService } from "./participants.service.js";
@@ -15,8 +17,8 @@ import { TeamsService } from "./teams.service.js";
 
 @Module({
   imports: [AuthModule, AuthorizationModule, PrismaModule],
-  controllers: [CompanyPeopleController, ManagementController],
-  providers: [CompanyPeopleService, ManagementService, ParticipantsService, RegistrationReviewService, TeamsService, TransferRequestsService],
+  controllers: [CompanyPeopleController, CompanySettingsController, ManagementController],
+  providers: [CompanyPeopleService, CompanySettingsService, ManagementService, ParticipantsService, RegistrationReviewService, TeamsService, TransferRequestsService],
   exports: [ManagementService]
 })
 export class ManagementModule {}

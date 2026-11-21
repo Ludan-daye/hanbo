@@ -58,7 +58,7 @@ const parse = <T>(schema: z.ZodType<T>, body: unknown): T => {
   const result = schema.safeParse(body);
   if (!result.success)
     throw new BadRequestException({
-      message: "安全信用填写内容有误",
+      message: "INVALID_SAFETY_CREDIT_REQUEST",
       fields: result.error.issues.map((row) => ({
         path: row.path,
         message: row.message,

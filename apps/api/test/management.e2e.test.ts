@@ -391,7 +391,12 @@ class ManagementPrismaTestDouble {
     findUnique: async (args: RoleFindUniqueArgs): Promise<RoleRecord | null> => this.roles.get(args.where.code) ?? null
   };
 
+  // Company defaults: none saved in these tests, so new projects keep the platform fallback.
+  readonly companyAttendanceDefault = { findFirst: async (): Promise<null> => null };
+
   readonly userRole = {
+    count: async (args: { readonly where: { readonly userId: string; readonly scopeType?: string } }): Promise<number> =>
+      this.userRoles.filter((row) => row.userId === args.where.userId && (args.where.scopeType === undefined || row.scopeType === args.where.scopeType) && row.role.code === "SYSTEM_ADMIN").length,
     create: async (args: UserRoleCreateArgs): Promise<UserRoleRecord> => {
       const role = Array.from(this.roles.values()).find((roleRecord: RoleRecord): boolean => roleRecord.id === args.data.roleId);
 

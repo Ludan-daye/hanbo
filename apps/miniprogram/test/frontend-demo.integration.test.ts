@@ -1119,6 +1119,30 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     await expect(client.request("/management/companies/demo-company/people-page?page=1&pageSize=101", { method: "GET" })).rejects.toThrow();
   });
 
+  test("company defaults are copied into a new project once, and the company profile keeps its name", async () => {
+    await login("dev-company");
+    const empty = await client.request<{ latestVersion: number; fallback: { points: unknown[] } }>("/management/companies/demo-company/attendance-defaults", { method: "GET" });
+    const body = {
+      expectedVersion: empty.latestVersion, name: "早七晚五", workdays: [1, 2, 3, 4, 5, 6],
+      points: [
+        { code: "START", label: "上班", kind: "START", time: "07:00", graceMins: 0 },
+        { code: "END", label: "下班", kind: "END", time: "17:00", graceMins: 0 },
+      ],
+      worktime: { projectKind: "REGULAR", lunchStart: null, lunchEnd: null, overtimeStart: "18:00" },
+    };
+    await client.request("/management/companies/demo-company/attendance-defaults", { method: "PUT", data: body });
+    await expect(client.request("/management/companies/demo-company/attendance-defaults", { method: "PUT", data: body })).rejects.toThrow("别人刚改过");
+    const project = await client.request<CompanyProject & { appliedDefaultsVersion: number | null }>("/management/companies/demo-company/projects", {
+      method: "POST", data: { name: "套默认工地", address: "测试地址", centerLatitude: "31", centerLongitude: "121", geofenceRadiusM: 300,
+        status: "ACTIVE", plannedStartDate: chinaToday(), plannedEndDate: null, managerProfileIds: ["profile-project"] } });
+    expect(project.appliedDefaultsVersion).toBe(empty.latestVersion + 1);
+    expect(readDemoState().plans?.some((plan) => plan.projectId === project.id && plan.name === "早七晚五")).toBe(true);
+    const profile = await client.request<{ name: string; updatedAt: string }>("/management/companies/demo-company/profile", { method: "GET" });
+    const saved = await client.request<{ name: string; contactName: string }>("/management/companies/demo-company/profile", {
+      method: "PUT", data: { address: "测试路 1 号", contactName: "王经理", contactPhone: "13800000000", expectedUpdatedAt: profile.updatedAt } });
+    expect(saved).toMatchObject({ name: profile.name, contactName: "王经理" });
+  });
+
   test("selected project managers receive access without losing their original project", async () => {
     await login("dev-company");
     const project = await client.request<CompanyProject>("/management/companies/demo-company/projects", {

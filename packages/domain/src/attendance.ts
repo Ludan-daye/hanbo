@@ -232,6 +232,28 @@ export const validateAttendancePoints = (points: readonly ScheduledAttendancePoi
   if (working) throw new Error("请为最后一段工作设置下班打卡。");
 };
 
+/**
+ * 公司默认打卡安排（2026-11-21 Q6）：新建项目时套用一次的项目排班。打卡点和项目排班同一套规矩，
+ * 工作日是 1（周一）到 7（周日），至少一天、不能重复。前后端共用；没问题返回 null，否则返回一句中文。
+ */
+export type AttendanceDefaults = {
+  readonly name: string;
+  readonly points: readonly ScheduledAttendancePoint[];
+  readonly workdays: readonly number[];
+};
+export const attendanceDefaultsError = (value: AttendanceDefaults): string | null => {
+  if (value.name.trim().length === 0 || value.name.trim().length > 60) return "请填写排班名称，最多 60 个字。";
+  if (value.workdays.length === 0) return "至少选一个工作日。";
+  if (value.workdays.some((day) => !Number.isInteger(day) || day < 1 || day > 7)) return "工作日只能是周一到周日。";
+  if (new Set(value.workdays).size !== value.workdays.length) return "工作日不能重复。";
+  try {
+    validateAttendancePoints(value.points);
+  } catch (error: unknown) {
+    return error instanceof Error ? error.message : "打卡时间设置不对。";
+  }
+  return null;
+};
+
 export const legacyAttendancePoints = (segments: readonly {
   readonly sequence: number; readonly startTime: string; readonly endTime: string;
   readonly lateGraceMins: number; readonly earlyGraceMins: number;

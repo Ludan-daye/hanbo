@@ -133,6 +133,13 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       url: "/pages/company-admins/index",
     },
     {
+      title: "公司设置",
+      sub: "新项目默认的打卡和工时，公司资料",
+      icon: "gear",
+      url: "/pages/company-settings/index",
+    },
+    { title: "信用规则", sub: "扣分与恢复标准（只读）", icon: "star", url: "/pages/safety-policy/index" },
+    {
       title: "公司人员",
       sub: "跨项目人员与班组总览",
       icon: "users",

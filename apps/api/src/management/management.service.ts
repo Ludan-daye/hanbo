@@ -18,6 +18,7 @@ import { decryptPersonnelName, personnelSearchHash } from "./personnel-name.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import type { BindingTargetTypeValue } from "../bindings/bindings.types.js";
 import type { BindingInvitationListItem } from "./management-invitation.types.js";
+import { CompanySettingsService } from "./company-settings.service.js";
 
 import type {
   CompanyParticipantResponse,
@@ -213,7 +214,11 @@ const throwConflictForUniqueError = (
 
 @Injectable()
 export class ManagementService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(API_ENV) private readonly env: ApiEnv) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(API_ENV) private readonly env: ApiEnv,
+    @Inject(CompanySettingsService) private readonly companySettings: CompanySettingsService
+  ) {}
 
   async listMyRoleScopes(userId: string): Promise<readonly WorkRoleScope[]> {
     const assignments = await this.prisma.userRole.findMany({ where: { userId }, include: { role: true }, orderBy: [{ role: { level: "desc" } }, { createdAt: "asc" }] });
@@ -416,14 +421,24 @@ export class ManagementService {
         });
         createdManagerIds.push(profile.id);
       }
+      // Plans rank by the author's level: a company-level author (system admins rank higher).
+      const appliedDefaultsVersion = request.applyCompanyDefaults === false
+        ? null
+        : await this.companySettings.applyToNewProject(transaction, {
+          actorUserId,
+          authorRoleLevel: (await transaction.userRole.count({ where: { userId: actorUserId, scopeType: "GLOBAL", role: { code: "SYSTEM_ADMIN" } } })) > 0 ? 5 : 4,
+          companyId,
+          plannedStartDate: request.plannedStartDate,
+          projectId: project.id
+        });
       await transaction.auditLog.create({
         data: {
           actorUserId, action: "project.create", entityType: "project", entityId: project.id, projectId: project.id,
-          metadata: { companyId, managerProfileIds: [...request.managerProfileIds], newManagerProfileIds: createdManagerIds }
+          metadata: { appliedDefaultsVersion, companyId, managerProfileIds: [...request.managerProfileIds], newManagerProfileIds: createdManagerIds }
         }
       });
 
-      return createProjectResponse(project);
+      return { ...createProjectResponse(project), appliedDefaultsVersion };
     });
   }
 

@@ -9,6 +9,7 @@ import { memberRoleAssignments, memberRoleFields } from "../member-roles";
 import { demoMyProject } from "./my-project";
 import { demoReportPerson, saveDemoEvaluation } from "./report-details";
 import { demoProjectManagers } from "./project-managers";
+import { applyDemoCompanyDefaults, demoCompanyDefaults, demoCompanyProfile, saveDemoCompanyDefaults, updateDemoCompanyProfile } from "./company-settings";
 import { demoCompanyPeoplePage, demoCompanyPerson, demoOffboard, demoProjectAdmins } from "./company-people";
 import { demoPlanRequest, effectiveDemoPlan, demoPlanLevel } from "./plans";
 import Taro from "@tarojs/taro";
@@ -974,6 +975,14 @@ const routeDemo = (
       );
     }
     if (scope === "companies") {
+      if (resource === "attendance-defaults")
+        return method === "GET"
+          ? response(state, demoCompanyDefaults(state, scopeId))
+          : saveDemoCompanyDefaults(state, userId, scopeId, options.data as Parameters<typeof saveDemoCompanyDefaults>[3]);
+      if (resource === "profile")
+        return method === "GET"
+          ? response(state, demoCompanyProfile(state, scopeId))
+          : updateDemoCompanyProfile(state, scopeId, (options.data ?? {}) as Record<string, unknown>);
       if (resource === "people-page" && method === "GET")
         return response(state, demoCompanyPeoplePage(state, scopeId, query));
       if (resource === "project-admins" && method === "GET")
@@ -1017,7 +1026,7 @@ const routeDemo = (
         const managers = demoProjectManagers(state, scopeId).filter((person) => body.managerProfileIds.includes(person.profileId));
         if (managers.length !== body.managerProfileIds.length)
           throw new ApiError(400, "所选管理员已停用或不属于本公司，请重新选择。", {});
-        const { managerProfileIds, newManagers: _newManagers, ...fields } = body;
+        const { managerProfileIds, newManagers: _newManagers, applyCompanyDefaults, ...fields } = body;
         const project: ManagedProject = {
           ...fields,
           code: null,
@@ -1045,9 +1054,12 @@ const routeDemo = (
           status: "ACTIVE", workType: "施工管理", enteredAt: now, exitedAt: null,
           updatedAt: now, profileUpdatedAt: now, nameStatus: "AVAILABLE"
         }));
+        const applied = applyCompanyDefaults === false
+          ? { state, version: null }
+          : applyDemoCompanyDefaults(state, userId, scopeId, project.id, project.plannedStartDate);
         return response(
-          { ...state, projects: [...state.projects, project], people: [...state.people, ...people, ...created] },
-          project,
+          { ...applied.state, projects: [...state.projects, project], people: [...state.people, ...people, ...created] },
+          { ...project, appliedDefaultsVersion: applied.version },
         );
       }
       if (resource === "transfer-requests")

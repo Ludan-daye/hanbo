@@ -3,7 +3,10 @@ import type {
   DefaultAttendanceConfiguration,
   CompanyOverview,
   CompanyParticipant,
+  CompanyAttendanceDefaults,
+  CompanyAttendanceDefaultValues,
   CompanyPeoplePage,
+  CompanyProfile,
   CompanyPeopleQuery,
   CompanyPerson,
   OffboardMode,
@@ -302,3 +305,21 @@ export const fetchCompanyPeoplePage = (
     method: "GET",
   });
 };
+
+export const fetchCompanyDefaults = (companyId: string): Promise<CompanyAttendanceDefaults> =>
+  apiClient.request(`${companyBase(companyId)}/attendance-defaults`, { method: "GET" });
+
+export const saveCompanyDefaults = (
+  companyId: string,
+  body: CompanyAttendanceDefaultValues & { readonly expectedVersion: number },
+): Promise<CompanyAttendanceDefaults> =>
+  apiClient.request(`${companyBase(companyId)}/attendance-defaults`, { method: "PUT", data: body });
+
+export const fetchCompanyProfile = (companyId: string): Promise<CompanyProfile> =>
+  apiClient.request(`${companyBase(companyId)}/profile`, { method: "GET" });
+
+export const updateCompanyProfile = (
+  companyId: string,
+  body: Pick<CompanyProfile, "address" | "contactName" | "contactPhone"> & { readonly expectedUpdatedAt: string },
+): Promise<CompanyProfile> =>
+  apiClient.request(`${companyBase(companyId)}/profile`, { method: "PUT", data: body });

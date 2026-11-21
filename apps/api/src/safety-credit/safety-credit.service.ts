@@ -137,7 +137,7 @@ export class SafetyCreditService {
     });
     if (rows.length === 0)
       throw new ServiceUnavailableException({
-        message: "安全信用规则未初始化，请联系管理员",
+        message: "SAFETY_POLICY_NOT_INITIALIZED",
       });
     return rows.map(policyView);
   }
@@ -254,7 +254,7 @@ export class SafetyCreditService {
         targetScope: target,
       }).isAuthorized
     )
-      throw new ForbiddenException({ message: "无权访问该范围的安全记录" });
+      throw new ForbiddenException({ message: "SAFETY_SCOPE_FORBIDDEN" });
     return target;
   }
   private async level(
@@ -275,7 +275,7 @@ export class SafetyCreditService {
       select: { id: true },
     });
     if (worker === null)
-      throw new NotFoundException({ message: "未关联工人档案" });
+      throw new NotFoundException({ message: "SAFETY_WORKER_PROFILE_NOT_LINKED" });
     return worker.id;
   }
   async teamBoard(userId: string, teamId: string): Promise<SafetyCreditBoard> {
@@ -371,30 +371,30 @@ export class SafetyCreditService {
     const now = new Date();
     const occurredAt = new Date(input.occurredAt);
     if (occurredAt > now)
-      throw new BadRequestException({ message: "违规时间不能晚于当前时间" });
+      throw new BadRequestException({ message: "VIOLATION_OCCURRED_IN_FUTURE" });
     const member = await this.db.projectWorkerMember.findFirst({
       where: { id: input.memberId, teamId, status: "ACTIVE" },
     });
     if (member === null)
-      throw new NotFoundException({ message: "请选择本班组在岗人员" });
+      throw new NotFoundException({ message: "VIOLATION_MEMBER_NOT_ON_TEAM" });
     if (
       occurredAt < member.enteredAt ||
       (member.exitedAt !== null && occurredAt > member.exitedAt)
     )
-      throw new BadRequestException({ message: "违规时间不在该人员在场期间" });
+      throw new BadRequestException({ message: "VIOLATION_OUTSIDE_MEMBERSHIP" });
     const policy = await this.db.safetyCreditPolicy.findFirst({
       where: { startsOn: { lte: new Date(safetyCreditDay(occurredAt)) } },
       orderBy: [{ startsOn: "desc" }, { version: "desc" }],
     });
     if (policy === null)
       throw new BadRequestException({
-        message: "该日期尚未启用安全信用规则，不能追溯扣分",
+        message: "SAFETY_POLICY_NOT_EFFECTIVE",
       });
     if (
       new Set(input.evidence.map((row) => row.objectKey)).size !==
       input.evidence.length
     )
-      throw new BadRequestException({ message: "凭证照片不能重复" });
+      throw new BadRequestException({ message: "VIOLATION_EVIDENCE_DUPLICATED" });
     await Promise.all(
       input.evidence.map((row) =>
         this.uploads.requireOwnedImage(userId, row.objectKey, row.hash),
@@ -436,7 +436,7 @@ export class SafetyCreditService {
         cause.code === "P2002"
       )
         throw new ConflictException({
-          message: "该人员同项目同分钟的同类违规已登记，请查看原记录",
+          message: "VIOLATION_ALREADY_RECORDED",
         });
       throw cause;
     }
@@ -457,7 +457,7 @@ export class SafetyCreditService {
       include: { worker: { select: { userId: true } } },
     });
     if (row === null)
-      throw new NotFoundException({ message: "该项目无此违规记录" });
+      throw new NotFoundException({ message: "VIOLATION_NOT_FOUND" });
     const teamTarget = await this.authorization.resolveTargetScope(
       { source: "teamParam", paramName: "id" },
       { params: { id: row.teamId } },
@@ -473,7 +473,7 @@ export class SafetyCreditService {
       actorLevel <= authorLevel
     )
       throw new ForbiddenException({
-        message: "须由记录人上级审核，不能审核本人或同级记录",
+        message: "VIOLATION_REVIEW_REQUIRES_HIGHER_ROLE",
       });
   }
   async review(
@@ -505,7 +505,7 @@ export class SafetyCreditService {
       });
       if (result.count !== 1)
         throw new ConflictException({
-          message: "记录状态已变化，请刷新后重试",
+          message: "VIOLATION_CHANGED_RELOAD",
         });
       await database.safetyCreditDecision.create({
         data: {
@@ -550,12 +550,12 @@ export class SafetyCreditService {
         where: { id: violationId, workerId, status: "CONFIRMED" },
       });
       if (row === null)
-        throw new NotFoundException({ message: "无可申诉的本人已确认记录" });
+        throw new NotFoundException({ message: "APPEAL_NOT_ALLOWED" });
       const pending = await database.safetyCreditAppeal.findFirst({
         where: { violationId, status: "PENDING" },
       });
       if (pending !== null)
-        throw new ConflictException({ message: "该记录已有待处理申诉" });
+        throw new ConflictException({ message: "APPEAL_ALREADY_PENDING" });
       await database.safetyCreditAppeal.create({
         data: { violationId, workerId, reason },
       });
@@ -583,7 +583,7 @@ export class SafetyCreditService {
         },
       });
       if (changed.count !== 1)
-        throw new ConflictException({ message: "申诉已处理，请刷新" });
+        throw new ConflictException({ message: "APPEAL_ALREADY_DECIDED" });
       if (accept) {
         const changedViolation = await database.safetyViolation.updateMany({
           where: { id: violationId, projectId, status: "CONFIRMED" },
@@ -595,7 +595,7 @@ export class SafetyCreditService {
           },
         });
         if (changedViolation.count !== 1)
-          throw new ConflictException({ message: "违规已撤销或状态发生变化" });
+          throw new ConflictException({ message: "VIOLATION_STATE_CHANGED" });
         await database.safetyCreditDecision.create({
           data: {
             violationId,
@@ -632,10 +632,10 @@ export class SafetyCreditService {
       )
     )
       throw new ForbiddenException({
-        message: "仅系统管理员可调整全局安全信用规则",
+        message: "SAFETY_POLICY_REQUIRES_SYSTEM_ADMIN",
       });
     if (input.startsOn <= safetyCreditDay(new Date()))
-      throw new BadRequestException({ message: "新规则最早次日生效" });
+      throw new BadRequestException({ message: "SAFETY_POLICY_STARTS_TOO_EARLY" });
     return this.db.$transaction(async (database) => {
       await database.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${"safety-credit-policy"}, 0))`;
       const previous = await database.safetyCreditPolicy.findFirst({
@@ -643,10 +643,10 @@ export class SafetyCreditService {
       });
       if (previous === null)
         throw new ServiceUnavailableException({
-          message: "初始安全信用规则缺失",
+          message: "SAFETY_POLICY_BASELINE_MISSING",
         });
       if (input.startsOn <= previous.startsOn.toISOString().slice(0, 10))
-        throw new ConflictException({ message: "生效日期必须晚于已有版本" });
+        throw new ConflictException({ message: "SAFETY_POLICY_DATE_NOT_AFTER_LATEST" });
       const row = await database.safetyCreditPolicy.create({
         data: {
           ...input,
@@ -668,22 +668,22 @@ export class SafetyCreditService {
       include: { worker: { select: { userId: true } } },
     });
     if (row === null)
-      throw new NotFoundException({ message: "违规记录不存在" });
+      throw new NotFoundException({ message: "VIOLATION_RECORD_NOT_FOUND" });
     if (row.worker.userId !== userId)
       await this.target(userId, row.teamId, "teamParam", "team.safety.manage");
     const objectKey = row.evidenceObjectKeys[index];
     if (objectKey === undefined)
-      throw new NotFoundException({ message: "照片不存在" });
+      throw new NotFoundException({ message: "EVIDENCE_PHOTO_NOT_FOUND" });
     const file = await this.db.storedFile.findUnique({ where: { objectKey } });
     if (
       file === null ||
       file.deletedAt !== null ||
       (file.expiresAt !== null && file.expiresAt <= new Date())
     )
-      throw new NotFoundException({ message: "凭证照片已失效" });
+      throw new NotFoundException({ message: "EVIDENCE_PHOTO_EXPIRED" });
     const bytes = await this.storage.get(objectKey);
     if (createHash("sha256").update(bytes).digest("hex") !== file.hash)
-      throw new ConflictException({ message: "照片完整性校验失败" });
+      throw new ConflictException({ message: "EVIDENCE_PHOTO_INTEGRITY_FAILED" });
     return { contentType: file.contentType, base64: bytes.toString("base64") };
   }
 }

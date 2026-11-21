@@ -62,6 +62,8 @@ const projectWriteFieldsSchema = z.object({
 });
 
 const createProjectRequestSchema = projectWriteFieldsSchema.extend({
+  // Q6 (2026-11-21): copy the company's default plan and worktime rule into the new project.
+  applyCompanyDefaults: z.boolean().default(true),
   managerProfileIds: z.array(z.string().trim().min(1)).max(20)
     .refine((ids): boolean => new Set(ids).size === ids.length, "Duplicate project administrators."),
   // Q4 (2026-11-21): administrators not yet in any project of the company, bound later by invitation.

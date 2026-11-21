@@ -23,7 +23,7 @@ const inputSchema = z.object({
 export type WorktimeRuleInput = z.infer<typeof inputSchema>;
 export const parseWorktimeRuleInput = (body: unknown): WorktimeRuleInput => {
   const parsed = inputSchema.safeParse(body);
-  if (!parsed.success) throw new BadRequestException({ message: "工时规则无效。", issues: parsed.error.issues });
-  if (parsed.data.startsOn < tomorrowChina()) throw new BadRequestException({ message: "工时规则最早次日生效，历史记录保留。" });
+  if (!parsed.success) throw new BadRequestException({ message: "INVALID_WORKTIME_RULE", issues: parsed.error.issues });
+  if (parsed.data.startsOn < tomorrowChina()) throw new BadRequestException({ message: "WORKTIME_RULE_STARTS_TOO_EARLY" });
   return parsed.data;
 };

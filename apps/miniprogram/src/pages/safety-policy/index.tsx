@@ -19,6 +19,7 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { useSessionGuard } from "../../hooks/use-session-guard";
+import { useSession } from "../../store/session";
 import { errorMessage } from "../../services/error-messages";
 import {
   createSafetyPolicy,
@@ -69,6 +70,9 @@ const NumberRow = ({
 
 export default function SafetyPolicy(): JSX.Element {
   useSessionGuard();
+  // 规则全平台一份（2026-11-21 Q7）：只有超级管理员发布新版本，其余人只读。
+  const { state } = useSession();
+  const editable = state.me?.roles.highestRoleCode === "SYSTEM_ADMIN";
   const [policies, setPolicies] = useState<readonly SafetyCreditPolicyView[]>(
     [],
   );
@@ -168,6 +172,8 @@ export default function SafetyPolicy(): JSX.Element {
         />
       )}
 
+      {editable ? (
+      <>
       <SectionTitle>新版本</SectionTitle>
       <Sheet>
         <View className="safety-policy__pick">
@@ -215,6 +221,10 @@ export default function SafetyPolicy(): JSX.Element {
         />
       </Sheet>
       <Notice>新规则从生效日期起算，旧版本留档。</Notice>
+      </>
+      ) : (
+        <Notice>安全信用规则全平台一份，由平台管理员发布；这里只能查看。</Notice>
+      )}
       {error ? <Notice tone="error">{error}</Notice> : null}
 
       {policies.length > 0 ? (
@@ -233,13 +243,15 @@ export default function SafetyPolicy(): JSX.Element {
           </Sheet>
         </>
       ) : null}
-      <BottomBar
-        primary={busy ? "发布中…" : "发布新规则"}
-        busy={busy}
-        onPrimary={() => {
-          void publish();
-        }}
-      />
+      {editable ? (
+        <BottomBar
+          primary={busy ? "发布中…" : "发布新规则"}
+          busy={busy}
+          onPrimary={() => {
+            void publish();
+          }}
+        />
+      ) : null}
     </Screen>
   );
 }
