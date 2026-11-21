@@ -35,7 +35,7 @@ import {
   loadPlanningData,
   authorizedPlanLevel,
 } from "../attendance/attendance-plans.js";
-import { ROLE_LEVEL } from "@construction/domain/roles.js";
+import { ROLE_LEVEL, type RoleCode } from "@construction/domain/roles.js";
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { decryptPersonnelName } from "../management/personnel-name.js";
@@ -770,6 +770,7 @@ export class MakeupService {
     userId: string,
     cursor: string | null,
     projectId: string | null = null,
+    onlyMine = false,
   ): Promise<MakeupInboxResponse> {
     return this.inboxPage(
       userId,
@@ -777,6 +778,7 @@ export class MakeupService {
       projectId,
       { status: "PENDING" },
       [{ createdAt: "asc" }, { id: "asc" }],
+      onlyMine,
     );
   }
 
@@ -815,12 +817,38 @@ export class MakeupService {
     return (await this.reviewableItems(userId, authorization, rows)).length;
   }
 
+  /**
+   * The company home's makeup numbers: everything the company inbox lists for this
+   * company, and the part only a company-level reviewer can approve (`onlyMine=true`).
+   */
+  async countPendingForCompany(
+    userId: string,
+    companyId: string,
+  ): Promise<{ readonly all: number; readonly onlyYou: number }> {
+    const authorization =
+      await this.authorizationContext.loadAuthorizationData(userId);
+    const rows = await this.prisma.makeupRequest.findMany({
+      where: {
+        project: { companyId },
+        requesterUserId: { not: userId },
+        status: "PENDING",
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    const items = await this.reviewableItems(userId, authorization, rows);
+    return {
+      all: items.length,
+      onlyYou: items.filter((item) => item.onlyYou).length,
+    };
+  }
+
   private async inboxPage(
     userId: string,
     cursor: string | null,
     projectId: string | null,
     filter: Prisma.MakeupRequestWhereInput,
     orderBy: Prisma.MakeupRequestOrderByWithRelationInput[],
+    onlyMine = false,
   ): Promise<MakeupInboxResponse> {
     const authorization =
       await this.authorizationContext.loadAuthorizationData(userId);
@@ -836,26 +864,45 @@ export class MakeupService {
       return { projectId: a.scope.scopeId };
     });
     if (scopes.length === 0) return { items: [], nextCursor: null };
-    const candidates = await this.prisma.makeupRequest.findMany({
-      where: {
-        ...filter,
-        ...(projectId === null ? {} : { projectId }),
-        requesterUserId: { not: userId },
-        OR: scopes,
-      },
-      orderBy,
-      take: 51,
-      ...(cursor === null ? {} : { cursor: { id: cursor }, skip: 1 }),
-    });
-    const items = await this.reviewableItems(
-      userId,
-      authorization,
-      candidates.slice(0, 50),
-    );
-    return {
-      items,
-      nextCursor: candidates.length > 50 ? candidates[49]!.id : null,
-    };
+    // Scan candidates in batches until a page is full: rows this user may not review
+    // (or, with onlyMine, rows someone below company level can approve) are skipped
+    // here instead of leaving the client with empty pages.
+    const PAGE = 50;
+    const BATCH = 100;
+    const items: MakeupInboxItem[] = [];
+    let after = cursor;
+    for (let round = 0; round < 10; round += 1) {
+      const candidates = await this.prisma.makeupRequest.findMany({
+        where: {
+          ...filter,
+          ...(projectId === null ? {} : { projectId }),
+          requesterUserId: { not: userId },
+          OR: scopes,
+        },
+        orderBy,
+        take: BATCH,
+        ...(after === null ? {} : { cursor: { id: after }, skip: 1 }),
+      });
+      const reviewable = (
+        await this.reviewableItems(userId, authorization, candidates)
+      ).filter((item) => !onlyMine || item.onlyYou);
+      for (const item of reviewable) {
+        items.push(item);
+        if (items.length === PAGE) {
+          const last = candidates.findIndex((row) => row.id === item.id);
+          return {
+            items,
+            nextCursor:
+              last < candidates.length - 1 || candidates.length === BATCH
+                ? item.id
+                : null,
+          };
+        }
+      }
+      if (candidates.length < BATCH) return { items, nextCursor: null };
+      after = candidates[candidates.length - 1]!.id;
+    }
+    return { items, nextCursor: after };
   }
 
   /** Keep only the rows this user may review, with names for the inbox. */
@@ -904,6 +951,16 @@ export class MakeupService {
           include: { role: true },
         }),
       ]);
+    // Project- and team-level grants inside these projects: who else could approve.
+    const localGrants = await this.prisma.userRole.findMany({
+      where: {
+        OR: [
+          { scopeType: "PROJECT", scopeId: { in: projectIds } },
+          { scopeType: "TEAM", scopeId: { in: teams.map((t) => t.id) } },
+        ],
+      },
+      include: { role: true },
+    });
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     const teamNames = new Map(teams.map((t) => [t.id, t.name]));
     const items: MakeupInboxItem[] = [];
@@ -964,15 +1021,25 @@ export class MakeupService {
         permissionsByRoleCode: authorization.permissionsByRoleCode,
         targetScope,
       });
+      const requesterLevel = Math.max(
+        ROLE_LEVEL[state.roleCode],
+        authorizedPlanLevel(requesterData, targetScope),
+      );
       if (
         !decision.isAuthorized ||
-        authorizedPlanLevel(authorization, targetScope) <=
-          Math.max(
-            ROLE_LEVEL[state.roleCode],
-            authorizedPlanLevel(requesterData, targetScope),
-          )
+        authorizedPlanLevel(authorization, targetScope) <= requesterLevel
       )
         continue;
+      const onlyYou = !localGrants.some(
+        (grant) =>
+          grant.userId !== row.requesterUserId &&
+          grant.userId !== userId &&
+          ROLE_LEVEL[grant.role.code as RoleCode] > requesterLevel &&
+          ((grant.scopeType === "PROJECT" && grant.scopeId === row.projectId) ||
+            (grant.scopeType === "TEAM" &&
+              state.teamId !== null &&
+              grant.scopeId === state.teamId)),
+      );
       const displayName =
         "worker" in member
           ? member.worker.encryptedName.startsWith("name-v1:")
@@ -985,6 +1052,7 @@ export class MakeupService {
       items.push({
         ...createMakeupRequestResponse(row),
         displayName,
+        onlyYou,
         projectName: project.name,
         teamName:
           state.teamId === null ? null : (teamNames.get(state.teamId) ?? null),

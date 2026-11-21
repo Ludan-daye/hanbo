@@ -150,6 +150,38 @@ export type ProjectOverview = {
   };
 };
 
+/** 公司管理员首页：每个项目一行今天的应到、到岗、缺卡，加公司的待办条数，不带明细。 */
+export type CompanyOverview = {
+  readonly attendance: {
+    readonly expected: number;
+    readonly missing: number;
+    readonly present: number;
+    readonly workedMinutes: number;
+  };
+  readonly companyId: string;
+  readonly date: string;
+  readonly projects: readonly {
+    readonly attendance: {
+      readonly expected: number;
+      readonly missing: number;
+      readonly present: number;
+    };
+    readonly name: string;
+    readonly projectId: string;
+    readonly status: ProjectStatus;
+    readonly todos: {
+      readonly facePending: number;
+      readonly violationPending: number;
+    };
+  }[];
+  readonly todos: {
+    /** 只有公司管理员能批的补卡（申请人是项目管理员，或项目里没有更高职级的人）。 */
+    readonly makeupOnlyYou: number;
+    readonly makeupPending: number;
+    readonly transferPending: number;
+  };
+};
+
 export type DailyReport = {
   readonly endDate: string;
   readonly participants: ReadonlyArray<DailyReportParticipant>;

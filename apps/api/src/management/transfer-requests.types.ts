@@ -45,3 +45,8 @@ export type TransferCandidatesQuery = {
   readonly search: string;
   readonly sourceProjectId: string;
 };
+
+export type TransferRequestPage = {
+  readonly items: readonly TransferRequestResponse[];
+  readonly nextCursor: string | null;
+};

@@ -85,13 +85,21 @@ export const requestTransfer = (
     data: body,
   });
 
+export type TransferPage = {
+  readonly items: readonly TransferRequest[];
+  readonly nextCursor: string | null;
+};
+
+/** 每页 30 条；projectId 是调出或调入的项目，null 是全部。 */
 export const fetchCompanyTransfers = (
   companyId: string,
   status: "PENDING" | "DONE",
-): Promise<readonly TransferRequest[]> =>
-  apiClient.request(`${companyPath(companyId)}?status=${status}`, {
-    method: "GET",
-  });
+  options: { readonly cursor?: string | null; readonly projectId?: string | null } = {},
+): Promise<TransferPage> =>
+  apiClient.request(
+    `${companyPath(companyId)}?status=${status}${options.cursor ? `&cursor=${encodeURIComponent(options.cursor)}` : ""}${options.projectId ? `&projectId=${encodeURIComponent(options.projectId)}` : ""}`,
+    { method: "GET" },
+  );
 
 export const reviewTransfer = (
   companyId: string,

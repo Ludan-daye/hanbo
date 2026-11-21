@@ -42,6 +42,11 @@ export type ReviewMakeupResponse = {
 
 export type MakeupInboxItem = MakeupRequestResponse & {
   readonly displayName: string | null;
+  /**
+   * Pending only: nobody else holds a project- or team-level grant in this project
+   * that ranks above the requester, so only a company-level reviewer can approve it.
+   */
+  readonly onlyYou: boolean;
   readonly projectName: string;
   readonly teamName: string | null;
 };

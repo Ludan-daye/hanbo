@@ -94,15 +94,22 @@ export const parseReviewMakeupRequestBody = (body: unknown): ReviewMakeupRequest
 
 const inboxQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
+  onlyMine: z.enum(["true", "false"]).optional(),
   projectId: z.string().min(1).optional()
 });
 
 export type MakeupInboxQuery = {
   readonly cursor: string | null;
+  /** Only requests nobody below company level could approve (`onlyYou`). */
+  readonly onlyMine: boolean;
   readonly projectId: string | null;
 };
 
 export const parseMakeupInboxQuery = (query: unknown): MakeupInboxQuery => {
   const value = parseBody(query ?? {}, inboxQuerySchema, "INVALID_MAKEUP_INBOX_QUERY");
-  return { cursor: value.cursor ?? null, projectId: value.projectId ?? null };
+  return {
+    cursor: value.cursor ?? null,
+    onlyMine: value.onlyMine === "true",
+    projectId: value.projectId ?? null
+  };
 };

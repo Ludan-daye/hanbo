@@ -1,5 +1,6 @@
 import type { PendingMakeup } from "../../services/makeups";
 import type {
+  CompanyOverview,
   DailyReport,
   DailyReportParticipant,
   ProjectOverview,
@@ -292,43 +293,118 @@ export const overviewMissingText = (
     ? `${overview.attendance.missing} 人`
     : "";
 
-/** 公司首页上一个项目一行。 */
+/** 公司首页上一个进行中的项目一行：“到岗 43／48”，缺卡几人。 */
 export type ProjectLine = {
   readonly projectId: string;
   readonly projectName: string;
-  readonly people: number;
-  /** 缺卡或缺勤的人数。 */
+  readonly expected: number;
+  readonly present: number;
   readonly missing: number;
-  readonly workedMinutes: number;
 };
 
-/** 把公司日报按项目分开，缺得多的排前面。 */
+/**
+ * 公司概览里进行中的项目一行一个（没人的也列），缺卡多的排前面；
+ * 筹备中、暂停、完工的不列，只数一个数，合成一行“另有 N 个”（2026-11-21 Q1）。
+ */
 export const companyProjectLines = (
-  participants: readonly DailyReportParticipant[],
-): readonly ProjectLine[] => {
-  const byProject = new Map<string, DailyReportParticipant[]>();
-  for (const person of participants) {
-    const rows = byProject.get(person.projectId);
-    if (rows) rows.push(person);
-    else byProject.set(person.projectId, [person]);
-  }
-  return [...byProject.entries()]
-    .map(
-      ([projectId, rows]): ProjectLine => ({
-        projectId,
-        projectName: rows[0]?.projectName ?? "",
-        people: new Set(rows.map((person) => person.memberId)).size,
-        missing: new Set(missingPeople(rows).map((person) => person.memberId))
-          .size,
-        workedMinutes: rows.reduce(
-          (sum, person) => sum + person.workedMinutes,
-          0,
-        ),
-      }),
-    )
-    .sort(
-      (a, b) =>
-        b.missing - a.missing ||
-        a.projectName.localeCompare(b.projectName, "zh"),
-    );
+  overview: Pick<CompanyOverview, "projects"> | null,
+): { readonly lines: readonly ProjectLine[]; readonly others: number } => {
+  if (overview === null) return { lines: [], others: 0 };
+  const active = overview.projects.filter((row) => row.status === "ACTIVE");
+  return {
+    lines: active
+      .map(
+        (row): ProjectLine => ({
+          projectId: row.projectId,
+          projectName: row.name,
+          expected: row.attendance.expected,
+          present: row.attendance.present,
+          missing: row.attendance.missing,
+        }),
+      )
+      .sort(
+        (a, b) =>
+          b.missing - a.missing ||
+          a.projectName.localeCompare(b.projectName, "zh"),
+      ),
+    others: overview.projects.length - active.length,
+  };
+};
+
+/**
+ * 公司首页“等你处理”：调人申请、只有你能批的补卡，再按项目列底照和违规的积压。
+ * 每一条的数等于点进去的列表条数。
+ */
+export const companyAdminTodos = (
+  overview: Pick<CompanyOverview, "companyId" | "projects" | "todos"> | null,
+): readonly HomeTodo[] => {
+  if (overview === null) return [];
+  const company = `companyId=${encodeURIComponent(overview.companyId)}`;
+  const todos = overview.todos;
+  const projects = [...overview.projects].sort((a, b) =>
+    a.name.localeCompare(b.name, "zh"),
+  );
+  return [
+    ...(todos.transferPending > 0
+      ? [
+          {
+            key: "transfers",
+            title: `调人申请 ${todos.transferPending} 条`,
+            sub: "项目之间调人，等你同意",
+            url: `/pages/transfer-approvals/index?${company}`,
+          },
+        ]
+      : []),
+    ...(todos.makeupOnlyYou > 0
+      ? [
+          {
+            key: "makeups",
+            title: `补卡申请 ${todos.makeupOnlyYou} 条只有你能批`,
+            sub: "申请人是项目管理员，或项目里没有更高职级的人",
+            url: "/pages/team-makeups/index",
+          },
+        ]
+      : []),
+    ...projects.flatMap((row) => {
+      const project = `projectId=${encodeURIComponent(row.projectId)}`;
+      return [
+        ...(row.todos.violationPending > 0
+          ? [
+              {
+                key: `violations:${row.projectId}`,
+                title: `违规待复核 ${row.todos.violationPending} 条`,
+                sub: row.name,
+                url: `/pages/safety-review/index?${project}`,
+              },
+            ]
+          : []),
+        ...(row.todos.facePending > 0
+          ? [
+              {
+                key: `faces:${row.projectId}`,
+                title: `底照待审核 ${row.todos.facePending} 人`,
+                sub: row.name,
+                url: `/pages/face-review/index?${project}`,
+              },
+            ]
+          : []),
+      ];
+    }),
+  ];
+};
+
+/** 公司概览的数写在工作台入口上：补卡审批（只有你能批的）、调人申请。 */
+export const companyAdminStatuses = (
+  todos: CompanyOverview["todos"] | null,
+): Readonly<Record<string, { readonly kind: "warn"; readonly text: string }>> => {
+  if (todos === null) return {};
+  const counts: readonly (readonly [string, number])[] = [
+    ["/pages/team-makeups/index", todos.makeupOnlyYou],
+    ["/pages/transfer-approvals/index", todos.transferPending],
+  ];
+  return Object.fromEntries(
+    counts
+      .filter(([, count]) => count > 0)
+      .map(([url, count]) => [url, { kind: "warn" as const, text: `${count} 条` }]),
+  );
 };

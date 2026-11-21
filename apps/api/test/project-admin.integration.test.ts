@@ -715,8 +715,21 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
       await http().get(companyPath).auth(auth("admin"), { type: "bearer" }).expect(403);
       const pending = (
         await http().get(companyPath).auth(auth("company"), { type: "bearer" }).expect(200)
-      ).body as { id: string }[];
-      expect(pending.map((row) => row.id)).toContain(asked.id);
+      ).body as { items: { id: string }[]; nextCursor: string | null };
+      expect(pending.items.map((row) => row.id)).toContain(asked.id);
+      expect(pending.nextCursor).toBeNull();
+      expect(
+        (
+          (await http().get(`${companyPath}?projectId=${otherProjectId}`).auth(auth("company"), { type: "bearer" }).expect(200))
+            .body as { items: { id: string }[] }
+        ).items.map((row) => row.id),
+      ).toContain(asked.id);
+      expect(
+        (
+          (await http().get(`${companyPath}?projectId=nope`).auth(auth("company"), { type: "bearer" }).expect(200))
+            .body as { items: unknown[] }
+        ).items,
+      ).toEqual([]);
       await http()
         .post(`${companyPath}/${asked.id}/approve`)
         .auth(auth("admin"), { type: "bearer" })

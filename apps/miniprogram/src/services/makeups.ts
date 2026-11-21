@@ -51,6 +51,8 @@ export type InboxMakeup = Omit<PendingMakeup, "status"> & {
   readonly approvedAt: string | null;
 } & {
   readonly displayName: string | null;
+  /** 只有公司级能批：项目里没有比申请人职级更高的项目、班组审批人。 */
+  readonly onlyYou?: boolean;
   readonly projectName: string;
   readonly teamName: string | null;
 };
@@ -59,20 +61,27 @@ export type MakeupInbox = {
   readonly nextCursor: string | null;
 };
 /** 收件箱的查询串：翻页游标；从项目进来时只看这个项目（服务端过滤）。 */
-const inboxQuery = (cursor: string | null, projectId: string | null): string => {
+const inboxQuery = (
+  cursor: string | null,
+  projectId: string | null,
+  onlyMine = false,
+): string => {
   const pairs = [
     ...(cursor === null ? [] : [`cursor=${encodeURIComponent(cursor)}`]),
+    ...(onlyMine ? ["onlyMine=true"] : []),
     ...(projectId === null ? [] : [`projectId=${encodeURIComponent(projectId)}`]),
   ];
   return pairs.length === 0 ? "" : `?${pairs.join("&")}`;
 };
 
+/** onlyMine：公司管理员只看“需要你批”的（只有公司级能批的申请）。 */
 export const fetchMakeupInbox = async (
   cursor: string | null,
   projectId: string | null = null,
+  onlyMine = false,
 ): Promise<MakeupInbox> =>
   apiClient.request<MakeupInbox>(
-    `/makeups/pending${inboxQuery(cursor, projectId)}`,
+    `/makeups/pending${inboxQuery(cursor, projectId, onlyMine)}`,
     { method: "GET" },
   );
 

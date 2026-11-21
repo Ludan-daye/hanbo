@@ -212,6 +212,30 @@ const canManageDemoProject = (
         )),
   );
 };
+/**
+ * 只有公司级能批：项目里除了申请人和自己，没有职级更高的项目管理员，
+ * 也没有管着申请人班组的班组长（和服务端 onlyYou 同口径）。
+ */
+const demoOnlyYou = (
+  state: DemoState,
+  userId: string,
+  row: { readonly projectId: string; readonly attendanceDate: string },
+  person: ProjectParticipant,
+): boolean => {
+  const historical = demoMemberOn(state, person, row.attendanceDate);
+  const level = ROLE_LEVEL[participantPermissionRole(historical)];
+  const me = demoMe(state, userId);
+  return !state.people.some((other) => {
+    if (other.projectId !== row.projectId || other.status !== "ACTIVE") return false;
+    if (other.profileId === person.profileId || other.profileId === me.profile.id) return false;
+    return memberRoleAssignments(other).some(
+      (role) =>
+        ROLE_LEVEL[role.roleCode] > level &&
+        (role.roleCode === "PROJECT_ADMIN" ||
+          (role.roleCode === "TEAM_LEADER" && historical.teamId !== null && role.teamId === historical.teamId)),
+    );
+  });
+};
 /** 本公司里当前用户不管的项目：从那里要人得向公司管理员申请。 */
 const demoTransferSources = (
   state: DemoState,
@@ -236,13 +260,15 @@ const demoReviewTransfer = (
   requestId: string | undefined,
   decision: string | undefined,
   status: string | undefined,
+  projectId?: string,
 ): DemoResponse => {
   const all = (state.transfers ?? []).filter((row) => row.companyId === companyId);
   if (requestId === undefined)
-    return response(
-      state,
-      status === "DONE" ? all.filter((row) => row.status !== "PENDING") : all.filter((row) => row.status === "PENDING"),
-    );
+    return response(state, {
+      items: (status === "DONE" ? all.filter((row) => row.status !== "PENDING") : all.filter((row) => row.status === "PENDING"))
+        .filter((row) => projectId === undefined || row.sourceProjectId === projectId || row.targetProjectId === projectId),
+      nextCursor: null,
+    });
   const request = all.find((row) => row.id === requestId);
   if (!request) throw new ApiError(404, "TRANSFER_REQUEST_NOT_FOUND", { message: "TRANSFER_REQUEST_NOT_FOUND" });
   if (request.status !== "PENDING") throw new ApiError(409, "TRANSFER_REQUEST_NOT_PENDING", { message: "TRANSFER_REQUEST_NOT_PENDING" });
@@ -496,6 +522,45 @@ const demoProjectOverview = (
       violationPending: board.violations.filter(
         (row) => row.status === "PENDING",
       ).length,
+    },
+  };
+};
+/** 公司首页的概览：每个项目用演示版的项目概览算，补卡、调人用演示收件箱，和点进去的列表同口径。 */
+const demoCompanyOverview = (
+  state: DemoState,
+  userId: string,
+  companyId: string,
+  date: string,
+): unknown => {
+  const projects = state.projects.filter((row) => row.companyId === companyId);
+  const ids = new Set(projects.map((row) => row.id));
+  const per = projects.map((project) => ({
+    project,
+    overview: demoProjectOverview(state, userId, project.id, date) as {
+      readonly attendance: { readonly expected: number; readonly missing: number; readonly present: number; readonly workedMinutes: number };
+      readonly todos: { readonly facePending: number; readonly violationPending: number };
+    },
+  }));
+  const inbox = (path: string): readonly { readonly projectId: string }[] =>
+    (routeDemo(state, userId, path, { method: "GET" }).data as { readonly items: readonly { readonly projectId: string }[] }).items
+      .filter((row) => ids.has(row.projectId));
+  const sum = (key: "expected" | "missing" | "present" | "workedMinutes"): number =>
+    per.reduce((total, row) => total + row.overview.attendance[key], 0);
+  return {
+    attendance: { expected: sum("expected"), missing: sum("missing"), present: sum("present"), workedMinutes: sum("workedMinutes") },
+    companyId,
+    date,
+    projects: per.map(({ project, overview }) => ({
+      attendance: { expected: overview.attendance.expected, missing: overview.attendance.missing, present: overview.attendance.present },
+      name: project.name,
+      projectId: project.id,
+      status: project.status,
+      todos: { facePending: overview.todos.facePending, violationPending: overview.todos.violationPending },
+    })),
+    todos: {
+      makeupOnlyYou: inbox("/makeups/pending?onlyMine=true").length,
+      makeupPending: inbox("/makeups/pending").length,
+      transferPending: (state.transfers ?? []).filter((row) => row.companyId === companyId && row.status === "PENDING").length,
     },
   };
 };
@@ -876,6 +941,16 @@ const routeDemo = (
       state,
       demoProjectOverview(state, userId, parts[2], query.date ?? chinaToday()),
     );
+  if (
+    parts[0] === "management" &&
+    parts[1] === "companies" &&
+    parts[3] === "overview" &&
+    method === "GET"
+  )
+    return response(
+      state,
+      demoCompanyOverview(state, userId, parts[2], query.date ?? chinaToday()),
+    );
   if (parts[0] === "management" || parts[0] === "bindings") {
     const scope = parts[1];
     const scopeId = parts[2];
@@ -943,7 +1018,7 @@ const routeDemo = (
         );
       }
       if (resource === "transfer-requests")
-        return demoReviewTransfer(state, userId, scopeId, parts[4], parts[5], query.status);
+        return demoReviewTransfer(state, userId, scopeId, parts[4], parts[5], query.status, query.projectId);
       if (resource === "participants")
         return response(
           state,
@@ -1673,7 +1748,8 @@ const routeDemo = (
           const historical = demoMemberOn(state, person, row.attendanceDate);
           return (
             demoPlanLevel(state, userId, row.projectId, historical.teamId) >
-            ROLE_LEVEL[participantPermissionRole(historical)]
+              ROLE_LEVEL[participantPermissionRole(historical)] &&
+            (query.onlyMine !== "true" || demoOnlyYou(state, userId, row, person))
           );
         })
         .map((row) => {
@@ -1685,6 +1761,7 @@ const routeDemo = (
           return {
             ...row,
             displayName: person.displayName,
+            onlyYou: demoOnlyYou(state, userId, row, person),
             projectName: state.projects.find((p) => p.id === row.projectId)!
               .name,
             teamName: demoMemberOn(state, person, row.attendanceDate).teamName,

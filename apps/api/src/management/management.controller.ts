@@ -25,9 +25,9 @@ import { TeamsService } from "./teams.service.js";
 import { parseRegistrationVerification } from "./registration-review.parsers.js";
 import { RegistrationReviewService } from "./registration-review.service.js";
 import type { MemberRegistrationResponse } from "./registration-review.types.js";
-import { parseTransferCandidates, parseTransferListStatus, parseTransferRequest, parseTransferReview } from "./transfer-requests.parsers.js";
+import { parseTransferCandidates, parseTransferList, parseTransferRequest, parseTransferReview } from "./transfer-requests.parsers.js";
 import { TransferRequestsService } from "./transfer-requests.service.js";
-import type { TransferRequestResponse } from "./transfer-requests.types.js";
+import type { TransferRequestPage, TransferRequestResponse } from "./transfer-requests.types.js";
 import type { ManagedTeamResponse, TeamLeaderChangeResponse } from "./teams.types.js";
 import type { ManagedParticipantResponse, ParticipantPageResponse } from "./participants.types.js";
 import type { BindingInvitationListItem } from "./management-invitation.types.js";
@@ -161,8 +161,8 @@ export class ManagementController {
   @Get("companies/:companyId/transfer-requests")
   @RequirePermission({ permissionCode: "company.manage", target: { source: "companyParam", paramName: "companyId" } })
   @UseGuards(AccessTokenGuard, PermissionsGuard)
-  async companyTransferRequests(@Param("companyId") companyId: string, @Query() query: unknown): Promise<readonly TransferRequestResponse[]> {
-    return this.transfers.listForCompany(companyId, parseTransferListStatus(query));
+  async companyTransferRequests(@Param("companyId") companyId: string, @Query() query: unknown): Promise<TransferRequestPage> {
+    return this.transfers.listForCompany(companyId, parseTransferList(query));
   }
 
   @Post("companies/:companyId/transfer-requests/:requestId/approve")

@@ -39,8 +39,13 @@ export class MakeupController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: unknown,
   ): Promise<MakeupInboxResponse> {
-    const { cursor, projectId } = parseMakeupInboxQuery(query);
-    return this.makeupService.pendingInbox(user.userId, cursor, projectId);
+    const { cursor, onlyMine, projectId } = parseMakeupInboxQuery(query);
+    return this.makeupService.pendingInbox(
+      user.userId,
+      cursor,
+      projectId,
+      onlyMine,
+    );
   }
 
   @Get("reviewed")

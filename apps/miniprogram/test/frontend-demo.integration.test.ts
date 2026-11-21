@@ -24,6 +24,7 @@ import type {
   ParticipantPage,
   DailyReport,
   ProjectOverview,
+  CompanyOverview,
   DefaultAttendanceConfiguration,
   ProjectParticipant,
   ProjectTeam,
@@ -342,6 +343,31 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     await login("dev-team");
     await expect(
       client.request("/management/projects/demo-project/overview", { method: "GET" }),
+    ).rejects.toThrow();
+  });
+
+  test("company overview numbers equal the lists they open", async () => {
+    await login("dev-company");
+    const date = chinaToday();
+    const overview = await client.request<CompanyOverview>(
+      `/management/companies/demo-company/overview?date=${date}`,
+      { method: "GET" },
+    );
+    const daily = await client.request<DailyReport>(
+      `/reports/companies/demo-company/daily?date=${date}`,
+      { method: "GET" },
+    );
+    expect(overview.attendance.expected).toBe(daily.totals.scheduledDays);
+    expect(overview.attendance.present).toBe(daily.totals.actualAttendedDays);
+    expect(overview.projects.length).toBeGreaterThan(0);
+    const all = await client.request<{ items: { onlyYou?: boolean }[] }>("/makeups/pending", { method: "GET" });
+    const mine = await client.request<{ items: unknown[] }>("/makeups/pending?onlyMine=true", { method: "GET" });
+    expect(overview.todos.makeupPending).toBe(all.items.length);
+    expect(overview.todos.makeupOnlyYou).toBe(mine.items.length);
+    expect(mine.items.length).toBe(all.items.filter((item) => item.onlyYou === true).length);
+    await login("dev-project");
+    await expect(
+      client.request("/management/companies/demo-company/overview", { method: "GET" }),
     ).rejects.toThrow();
   });
 
@@ -1046,8 +1072,12 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     expect(asked.status).toBe("PENDING");
     await expect(client.request("/management/companies/demo-company/transfer-requests?status=PENDING", { method: "GET" })).rejects.toThrow();
     await login("dev-company");
-    const pending = await client.request<TransferRequest[]>("/management/companies/demo-company/transfer-requests?status=PENDING", { method: "GET" });
-    expect(pending.map((row) => row.id)).toContain(asked.id);
+    const pending = await client.request<{ items: TransferRequest[]; nextCursor: string | null }>("/management/companies/demo-company/transfer-requests?status=PENDING", { method: "GET" });
+    expect(pending.items.map((row) => row.id)).toContain(asked.id);
+    const filtered = await client.request<{ items: TransferRequest[] }>("/management/companies/demo-company/transfer-requests?status=PENDING&projectId=demo-project-2", { method: "GET" });
+    expect(filtered.items.map((row) => row.id)).toContain(asked.id);
+    const overview = await client.request<CompanyOverview>(`/management/companies/demo-company/overview?date=${chinaToday()}`, { method: "GET" });
+    expect(overview.todos.transferPending).toBe(pending.items.length);
     const approved = await client.request<TransferRequest>(`/management/companies/demo-company/transfer-requests/${asked.id}/approve`, { method: "POST", data: {} });
     expect(approved.status).toBe("APPROVED");
     expect(readDemoState().people.some((row) => row.projectId === "demo-project" && row.memberId === approved.createdMemberId)).toBe(true);

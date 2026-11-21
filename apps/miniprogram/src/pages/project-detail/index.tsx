@@ -22,11 +22,15 @@ import {
   type EntryItem,
   type LineIconName,
 } from "../../components/ui/index";
+import { useCachedRead } from "../../hooks/use-cached-read";
 import { useLeaveGuard } from "../../hooks/use-leave-guard";
 import { useManagedProjectId } from "../../hooks/use-management-scope";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import { FEATURES } from "../../routing/features";
 import { errorMessage } from "../../services/error-messages";
+import { fetchProjectOverview } from "../../services/management";
+import type { ProjectOverview } from "../../services/management.types";
+import { chinaToday } from "../../services/time";
 import type {
   ManagedProject,
   ProjectStatus,
@@ -59,6 +63,7 @@ const NOT_IN_HUB: readonly string[] = [
 const ENTRY_ICONS: Readonly<Record<string, LineIconName>> = {
   "/pages/team-makeups/index": "check",
   "/pages/safety-review/index": "shield",
+  "/pages/face-review/index": "face",
   "/pages/project-worktime/index": "clock",
   "/pages/participants/index": "users",
   "/pages/reports/index": "chart",
@@ -105,6 +110,15 @@ export default function ProjectDetail(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
+  // “进入项目”的补卡、违规、底照入口右上角写待办数，和项目首页同一份概览缓存。
+  const today = chinaToday();
+  const overview = useCachedRead<ProjectOverview>(
+    view === "hub" && projectId && state.me
+      ? `${state.me.user.id}:project-overview:${projectId}:${today}`
+      : null,
+    () => fetchProjectOverview(projectId ?? "", today),
+    revision,
+  );
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
@@ -221,11 +235,22 @@ export default function ProjectDetail(): JSX.Element {
     );
 
   if (view === "hub") {
+    const todos = overview.data?.todos;
+    const badges: Readonly<Record<string, number>> =
+      todos === undefined
+        ? {}
+        : {
+            "/pages/team-makeups/index": todos.makeupPending,
+            "/pages/safety-review/index":
+              todos.violationPending + todos.appealPending,
+            "/pages/face-review/index": todos.facePending,
+          };
     const entries: ReadonlyArray<EntryItem> = FEATURES.projectAdmin
       .filter((feature) => !NOT_IN_HUB.includes(feature.url))
       .map((feature) => ({
         icon: ENTRY_ICONS[feature.url] ?? "doc",
         label: feature.title,
+        ...(badges[feature.url] ? { badge: badges[feature.url] } : {}),
         onClick: () => {
           void Taro.navigateTo({
             url: `${feature.url}?projectId=${saved.id}`,

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  companyAdminStatuses,
+  companyAdminTodos,
   companyProjectLines,
   countMissingText,
   leaderMakeupTodos,
@@ -452,59 +454,47 @@ describe("overviewMissingText", () => {
   });
 });
 
+const companyOverview = {
+  companyId: "c-1",
+  projects: [
+    { attendance: { expected: 48, missing: 0, present: 43 }, name: "滨江花园", projectId: "p-1", status: "ACTIVE" as const, todos: { facePending: 2, violationPending: 0 } },
+    { attendance: { expected: 10, missing: 3, present: 6 }, name: "城市更新", projectId: "p-2", status: "ACTIVE" as const, todos: { facePending: 0, violationPending: 1 } },
+    { attendance: { expected: 0, missing: 0, present: 0 }, name: "新地块", projectId: "p-3", status: "PREPARING" as const, todos: { facePending: 0, violationPending: 0 } },
+    { attendance: { expected: 0, missing: 0, present: 0 }, name: "空项目", projectId: "p-4", status: "ACTIVE" as const, todos: { facePending: 0, violationPending: 0 } },
+  ],
+  todos: { makeupOnlyYou: 1, makeupPending: 5, transferPending: 2 },
+};
+
 describe("companyProjectLines", () => {
-  test("groups by project and puts the project with more missing people first", () => {
-    const lines = companyProjectLines([
-      person({
-        projectId: "p-1",
-        projectName: "滨江花园",
-        memberId: "a",
-        workedMinutes: 480,
-      }),
-      person({
-        projectId: "p-1",
-        projectName: "滨江花园",
-        memberId: "b",
-        workedMinutes: 30,
-      }),
-      person({
-        projectId: "p-2",
-        projectName: "城市更新",
-        memberId: "c",
-        isMissingPunch: true,
-      }),
-      person({
-        projectId: "p-2",
-        projectName: "城市更新",
-        memberId: "d",
-        isAbsent: true,
-      }),
-      person({
-        projectId: "p-2",
-        projectName: "城市更新",
-        memberId: "d",
-        isAbsent: true,
-      }),
-    ]);
-    expect(lines).toEqual([
-      {
-        projectId: "p-2",
-        projectName: "城市更新",
-        people: 2,
-        missing: 2,
-        workedMinutes: 0,
-      },
-      {
-        projectId: "p-1",
-        projectName: "滨江花园",
-        people: 2,
-        missing: 0,
-        workedMinutes: 510,
-      },
+  test("lists active projects, empty ones too, the one with more missing first; folds the rest", () => {
+    const { lines, others } = companyProjectLines(companyOverview);
+    expect(lines.map((line) => line.projectId)).toEqual(["p-2", "p-1", "p-4"]);
+    expect(lines[1]).toEqual({ projectId: "p-1", projectName: "滨江花园", expected: 48, present: 43, missing: 0 });
+    expect(others).toBe(1);
+  });
+
+  test("nothing read yet means no rows", () => {
+    expect(companyProjectLines(null)).toEqual({ lines: [], others: 0 });
+  });
+});
+
+describe("companyAdminTodos", () => {
+  test("transfers, only-you makeups, then each project's violations and photos", () => {
+    const todos = companyAdminTodos(companyOverview);
+    expect(todos.map((todo) => [todo.title, todo.url])).toEqual([
+      ["调人申请 2 条", "/pages/transfer-approvals/index?companyId=c-1"],
+      ["补卡申请 1 条只有你能批", "/pages/team-makeups/index"],
+      ["底照待审核 2 人", "/pages/face-review/index?projectId=p-1"],
+      ["违规待复核 1 条", "/pages/safety-review/index?projectId=p-2"],
     ]);
   });
 
-  test("no participants means no rows", () => {
-    expect(companyProjectLines([])).toEqual([]);
+  test("nothing pending, nothing listed; statuses only for non-zero counts", () => {
+    expect(companyAdminTodos({ ...companyOverview, projects: [], todos: { makeupOnlyYou: 0, makeupPending: 3, transferPending: 0 } })).toEqual([]);
+    expect(companyAdminStatuses(companyOverview.todos)).toEqual({
+      "/pages/team-makeups/index": { kind: "warn", text: "1 条" },
+      "/pages/transfer-approvals/index": { kind: "warn", text: "2 条" },
+    });
+    expect(companyAdminStatuses(null)).toEqual({});
   });
 });

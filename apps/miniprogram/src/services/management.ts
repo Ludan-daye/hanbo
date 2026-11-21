@@ -1,6 +1,7 @@
 import { apiClient } from "./client";
 import type {
   DefaultAttendanceConfiguration,
+  CompanyOverview,
   CompanyParticipant,
   CompanyProject,
   CreateProjectBody,
@@ -35,6 +36,16 @@ export const fetchProjectOverview = async (
 ): Promise<ProjectOverview> =>
   apiClient.request<ProjectOverview>(
     `/management/projects/${encodeURIComponent(projectId)}/overview?date=${date}`,
+    { method: "GET" },
+  );
+
+/** 公司管理员首页的概览：每个项目一行合计，加公司待办条数。 */
+export const fetchCompanyOverview = async (
+  companyId: string,
+  date: string,
+): Promise<CompanyOverview> =>
+  apiClient.request<CompanyOverview>(
+    `/management/companies/${encodeURIComponent(companyId)}/overview?date=${date}`,
     { method: "GET" },
   );
 

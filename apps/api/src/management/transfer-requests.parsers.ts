@@ -60,15 +60,28 @@ export const parseTransferCandidates = (
     : fail("INVALID_TRANSFER_CANDIDATES_QUERY", result.error.issues);
 };
 
-export const parseTransferListStatus = (
-  query: unknown,
-): "PENDING" | "DONE" => {
+export type TransferListQuery = {
+  readonly cursor: string | null;
+  /** Source or target project. */
+  readonly projectId: string | null;
+  readonly status: "PENDING" | "DONE";
+};
+
+export const parseTransferList = (query: unknown): TransferListQuery => {
   const result = z
-    .object({ status: z.enum(["PENDING", "DONE"]).default("PENDING") })
+    .object({
+      cursor: z.string().min(1).optional(),
+      projectId: z.string().min(1).optional(),
+      status: z.enum(["PENDING", "DONE"]).default("PENDING"),
+    })
     .strict()
     .safeParse(query ?? {});
   return result.success
-    ? result.data.status
+    ? {
+        cursor: result.data.cursor ?? null,
+        projectId: result.data.projectId ?? null,
+        status: result.data.status,
+      }
     : fail("INVALID_TRANSFER_LIST_QUERY", result.error.issues);
 };
 

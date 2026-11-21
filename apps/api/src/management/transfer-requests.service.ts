@@ -20,8 +20,10 @@ import type {
   ReuseProjectResponse,
 } from "./participants.types.js";
 import { decryptPersonnelName } from "./personnel-name.js";
+import type { TransferListQuery } from "./transfer-requests.parsers.js";
 import type {
   TransferCandidatesQuery,
+  TransferRequestPage,
   TransferRequestResponse,
   TransferRequestWrite,
   TransferStatusValue,
@@ -205,23 +207,49 @@ export class TransferRequestsService {
     );
   }
 
+  /** 30 per page; pending oldest first, done newest first; optional source-or-target project. */
   async listForCompany(
     companyId: string,
-    status: "PENDING" | "DONE",
-  ): Promise<readonly TransferRequestResponse[]> {
-    return this.views(
-      await this.prisma.personnelTransferRequest.findMany({
-        where: {
-          companyId,
-          status: status === "PENDING" ? "PENDING" : { in: ["APPROVED", "REJECTED"] },
-        },
-        orderBy:
-          status === "PENDING"
-            ? [{ createdAt: "asc" }, { id: "asc" }]
-            : [{ reviewedAt: "desc" }, { id: "desc" }],
-        take: 100,
-      }),
-    );
+    query: TransferListQuery,
+  ): Promise<TransferRequestPage> {
+    const PAGE = 30;
+    const rows = await this.prisma.personnelTransferRequest.findMany({
+      where: {
+        companyId,
+        status:
+          query.status === "PENDING"
+            ? "PENDING"
+            : { in: ["APPROVED", "REJECTED"] },
+        ...(query.projectId === null
+          ? {}
+          : {
+              OR: [
+                { sourceProjectId: query.projectId },
+                { targetProjectId: query.projectId },
+              ],
+            }),
+      },
+      orderBy:
+        query.status === "PENDING"
+          ? [{ createdAt: "asc" }, { id: "asc" }]
+          : [{ reviewedAt: "desc" }, { id: "desc" }],
+      take: PAGE + 1,
+      ...(query.cursor === null
+        ? {}
+        : { cursor: { id: query.cursor }, skip: 1 }),
+    });
+    const page = rows.slice(0, PAGE);
+    return {
+      items: await this.views(page),
+      nextCursor: rows.length > PAGE ? page[PAGE - 1]!.id : null,
+    };
+  }
+
+  /** How many requests wait for this company's decision (company home). */
+  async countPending(companyId: string): Promise<number> {
+    return this.prisma.personnelTransferRequest.count({
+      where: { companyId, status: "PENDING" },
+    });
   }
 
   async approve(

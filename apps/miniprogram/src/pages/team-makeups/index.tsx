@@ -22,6 +22,7 @@ import {
   StateView,
 } from "../../components/ui/index";
 import { usePageRefresh } from "../../hooks/use-page-refresh";
+import { useSession } from "../../store/session";
 
 import {
   approveMakeup,
@@ -59,6 +60,11 @@ const QUICK_OPTIONS = QUICK_REASONS.map((reason) => ({
   value: reason,
   label: reason,
 }));
+// 公司管理员的收件箱分两类：默认只看只有公司级能批的（2026-11-21 Q2）。
+const MINE_OPTIONS = [
+  { value: "MINE", label: "需要你批" },
+  { value: "ALL", label: "全部" },
+];
 const personName = (item: InboxMakeup): string =>
   item.displayName ?? "待完善姓名";
 
@@ -116,6 +122,7 @@ export default function TeamMakeups(): JSX.Element {
   useSessionGuard();
 
   const { revision, refresh } = usePageRefresh();
+  const { state } = useSession();
 
   const [tab, setTab] = useState<"PENDING" | "REVIEWED">("PENDING");
   const [items, setItems] = useState<readonly InboxMakeup[] | null>(null);
@@ -127,6 +134,16 @@ export default function TeamMakeups(): JSX.Element {
   const requestedProjectId: string | null = router.params.projectId
     ? decodeURIComponent(router.params.projectId)
     : null;
+  // 从项目进来时看这个项目的全部；从公司进来默认“需要你批”，链接可带 onlyMine=false。
+  const companyLevel: boolean =
+    requestedProjectId === null &&
+    (state.me?.roles.assignments ?? []).some(
+      (assignment) => assignment.roleCode === "COMPANY_ADMIN",
+    );
+  const [onlyMine, setOnlyMine] = useState<boolean>(
+    router.params.onlyMine !== "false",
+  );
+  const mine: boolean = companyLevel && onlyMine && tab === "PENDING";
   const [scope, setScope] = useState<string | null>(
     requestedTeamName === null && requestedProjectId === null
       ? ALL_SCOPES
@@ -143,7 +160,11 @@ export default function TeamMakeups(): JSX.Element {
     setError(null);
     setItems(null);
     setNextCursor(null);
-    const load = tab === "PENDING" ? fetchMakeupInbox : fetchReviewedMakeups;
+    const load =
+      tab === "PENDING"
+        ? (cursor: string | null, projectId: string | null) =>
+            fetchMakeupInbox(cursor, projectId, mine)
+        : fetchReviewedMakeups;
     void load(null, requestedProjectId).then(
       (page) => {
         if (!cancelled) {
@@ -158,7 +179,7 @@ export default function TeamMakeups(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [revision, tab, requestedProjectId]);
+  }, [revision, tab, requestedProjectId, mine]);
   const review = async (
     id: string,
     action: ReviewAction,
@@ -224,9 +245,10 @@ export default function TeamMakeups(): JSX.Element {
     setBusy("page");
     setError(null);
     try {
-      const page = await (
-        tab === "PENDING" ? fetchMakeupInbox : fetchReviewedMakeups
-      )(nextCursor, requestedProjectId);
+      const page =
+        tab === "PENDING"
+          ? await fetchMakeupInbox(nextCursor, requestedProjectId, mine)
+          : await fetchReviewedMakeups(nextCursor, requestedProjectId);
       setItems((rows) => [...(rows ?? []), ...page.items]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
@@ -277,6 +299,15 @@ export default function TeamMakeups(): JSX.Element {
           if (busy === null) setTab(value);
         }}
       />
+      {companyLevel && tab === "PENDING" ? (
+        <Chips
+          options={MINE_OPTIONS}
+          selected={[onlyMine ? "MINE" : "ALL"]}
+          onToggle={(value) => {
+            if (busy === null) setOnlyMine(value === "MINE");
+          }}
+        />
+      ) : null}
       {scopes.length > 2 ? (
         <Picker
           mode="selector"
@@ -306,7 +337,9 @@ export default function TeamMakeups(): JSX.Element {
           title={tab === "PENDING" ? "都处理完了" : "还没有处理过的申请"}
           sub={
             tab === "PENDING"
-              ? "现在没有等你审批的补卡申请。"
+              ? mine
+                ? "只有你能批的申请都处理完了。其他申请班组长和项目管理员就能批，在“全部”里。"
+                : "现在没有等你审批的补卡申请。"
               : "你审批过的补卡申请会留在这里。"
           }
         />
@@ -333,6 +366,9 @@ export default function TeamMakeups(): JSX.Element {
             </CardTitle>
             <RequestLine item={open} />
             <CardMeta>{scopeLabel(open)}</CardMeta>
+            {companyLevel && open.onlyYou === true ? (
+              <CardMeta>项目里没有更高职级的人能批，只能由你处理。</CardMeta>
+            ) : null}
             <View className="team-makeups__text">{open.reason}</View>
             <View className="team-makeups__quick">
               <Chips

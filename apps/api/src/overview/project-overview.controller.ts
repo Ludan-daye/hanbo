@@ -6,6 +6,8 @@ import type { AuthenticatedUser } from "../auth/auth.types.js";
 import { PermissionsGuard } from "../authorization/permissions.guard.js";
 import { RequirePermission } from "../authorization/require-permission.decorator.js";
 
+import { CompanyOverviewService } from "./company-overview.service.js";
+import type { CompanyOverviewResponse } from "./company-overview.types.js";
 import { parseOverviewQuery } from "./project-overview.parsers.js";
 import { ProjectOverviewService } from "./project-overview.service.js";
 import type { ProjectOverviewResponse } from "./project-overview.types.js";
@@ -15,7 +17,27 @@ export class ProjectOverviewController {
   constructor(
     @Inject(ProjectOverviewService)
     private readonly overviewService: ProjectOverviewService,
+    @Inject(CompanyOverviewService)
+    private readonly companyOverview: CompanyOverviewService,
   ) {}
+
+  @Get("companies/:companyId/overview")
+  @RequirePermission({
+    permissionCode: "company.manage",
+    target: { paramName: "companyId", source: "companyParam" },
+  })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async company(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param("companyId") companyId: string,
+    @Query() query: unknown,
+  ): Promise<CompanyOverviewResponse> {
+    return this.companyOverview.overview(
+      actor.userId,
+      companyId,
+      parseOverviewQuery(query).date,
+    );
+  }
 
   @Get("projects/:projectId/overview")
   @RequirePermission({

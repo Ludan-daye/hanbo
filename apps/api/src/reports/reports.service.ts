@@ -409,6 +409,45 @@ export class ReportsService {
       date,
     );
   }
+  /**
+   * The company daily report's totals, split by project: same rows and rules as
+   * getCompanyDailyReport, without sending the rows.
+   */
+  async getCompanyDailyTotalsByProject(
+    companyId: string,
+    date: string,
+  ): Promise<{
+    readonly byProject: ReadonlyMap<string, AttendanceReportTotals>;
+    readonly totals: AttendanceReportTotals;
+  }> {
+    const projects = await this.companyProjects(companyId);
+    const rows = await this.days(
+      this.prisma,
+      projects,
+      null,
+      null,
+      dateOnlyToDate(date),
+      dateOnlyToDate(date),
+      new Date(),
+      null,
+    );
+    const byProject = new Map<string, AttendanceReportTotals>();
+    for (const row of rows)
+      byProject.set(
+        row.participant.projectId,
+        addDayToTotals(
+          byProject.get(row.participant.projectId) ?? createEmptyTotals(0),
+          row.dayValues,
+        ),
+      );
+    return {
+      byProject,
+      totals: rows.reduce(
+        (totals, row) => addDayToTotals(totals, row.dayValues),
+        createEmptyTotals(rows.length),
+      ),
+    };
+  }
   async getCompanyWeeklyReport(
     companyId: string,
     date: string,

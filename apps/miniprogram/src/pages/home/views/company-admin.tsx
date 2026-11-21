@@ -10,13 +10,13 @@ import {
 import { useCachedRead } from "../../../hooks/use-cached-read";
 import { usePageRefresh } from "../../../hooks/use-page-refresh";
 import type { MeResponse } from "../../../services/auth.types";
-import { fetchCompanyDailyReport } from "../../../services/management";
-import type { DailyReport } from "../../../services/management.types";
+import { fetchCompanyOverview } from "../../../services/management";
+import type { CompanyOverview } from "../../../services/management.types";
 import { chinaToday } from "../../../services/time";
 import {
+  companyAdminTodos,
   companyProjectLines,
-  countMissingText,
-  hoursText,
+  overviewMissingText,
 } from "../home-model";
 import { useHomeScope } from "../use-home-scope";
 
@@ -26,6 +26,7 @@ import {
   HomeScopeChooser,
   HomeShell,
   scopeTitle,
+  TodoSheet,
   useAnnouncement,
   usePullRefresh,
 } from "./parts";
@@ -38,8 +39,9 @@ const ENTRIES: readonly string[] = [
 ];
 
 /**
- * 公司管理员首页：标牌说全公司今天到了多少、缺卡多少；
- * 下面一个项目一行，缺得多的排前面，点进去就是这个项目。
+ * 公司管理员首页：标牌说全公司今天到了多少、缺卡多少；“等你处理”是调人申请、
+ * 只有你能批的补卡和各项目积压的底照、违规；下面一个进行中的项目一行（没人的也列），
+ * 缺得多的排前面，点进去就是这个项目。数字都来自 /management/companies/:id/overview。
  */
 export const CompanyAdminHome = ({
   me,
@@ -57,24 +59,39 @@ export const CompanyAdminHome = ({
   const company = choice.scope;
   const companyId = company?.scopeId ?? null;
   const date = chinaToday();
-  const report = useCachedRead<DailyReport>(
-    companyId === null ? null : `${userId}:company-daily:${companyId}:${date}`,
-    () => fetchCompanyDailyReport(companyId ?? "", date),
+  const overview = useCachedRead<CompanyOverview>(
+    companyId === null
+      ? null
+      : `${userId}:company-overview:${companyId}:${date}`,
+    () => fetchCompanyOverview(companyId ?? "", date),
     revision,
     "暂时无法读取工作概览",
   );
   const settings = useAnnouncement(userId, revision);
   usePullRefresh(
     refresh,
-    choice.loading || choice.refreshing || report.loading || report.refreshing,
+    choice.loading ||
+      choice.refreshing ||
+      overview.loading ||
+      overview.refreshing,
   );
-  const lines = report.data
-    ? companyProjectLines(report.data.participants)
-    : [];
+  const { lines, others } = companyProjectLines(overview.data);
   const problem =
     choice.error ??
-    (report.data !== null ? report.error : null) ??
+    (overview.data !== null ? overview.error : null) ??
     settings.error;
+  const sign = {
+    data:
+      overview.data === null
+        ? null
+        : {
+            totals: {
+              scheduledDays: overview.data.attendance.expected,
+              actualAttendedDays: overview.data.attendance.present,
+            },
+          },
+    error: overview.error,
+  };
 
   return (
     <HomeShell
@@ -97,17 +114,24 @@ export const CompanyAdminHome = ({
               />
             </Sign>
           ) : (
-            <AttendanceSign
-              date={date}
-              report={report}
-              missing={countMissingText(report.data)}
-              onOpen={() =>
-                go(featureUrl("/pages/company-reports/index", company))
-              }
-              onRetry={refresh}
-            />
+            <>
+              <AttendanceSign
+                date={date}
+                report={sign}
+                missing={overviewMissingText(overview.data)}
+                onOpen={() =>
+                  go(featureUrl("/pages/company-reports/index", company))
+                }
+                onRetry={refresh}
+              />
+              <TodoSheet
+                todos={companyAdminTodos(overview.data)}
+                loading={overview.loading}
+                incomplete={overview.data === null && overview.error !== null}
+              />
+            </>
           )}
-          {lines.length > 0 ? (
+          {lines.length > 0 || others > 0 ? (
             <>
               <SectionTitle
                 action="全部项目"
@@ -122,7 +146,11 @@ export const CompanyAdminHome = ({
                   <Row
                     key={line.projectId}
                     title={line.projectName}
-                    sub={`${line.people} 人，已记工 ${hoursText(line.workedMinutes)} 小时`}
+                    sub={
+                      line.expected === 0
+                        ? "今天没有应到的人"
+                        : `到岗 ${line.present}／${line.expected}`
+                    }
                     status={
                       line.missing > 0
                         ? { kind: "bad", text: `缺卡 ${line.missing} 人` }
@@ -136,6 +164,17 @@ export const CompanyAdminHome = ({
                     }
                   />
                 ))}
+                {others > 0 ? (
+                  <Row
+                    title={`另有 ${others} 个项目`}
+                    sub="筹备中、已暂停或已完工"
+                    mute
+                    chevron
+                    onClick={() =>
+                      go(featureUrl("/pages/company-projects/index", company))
+                    }
+                  />
+                ) : null}
               </Sheet>
             </>
           ) : null}

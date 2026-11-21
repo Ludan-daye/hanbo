@@ -22,15 +22,20 @@ import {
   type PendingMakeup,
 } from "../../services/makeups";
 import {
+  fetchCompanyOverview,
   fetchMyRoleScopes,
   fetchProjectOverview,
 } from "../../services/management";
 import type {
+  CompanyOverview,
   ProjectOverview,
   WorkRoleScope,
 } from "../../services/management.types";
 import { chinaToday } from "../../services/time";
-import { projectAdminStatuses } from "../home/home-model";
+import {
+  companyAdminStatuses,
+  projectAdminStatuses,
+} from "../home/home-model";
 import { useSession } from "../../store/session";
 
 // 每个职级的入口归在哪个标题下。
@@ -100,8 +105,22 @@ export default function Workspace(): JSX.Element {
     () => fetchProjectOverview(projectId ?? "", date),
     revision,
   );
+  // 公司管理员的补卡审批（只有你能批的）和调人申请后面写数，和公司首页同一份缓存。
+  const companyId =
+    selected?.roleCode === "COMPANY_ADMIN" && selected.scopeType === "COMPANY"
+      ? selected.scopeId
+      : null;
+  const company = useCachedRead<CompanyOverview>(
+    userId === undefined || companyId === null
+      ? null
+      : `${userId}:company-overview:${companyId}:${date}`,
+    () => fetchCompanyOverview(companyId ?? "", date),
+    revision,
+  );
   const statuses =
-    projectId !== null
+    companyId !== null
+      ? companyAdminStatuses(company.data?.todos ?? null)
+      : projectId !== null
       ? projectAdminStatuses(overview.data?.todos ?? null)
       : pendingCount > 0
         ? {
