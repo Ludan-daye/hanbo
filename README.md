@@ -164,9 +164,11 @@ corepack pnpm deploy:test ubuntu@162.14.74.2
 
 SSH 密码只在终端提示时输入。更新命令使用当前工作区源码，不自动提交 Git，也不上传 `.env` 或覆盖云端数据。前端改动保存后自动编译；本人日常联调可在微信开发者工具打开“真机调试 → 自动真机调试”，选择手机系统，保持手机微信前台运行且登录工具显示的同一账号。当前采用局域网模式，手机与电脑需在同一 Wi-Fi。点击“编译并自动调试”（Mac：⇧⌘R）更新手机调试代码，无需每次生成预览码；是否连接成功以工具显示为准。预览包仍是当次编译的快照；后端改动执行部署命令。
 
-测试包登录页支持五种测试角色，点击身份即可进入，无需口令。正式微信登录仍保留。`--test-login` 仅控制客户端入口；服务端必须显式配置 `DEPLOYMENT_ENV=test` 和 `TEST_LOGIN_ENABLED=true`，并执行 `pnpm exec tsx --env-file=.env prisma/seed.test-logins.ts` 补齐已有的五个 `dev-*` 账号资料。该脚本不创建权限，也不修改真实微信账号；不要为此重跑完整开发种子。默认部署关闭测试登录，生产环境禁止开启。服务端 Nginx 对测试登录单独限流。项目人员加入仍使用原邀请码。
+测试包登录页支持五种测试角色，点击身份即可进入，无需口令。正式微信登录仍保留。`--test-login` 仅控制客户端入口；服务端必须显式配置 `DEPLOYMENT_ENV=test` 和 `TEST_LOGIN_ENABLED=true`，并执行 `pnpm exec tsx --env-file=.env prisma/seed.test-logins.ts` 补齐已有的六个 `dev-*` 账号资料（含没有项目的临时工 `dev-worker-2`）。该脚本不创建权限，也不修改真实微信账号；不要为此重跑完整开发种子。默认部署关闭测试登录，生产环境禁止开启。服务端 Nginx 对测试登录单独限流。项目人员加入仍使用原邀请码。
 
 部署配置位于 `deploy/test`，当前服务器目录为 `/opt/hanbo-test`：`current` 指向代码版本，`.env` 存放独立服务端配置，`uploads` 保存图片和 Excel。API 只监听本机 3000，数据库不映射公网端口，Nginx 提供 HTTPS。首次部署需要准备独立 `.env`、数据库、上传文件、Nginx 和证书，`deploy:test` 用于已初始化的服务器。
+
+超级管理员只能在服务器上用命令开通或撤销（小程序里不能任免、停用超级管理员），只接受已绑定、正常的管理人员账号，最后一位不能撤销，每次都记操作记录。在 `/opt/hanbo-test/current` 下执行：`sudo docker compose --env-file /opt/hanbo-test/.env -f deploy/test/compose.yaml run --rm -T --no-deps api node dist/system/system-admin.cli.js grant --phone 13800000000`（`revoke --phone …` 撤销，`list` 列出）。本地用 `corepack pnpm --filter @construction/api system-admin list`。
 
 `hanbo-cert-renew.timer` 每天检查两次短期 IP 证书续期，成功后重载 Nginx；`hanbo-backup.timer` 每天 03:30（服务器 Asia/Shanghai 时区）备份数据库、文件和加密配置到同机 `backups`。更新前也自动备份，备份目录仅管理员可读。异地备份、告警和正式容量压测仍待配置。
 
