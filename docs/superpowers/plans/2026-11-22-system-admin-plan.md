@@ -487,3 +487,61 @@
 - 第五期（平台首页、补卡口径、公告和联系电话；改平台设置要写进平台日志，归“平台”）。
 - `deploy:test` 之后用 `dev-system` 在测试服务器上看日志标签：测试服务器上测试登录多，“全部操作”里会有很多“用测试账号直接登录”，按类型或公司筛即可（这一期没有部署）。
 - 公司选择器只列公司列表第一页（30 家）；更多的公司要从记录点进去筛，公司多了再加搜索。
+
+### 第五期（G7、G8、G9；Q10、Q11、Q12）
+
+提交：`11c6cb5`（domain 句子）、`859e7a2`（平台设置表和接口）、`801f52f`（平台首页接口、补卡口径）、`7d76e13`（小程序首页、工作台、补卡页、公告和电话）、`7d96e26`（平台管理设置标签、公司列表筛选）、`12265ee`（演示）、`e7c723e`（标牌窄屏调整），以及本条记录和 README、总览。迁移 `20261124090000_platform_settings`。
+
+做了什么：
+- 新表 `PlatformSetting`（`platform_settings`）：单行，`id` 固定 `GLOBAL`（CHECK 约束），`announcement`（CHECK 不超过 160 字）、`supportPhone`、`updatedAt`、`updatedByUserId`。迁移插入空行；万一没有这一行（`db push` 建的库），读的时候补一行空的。
+- 接口：
+  - `GET /app/settings`（只要登录，`AccessTokenGuard`）：`{ announcement, supportPhone }`，`Cache-Control: no-store`。放在 `SystemModule` 的 `AppSettingsController`。
+  - `GET`、`PUT /system/settings`（`system.manage`，static GLOBAL）：PUT 是 `{ announcement, supportPhone, expectedUpdatedAt }`（`.strict()`）。公告去空格后最多 160 字；电话可以空，填了要是手机号、座机或 400／800 电话；不对是 400 `INVALID_PLATFORM_SETTINGS_REQUEST`。条件 `updateMany` 核对 `updatedAt`，别人刚保存过是 409 `PLATFORM_SETTINGS_CHANGED_RELOAD`。写 `PLATFORM_SETTINGS_UPDATED`（metadata 带改了哪几项和保存后的两项），没有 `companyId`。
+  - `GET /system/overview`（`system.manage`，`no-store`）：`{ companies: { active, suspended }, projects: { active }, accounts: { active, disabled }, todos: { companiesWithoutAdmin, pendingAdminInvitations, makeupOnlyYou } }`。账号只数绑定了的（和账号列表一致）。两类公司待办只算正常的公司：没有 ACTIVE 任命的公司、ACTIVE 任命里管理档案还没绑定微信的人（邀请码有效、过期都算，过期了要重发）。放在单独的 `SystemOverviewModule`，因为补卡数要用 `MakeupModule`（连带考勤），`/system/*` 别的接口用不到。
+  - `GET /system/companies` 多了 `admin=NONE|NOT_BOUND` 筛选，首页的两类公司待办点进去就是它（加 `status=ACTIVE`）。
+- 补卡“只有你能批”的平台口径（G8）：`reviewableItems` 里，操作人有 GLOBAL 授权、而且去掉 GLOBAL 之后他对这条申请的覆盖职级不高于申请人时（也就是只靠平台身份才批得了），这家公司的 COMPANY 级授权（职级高于申请人、不是申请人、不是自己）也算“别人能批”。公司管理员之间仍互相不算（四级第一期的口径不变）。首页的 `makeupOnlyYou` 由 `countPendingOnlyYou` 把 `/makeups/pending?onlyMine=true` 每一页加起来，和列表是同一个函数。
+- 修了一个旧 bug：GLOBAL 授权的补卡收件箱查询条件是 `OR: [{}]`，Prisma 对它一条也不匹配，所以**超级管理员的补卡收件箱一直是空的**（计划 1.3-11 推断“全平台所有补卡”，实际是零条）。现在有 GLOBAL 授权时不加 `OR`。
+- 停用的账号（Q12）：微信登录被拒时 `USER_DISABLED` 带上 `supportPhone`（没设是 null；读设置出错也不影响拒绝）。被停用的人先看到“登录已过期”，再登录时看到“当前账号已停用，请联系管理员。平台联系电话 400-…。”。
+- domain `audit-log.ts`：`PLATFORM_SETTINGS_UPDATED` 归“平台”，句子“修改了首页公告、平台联系电话”（只写改了的那几项；什么都没改是“保存了平台设置”）。
+- 小程序：
+  - 超级管理员首页读 `/system/overview`：标牌大字是“4 家公司”，下面一行“1 个进行中项目，5 个账号在用”（有暂停的公司、停用的账号才补一句）；“等你处理”是 `systemAdminTodos`（`home-model.ts`）：没有管理员的公司（点进去 `system-management?tab=COMPANIES&admin=NONE`）、公司管理员还没绑定（`admin=NOT_BOUND`）、只有你能批的补卡（补卡审批）。没读到时标牌自己说明并给重试。
+  - 工作台：超级管理员的“平台管理”后面写公司待办数，“补卡审批”后面写只有你能批的条数（`systemAdminStatuses`，和首页同一份缓存）。
+  - 补卡审批：`companyLevel` 也认 SYSTEM_ADMIN，默认“需要你批”（Q11）；平台看到的说明是“公司里没有别人能批，只能由你处理。”
+  - 首页公告：`parts.tsx` 的 `useAnnouncement` 和工人首页都去掉了“只在演示版读”的限制，所有人的首页都读 `/app/settings`。
+  - 平台联系电话：`apiClient` 遇到带 `supportPhone` 的拒绝，把电话接在文案后面（`withSupportPhone`）；`CompanySuspendedNotice` 在有公司暂停时才读 `/app/settings`，说明里写“请联系平台恢复，电话 …”。
+  - 平台管理：设置标签接真实接口，带版本保存；两项都可以空（原来联系电话必填）；保存前按同样的规则检查，检查不过和保存失败都用 `Notice tone="error"` 放在按钮上方，填的内容留着。公司标签多了“全部／没有管理员／管理员没绑定”三个筛选（后两个只看正常的公司），筛选放在页面上，点开一家再返回还在；链接里的 `tab`、`admin` 直接决定打开哪个标签、哪个筛选。正常的公司里有管理员没绑定的，右边写“等他绑定”。
+  - 新常量 `INVALID_PLATFORM_SETTINGS_REQUEST`、`PLATFORM_SETTINGS_CHANGED_RELOAD` 有中文。
+- 演示：新增 `services/demo/system-home.ts`。`/system/overview`、`/system/settings`（检查、版本、平台日志里的“修改了首页公告、平台联系电话”）、`/app/settings` 和公司列表的 `admin` 筛选与真实接口同口径；超级管理员的“只有你能批”去掉公司里有（已绑定的）公司管理员能批的；停用的演示账号登录时报 `USER_DISABLED` 并带电话。旧的演示数据里设置没有版本，按 `2026-11-01` 算。
+
+测试：
+- domain 1 条（类型和句子）。
+- `system.e2e` 新增 1 条：公司、项目管理员、工人调 `/system/settings` 403；工人、公司管理员能读 `/app/settings`，没登录 401；超长公告、错的电话、坏版本、多余字段、缺字段 400；保存、版本冲突 409、两条审计。
+- `company-suspension-routes.test.ts`：`PUT /system/settings` 归“平台”。
+- 数据库套件 `platform-home.integration.test.ts`（新，5 条，已加进 `scripts/test-database.ts`，最后跑）：
+  - 公司管理员、项目管理员、工人调首页和设置 403；`admin=SOME` 400。
+  - **首页每个数都等于点进去数出来的条数**（翻完所有页，库里有前面各套件留下的数据）：没有管理员的公司 = `status=ACTIVE&admin=NONE` 的条数，没绑定的人 = `admin=NOT_BOUND` 各公司里未绑定管理员之和，只有你能批的补卡 = `onlyMine=true` 的条数，公司数、进行中项目数（各公司 `activeProjectCount` 之和）、在用和停用账号数。暂停的公司不进待办。
+  - 平台口径：A 公司（有公司管理员）项目管理员的补卡对超级管理员不是“只有你能批”，B 公司（没有管理员）的是，A 公司管理员本人的也是；A 公司管理员自己的“需要你批”照旧有 A 项目管理员那条。
+  - 新建一家没有管理员的公司、驳回一条、一位新人绑定后，三个待办分别 +1、−1、−1。
+  - 设置：保存后工人、项目管理员、公司管理员读到新的；旧版本 409；平台日志“平台”类型第一条是它；停用一个账号后他微信登录 403，响应带电话。
+- 小程序：`home-model` 3 条（标牌、待办、工作台数）；`company-platform-views` 改 1 条加 2 条（“等他绑定”、链接筛选和标签、设置检查）；`company-status` 1 条（电话）；`error-messages` 2 条；`apiClient` 1 条；演示集成改 1 条（保存设置要带版本）加 1 条（首页数字等于列表、平台口径、设置的检查和冲突和日志、停用提示带电话、工人能读不能看首页）。
+
+测试结果：
+- domain：64 条。
+- 小程序：551 条（63 个文件）。
+- API：单元和 e2e 共 126 条通过，另有 143 条数据库套件在这一步按设计跳过。
+- `test:database`：16 个文件、127 条，全部通过，其中 `platform-home.integration` 5 条。迁移 drift 检查通过。
+- 两种构建都通过；`dist-weapp` 1.71 MB。
+- 演示版 360px 截图在主目录 `output/system-admin/phase5-shots/`（不入库），脚本 `output/system-admin/tools/platform-home.py`：超级管理员首页、点“没有管理员的公司”、“管理员没绑定”筛选、工作台、补卡审批、设置（读到、电话填错、保存后）、平台日志里的设置记录、停用后登录的提示、工人和项目管理员首页、公司暂停时公司管理员首页的说明。
+
+与计划不同：
+- 计划写首页数字“全部用 `count`/`groupBy`”。公司、项目、账号和两类公司待办是 `count`/`groupBy`；只有你能批的补卡做不到（要按成员历史和授权逐条判断），用收件箱同一个函数逐页数，平台待批的补卡很多时首页会慢一些（推断：平台待批的量小）。
+- 计划把“没接受的公司管理员邀请”写成邀请；实际按“任命了、还没绑定微信的人”数，邀请码过期的也算（过期了更要处理），和公司列表上“等他绑定”的人一一对应。暂停的公司不进两类公司待办。
+- 首页标牌：设计稿和计划写“3 家公司，7 个进行中项目”一行大字，360px 宽要折成两行，改成大字只写公司数，项目和账号放在下一行。
+- 联系电话不再必填（演示版原来必填）：Q12 只说“一个平台联系电话”，空着时提示里就不写电话。
+- “公司已暂停”的 403 响应体没有带电话（守卫是同步的，在每个写接口上多查一次不值得）；电话写在首页、工作台的暂停说明里，那里本来就会先看到。
+- 计划 1.3-11 说超级管理员的补卡收件箱是“全平台所有补卡”，实际一直是空的（见上面的 bug）。修好之后，超级管理员的“全部”第一次真的列出全平台待批补卡。
+
+留到以后：
+- `deploy:test` 之后在测试服务器上用 `dev-system` 看首页数字、点待办、改公告和电话，用工人、组长确认首页公告；停用 `dev-team` 后用它登录看电话（这一期没有部署）。部署前旧版小程序不读 `/app/settings`，部署后、换新包前新版小程序读不到公告时首页会多一条“有些信息没读到”。
+- 超级管理员的“全部”补卡现在是全平台的（每页 50 条），以后公司多了可能要按公司筛（和 G10 一起）。
+- G10（打卡安排按公司、项目选范围）、G11（订阅通知）。
