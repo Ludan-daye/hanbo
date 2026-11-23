@@ -19,7 +19,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "seed:dev": "tsx --env-file=.env prisma/seed.dev.ts"
+    "seed:dev": "tsx --env-file=.env prisma/seed.dev.ts",
+    "system-admin": "tsx --env-file=.env src/system/system-admin.cli.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
