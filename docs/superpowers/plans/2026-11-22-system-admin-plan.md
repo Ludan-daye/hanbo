@@ -223,3 +223,69 @@
 ## 用户的决定（2026-11-22）
 
 用户回复“做吧”：Q1–Q12 全部按第 5 节的建议执行，五期都做，按第一期到第五期的顺序。“以后”里的 G10 先按 Q11 把“打卡安排”从超级管理员首页和工作台拿掉；CLAUDE.md 的测试账号数随本轮改成六个。
+
+## 实施记录（2026-11-22）
+
+分支 `project-admin`，从 `63da618` 起。每期都跑 `corepack pnpm test`、`typecheck`、小程序 `tsc --noEmit`、`test:database`（含迁移重放和 drift 检查），以及 `build:weapp`、`build:h5:demo`。新的数据库集成测试 `apps/api/test/system-admin.integration.test.ts` 已加进 `scripts/test-database.ts`。
+
+### 第一期（G1、G2；Q1、Q2、Q7）
+
+提交：`b4305e7`（domain 句子）、`6a4e00f`（任命表和绑定）、`48b0289`（`/system/companies` 接口）、`eeda428`（小程序）。迁移 `20261122090000_company_manager_members`。
+
+做了什么：
+- 新表 `CompanyManagerMember`（`company_manager_members`）：状态只能是 ACTIVE、REVOKED，部分唯一索引保证同一公司同一人只有一条 ACTIVE。迁移把已有的 COMPANY_ADMIN 角色回填成任命，只回填有管理档案的用户；开发种子也会写任命。
+- 绑定时，`grantManagerMembershipRoles` 按任命补上 COMPANY 范围的 COMPANY_ADMIN。撤销会删掉这一条 `UserRole`，项目和班组身份不动。
+- 新模块 `apps/api/src/system/`，接口都要 `system.manage`（static GLOBAL）：
+  - `GET /system/companies`：可带 search、status、cursor，每页 30 条，项目数用 `groupBy`。
+  - `POST /system/companies`：名称去空格后不能和已有公司重名，大小写不同也算重名；信用代码 18 位、转成大写、不能重复。
+  - `GET`、`PUT /system/companies/:companyId`：PUT 要带全部字段和 `expectedUpdatedAt`。
+  - `GET .../admin-candidates`、`POST .../admins`、`POST .../admins/:memberId/invitation`、`POST .../admins/:memberId/revoke`。
+  - 新建公司、修改公司、任命、撤销、重新生成邀请码，都写 AuditLog，`companyId` 直接写上。所以公司自己的操作记录里，“公司”类型也能看到这些。
+- domain `audit-log.ts`：增加 `COMPANY_CREATED`、`COMPANY_UPDATED`（写明改了哪几项）、`COMPANY_ADMIN_APPOINTED`、`COMPANY_ADMIN_REVOKED`、`COMPANY_ADMIN_INVITATION_ISSUED`，都归“公司”类型。任免类记录指向被任免人的管理档案。
+- 小程序“平台管理”：
+  - 四个标签各读各的接口，一个标签读不到只影响它自己。
+  - 公司列表分页，在服务端搜索。没有管理员的公司有警戒条和红点；状态正常的公司右边不写状态，副行才放得下管理员姓名。
+  - 新增公司可以填六项，建好后直接打开这家公司。
+  - 公司详情分三块：
+    - 公司管理员：一人一张卡，卡上有绑定情况、邀请码有效期、“重新生成邀请码”和“撤销”。新邀请码显示在卡片里，可以复制。
+    - 进入公司：和公司管理员一样的九个入口，每个链接都带 `companyId`。
+    - 公司资料：可以修改，名称和信用代码也能改。
+  - 任命页有两种方式：“选已有账号”和“录入新人”。录入新人时，如果服务器返回 `MANAGER_PHONE_EXISTS`，页面给出“改为任命已有的某某”。
+- 演示：
+  - 新增 `services/demo/system-companies.ts`，和真实接口同口径。
+  - 演示数据多了一家没有管理员的公司。
+  - 演示里有了任命记录后，`demoMe` 按任命记录给公司级身份。
+
+与计划不同：
+- 服务写在 `system-companies.service.ts`，没有用 `system.service.ts`。以后各期在同一个模块里各加自己的服务。
+- 版本冲突沿用四级已有的 `COMPANY_CHANGED_RELOAD_BEFORE_SAVING`，没有新加 `COMPANY_VERSION_CONFLICT`。小程序里已经有这条的文案。
+- 多了 `POST .../admins/:memberId/invitation`，用来重新生成邀请码，旧码作废。任命表上多了 `invitationId`，记最近一张邀请码，详情页靠它显示“等他绑定，几号前有效”或“已过期”。撤销未绑定的人时，他那张码也一起作废。
+- 没有放宽项目邀请码“必须是项目成员”的检查。公司管理员的邀请码由 system 模块直接发，生成逻辑抽成了 `bindings/invitation-code.ts`，和项目邀请共用。绑定流程只改了授予角色这一处。
+- 旧的 `POST /management/companies` 和 `management.e2e` 里那条用例已经删掉，因为前端在这一期就换到了新接口。
+- 管理档案不分公司，所以 `MANAGER_PHONE_EXISTS` 按全平台查，并带回已有档案的 `profileId` 和姓名。
+- 新增了这几种错误：
+  - `COMPANY_ADMIN_PHONE_IS_WORKER`：手机号属于已绑定的工人。Q1 规定只能任命管理人员。
+  - `COMPANY_ADMIN_ALREADY_APPOINTED`、`COMPANY_ADMIN_NOT_FOUND`。
+  - `COMPANY_ADMIN_CANDIDATE_NOT_FOUND`、`COMPANY_ADMIN_CANDIDATE_NOT_ACTIVE`。
+  - `COMPANY_ADMIN_CHANGED_RELOAD`。
+- `{ managerProfileId }` 也接受还没绑定的档案，也就是 `MANAGER_PHONE_EXISTS` 带回来的那种。这时会顺带生成邀请码。
+- 候选人不含已经是本公司管理员的人；搜索词为空时列出前 20 个。
+- 数据库只对信用代码加了唯一约束；公司重名靠接口检查，两人同时提交仍可能重名。
+- “暂停公司”按钮先从公司详情拿掉了，第三期再按 Q5 接上。公司状态仍是字符串，列表的 status 筛选只认 ACTIVE、SUSPENDED。
+- 账号、设置、日志三个标签仍然只有演示版，正式环境里这三个标签会显示读取失败，公司标签不受影响。账号标签改为点开某个账号时才读管理范围要用的公司、项目和班组，仍是逐个读取，第二期会整页重写。
+- 演示里生成的公司管理员邀请码不能拿去绑定，演示的绑定只认项目邀请码。
+- 迁移回填的测试：`test:database` 重放旧迁移时，roles 表还是空的，造不出旧的 COMPANY_ADMIN 角色。所以集成测试先手工建一条旧式角色，再执行迁移文件里的那段 INSERT，然后检查这个人出现在公司管理员里、能用公司接口、能被撤销。测试登录的配置脚本（`provision-test-accounts`）没改，测试服务器上的 `dev-company` 靠迁移回填。
+
+测试结果：
+- domain：53 条。
+- 小程序：532 条（62 个文件）。
+- API：单元和 e2e 共 114 条通过，另有 123 条数据库套件在这一步按设计跳过。新增的 `system.e2e` 有 4 条。
+- `test:database`：12 个文件、107 条，全部通过，其中 `system-admin.integration` 有 5 条。迁移 drift 检查通过。
+- 两种构建都通过；`dist-weapp` 1.69 MB。
+- 演示版截图在 `output/system-admin/`（不入库）。
+
+留到以后：
+- 第二到第五期。
+- `deploy:test` 和用 `dev-system`、`dev-company` 在测试服务器上回归（这一期没有部署）。
+- 按 Q11 把“打卡安排”从超级管理员首页和工作台拿掉。
+- CLAUDE.md 里测试账号数改成六个。
