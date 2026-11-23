@@ -437,3 +437,53 @@
 - 暂停公司的待批补卡、待审底照还会出现在首页“等你处理”里，但批不了。
 - 平台联系电话（第五期）。
 - 第四、五期。
+
+### 第四期（G6；Q8、Q9）
+
+提交：`c58e7c7`（domain 类型和句子）、`6b86c35`（`/system/audit-logs` 接口、信用规则发布写审计、索引迁移）、`fdaae91`（小程序日志标签和演示），以及本条记录。迁移 `20261123090000_audit_log_created_at`：只加 `audit_logs ("createdAt", "id")` 索引，平台日志不带公司、操作人时按时间倒序读全表。
+
+做了什么：
+- `GET /system/audit-logs?companyId=&type=&actorUserId=&cursor=`（`system.manage`，static GLOBAL，`Cache-Control: no-store`）：放在 `SystemController`，调 `AuditLogService.platformLog`，和项目、公司的操作记录共用 `page()`（分页、游标、姓名、句子）。不带条件时是全平台所有记录，包括不属于任何公司的（账号、超级管理员、信用规则、绑定、测试登录）；`companyId`、`actorUserId` 不存在时就是空列表。参数不对 400 `INVALID_AUDIT_LOG_QUERY`（小程序已有文案）。
+- 每条记录多了 `actorUserId`、`companyId`、`companyName`（项目、公司的操作记录也带，前端只有平台日志用）。项目名改为按本页记录的 `projectId` 查，不再按调用方传进来的项目列表。
+- domain `audit-log.ts`：
+  - 新增 `AuditLogKind`（PROJECT、COMPANY、PLATFORM）和 `auditCategoriesFor(kind)`：项目没有“公司”，公司没有“平台”，平台都有。`auditActionsIn`、`auditCategoryOf` 多一个可选的 `kind`，默认是原来的口径。
+  - 平台对某家公司做的事（新建、修改、任免公司管理员、重发邀请码、暂停、恢复）在平台日志里归“平台”，在这家公司自己的操作记录里仍归“公司”。平台日志的“公司”只剩公司自己的事（建项目、导出、离岗、默认规则、公司资料）。测试逐个核对：每种日志里每个筛选找到的记录，类型都等于这个筛选（导出照旧例外，归考勤，公司筛选也找得到）。
+  - `SAFETY_POLICY_PUBLISHED` 归“平台”：“发布了第 3 版安全信用规则，2026年12月1日起执行”。
+  - 补了几种原来显示“做了一项其他操作”的句子：`auth.bind.worker`／`auth.bind.manager`“用邀请码绑定了微信”、`worker.registration.submit`“提交了用工资料”、`TEST_ACCOUNT_LOGIN`“用测试账号直接登录”。它们不归任何类型，只在“全部操作”里。
+- 发布安全信用规则：在原来的事务里（建好新版本之后）写 `SAFETY_POLICY_PUBLISHED`，`entityId` 是规则编号，metadata 是提交的六项加 `version`，没有 `companyId`、`projectId`。
+- Q8：超级管理员看用工资料本来就写 `WORKER_REGISTRATION_VIEWED`（带 projectId，触发器补 companyId）。平台日志选操作人＋类型“人员”，就是“这个人看过谁的资料”。
+- 小程序：
+  - 操作记录的列表抽成 `pages/audit-log/audit-list.tsx`（`AuditLogList`，`scope.kind` 为 PROJECT、COMPANY、PLATFORM），项目、公司的操作记录页只剩外壳；样式随组件移到 `audit-list.scss`（weapp 里进 `common.wxss`）。
+  - 平台管理“日志”标签直接用它。平台多两个筛选：公司（全部公司＋公司列表第一页）、操作人（所有人＋超级管理员，读 `/system/accounts?role=SYSTEM_ADMIN`）；这两份选项读不到只少选项，不影响列表。点一条记录弹出“只看 某某 的操作”“只看“某公司””；点记录选中的人、公司不在选项里时补在选择器后面。灰字写“时间，公司，项目”。读取失败是 `StateView` 带重试，再读一页失败是列表下面的 `Notice tone="error"`。
+  - 删掉了 `system-view.ts` 里把“请求方式 路径”翻成人话的正则（`describeAudit`、`auditActor` 等）、`views/audit.tsx` 和“演示数据里最近的 200 条”说明、`workflows.ts` 的 `AuditEntry`／`fetchAuditEntries`（`/system/audit`），以及为换姓名读账号第一页的那一步。`fetchAccounts` 可以带 `role`。
+- 演示：
+  - `/system/audit-logs` 和真实接口同口径（公司、类型、操作人、分页）；`demoAuditLog` 改为按 `{ kind }` 取范围。
+  - 平台的几种写操作在记“方法 路径”的同时记下句子要用的东西（`detail`：新公司的编号和名称、改了哪几项、暂停还是恢复、被任免的人、被停用的账号、规则版本和日期），因为事后从路径和当时的状态推不出来（撤销之后名单里就没有他了）。能认出的有：建公司、改公司、暂停／恢复、任命、撤销、重发邀请码、停用／恢复账号、发布信用规则。
+  - 查看用工资料也记（和服务器一样只在填过资料时记，十分钟里同一人看同一份只记一次）。
+  - 演示的审计条目类型从 `workflows.ts` 移到 `demo/audit-log.ts`（`DemoAuditEntry`）。
+
+测试：
+- domain 5 条（平台日志的类型和归类、每个筛选的类型一致、信用规则句子、绑定等句子）。
+- `system.e2e` 新增 1 条：公司、项目管理员 403；`type=BOSS`、坏游标、超长 companyId、空 actorUserId 400；全部、`type=PLATFORM`、`type=COMPANY`、按公司、按操作人、组合、不存在的公司；类型、公司名、项目名和句子。
+- 数据库套件 `platform-audit.integration.test.ts`（新，5 条，已加进 `scripts/test-database.ts`）：公司管理员、工人 403；两家公司（经 `POST /system/companies` 建）的记录都看得到，`companyId` 只出一家，建公司在平台日志里是“平台”、在公司自己的操作记录里是“公司”，公司操作记录仍拒绝 `type=PLATFORM`；真实发布信用规则后“平台”筛选里第一条是它，句子带版本和日期，metadata 完整；超级管理员真实打开用工资料后，按他筛“人员”只出“平台审计甲 查看了 工人丙 的用工资料”，带公司和项目名；32 条记录按游标翻页，34 条不重不漏、时间倒序。
+- 小程序：`audit-view.test.ts` 新增 4 条（类型选项、灰字、选项补位、点一条的筛选项）；`company-platform-views.test.ts` 去掉正则翻译的 2 条；演示集成 1 条（暂停、任命、停用、查看用工资料都成句；按公司、类型、操作人筛；公司自己的记录归“公司”；公司管理员 403）。
+
+测试结果：
+- domain：63 条。
+- 小程序：541 条（63 个文件）。
+- API：单元和 e2e 共 125 条通过，另有 138 条数据库套件在这一步按设计跳过。
+- `test:database`：15 个文件、122 条，全部通过，其中 `platform-audit.integration` 5 条。迁移 drift 检查通过。
+- 两种构建都通过；`dist-weapp` 1.71 MB。
+- 演示版 360px 截图在主目录 `output/system-admin/phase4-shots/`（不入库），脚本 `output/system-admin/tools/platform-log.py`：平台日志（顶部、底部）、点一条弹出的筛选、只看公司管理员、只看平台管理员、类型选择器，公司管理员和项目管理员的操作记录。
+
+与计划不同：
+- 计划写“平台”类型 = `companyId`、`projectId` 都为空的行加上公司级的平台动作。实际按 Q9 列的动作算：账号停用／恢复、超级管理员任免、信用规则，加上平台对公司做的那几种。都为空的行里还有绑定微信、提交用工资料、测试登录，它们不是平台做的事，放进“平台”会让这一类被测试登录刷屏；它们只在“全部操作”里，句子已补上。这样也保住了“记录的类型等于找到它的筛选”。
+- 多了一条迁移（按时间的索引），计划没有写。
+- 计划说“操作人筛选”，没说怎么选人。做成两种：选择器里列超级管理员（回答 Q8），点任意一条记录可以只看这个人；没有按姓名搜人。
+- 项目、公司的操作记录响应也多了三个字段（只增不改）。
+- 平台设置还没有接口（第五期），所以“平台设置”的留痕和演示里 `PUT /system/settings` 的那条都还没有。
+
+留到以后：
+- 第五期（平台首页、补卡口径、公告和联系电话；改平台设置要写进平台日志，归“平台”）。
+- `deploy:test` 之后用 `dev-system` 在测试服务器上看日志标签：测试服务器上测试登录多，“全部操作”里会有很多“用测试账号直接登录”，按类型或公司筛即可（这一期没有部署）。
+- 公司选择器只列公司列表第一页（30 家）；更多的公司要从记录点进去筛，公司多了再加搜索。
