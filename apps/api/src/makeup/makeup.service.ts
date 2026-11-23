@@ -847,6 +847,21 @@ export class MakeupService {
     };
   }
 
+  /**
+   * The platform home's "makeups only you can approve" (system admin plan phase 5): every
+   * page of the pending inbox with onlyMine, so the number always equals that list.
+   */
+  async countPendingOnlyYou(userId: string): Promise<number> {
+    let total = 0;
+    let cursor: string | null = null;
+    for (;;) {
+      const page: MakeupInboxResponse = await this.pendingInbox(userId, cursor, null, true);
+      total += page.items.length;
+      if (page.nextCursor === null) return total;
+      cursor = page.nextCursor;
+    }
+  }
+
   private async inboxPage(
     userId: string,
     cursor: string | null,
@@ -882,7 +897,11 @@ export class MakeupService {
           ...filter,
           ...(projectId === null ? {} : { projectId }),
           requesterUserId: { not: userId },
-          OR: scopes,
+          // A GLOBAL grant covers every request. Prisma matches nothing for `OR: [{}]`,
+          // so the platform inbox used to be empty (found in system admin phase 5).
+          ...(assignments.some((a) => a.scope.scopeType === "GLOBAL")
+            ? {}
+            : { OR: scopes }),
         },
         orderBy,
         take: BATCH,
@@ -957,15 +976,34 @@ export class MakeupService {
         }),
       ]);
     // Project- and team-level grants inside these projects: who else could approve.
+    // A platform reviewer (GLOBAL) also counts the company's own administrators (system
+    // admin plan phase 5, G8): only what nobody inside the company can approve is "only you".
+    const platformReviewer = authorization.assignments.some(
+      (a) => a.scope.scopeType === "GLOBAL",
+    );
     const localGrants = await this.prisma.userRole.findMany({
       where: {
         OR: [
           { scopeType: "PROJECT", scopeId: { in: projectIds } },
           { scopeType: "TEAM", scopeId: { in: teams.map((t) => t.id) } },
+          ...(platformReviewer
+            ? [
+                {
+                  scopeType: "COMPANY" as const,
+                  scopeId: { in: [...new Set(projects.map((p) => p.companyId))] },
+                },
+              ]
+            : []),
         ],
       },
       include: { role: true },
     });
+    const belowPlatform: AuthorizationData = {
+      ...authorization,
+      assignments: authorization.assignments.filter(
+        (a) => a.scope.scopeType !== "GLOBAL",
+      ),
+    };
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     const teamNames = new Map(teams.map((t) => [t.id, t.name]));
     const items: MakeupInboxItem[] = [];
@@ -1035,6 +1073,12 @@ export class MakeupService {
         authorizedPlanLevel(authorization, targetScope) <= requesterLevel
       )
         continue;
+      // Company administrators count as "someone else" only when this reviewer covers the
+      // request through the platform role alone; between two company administrators each
+      // still sees it as theirs (level-4 phase 1).
+      const viaPlatformOnly =
+        platformReviewer &&
+        authorizedPlanLevel(belowPlatform, targetScope) <= requesterLevel;
       const onlyYou = !localGrants.some(
         (grant) =>
           grant.userId !== row.requesterUserId &&
@@ -1043,7 +1087,10 @@ export class MakeupService {
           ((grant.scopeType === "PROJECT" && grant.scopeId === row.projectId) ||
             (grant.scopeType === "TEAM" &&
               state.teamId !== null &&
-              grant.scopeId === state.teamId)),
+              grant.scopeId === state.teamId) ||
+            (viaPlatformOnly &&
+              grant.scopeType === "COMPANY" &&
+              grant.scopeId === project.companyId)),
       );
       const displayName =
         "worker" in member
