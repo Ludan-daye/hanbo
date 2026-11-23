@@ -11,7 +11,6 @@ import {
 } from "../src/pages/company-people/person-row";
 import {
   accountLastLogin,
-  accountRoleSub,
   accountRoleTarget,
   accountRowStatus,
   accountRowSub,
@@ -339,18 +338,8 @@ describe("平台的账号", () => {
   });
 
   it("最近登录按中国时间写", () => {
-    expect(accountLastLogin(account({}))).toBe("最近登录 11-18 10:20");
-    expect(accountLastLogin(account({ lastLoginAt: null }))).toBe("还没登录过");
-  });
-
-  it("每条身份写在哪、去哪改", () => {
-    expect(accountRoleSub(role({}))).toBe("滨江花园一期，在项目人员里改");
-    expect(accountRoleSub(role({ roleCode: "COMPANY_ADMIN", scopeName: "瀚渤建设", scopeType: "COMPANY", source: "COMPANY_APPOINTMENT" }))).toBe(
-      "瀚渤建设，在公司详情里任免",
-    );
-    expect(accountRoleSub(role({ roleCode: "SYSTEM_ADMIN", scopeName: "全平台", scopeType: "GLOBAL", source: "PLATFORM" }))).toBe(
-      "全平台，只能在服务器上用命令开通或撤销",
-    );
+    expect(accountLastLogin(account({}))).toBe("11-18 10:20");
+    expect(accountLastLogin(account({ lastLoginAt: null }))).toBe("还没有");
   });
 
   it("项目、班组身份跳到他在那个项目的人员资料，公司身份打开公司详情，平台身份不跳", () => {

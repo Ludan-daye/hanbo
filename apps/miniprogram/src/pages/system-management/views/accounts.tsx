@@ -26,7 +26,6 @@ import {
 } from "../../../services/workflows";
 import {
   accountLastLogin,
-  accountRoleSub,
   accountRoleTarget,
   accountRowStatus,
   accountRowSub,
@@ -235,7 +234,7 @@ export const AccountScreen = ({
         <Row
           title={account.displayName}
           avatar={account.displayName.slice(0, 1)}
-          sub={[account.phone, accountLastLogin(account)].filter((part) => part !== null).join("，")}
+          sub={account.phone ?? "没有手机号"}
           status={disabled ? { kind: "bad", text: "已停用" } : { kind: "ok", text: "正常" }}
         />
       </Sheet>
@@ -253,7 +252,7 @@ export const AccountScreen = ({
               <Row
                 key={`${role.roleCode}:${role.scopeType}:${role.scopeId}`}
                 title={displayProjectRole(role.roleCode)}
-                sub={accountRoleSub(role)}
+                sub={role.scopeName}
                 chevron={onClick !== undefined}
                 {...(onClick === undefined ? {} : { onClick })}
               />
@@ -261,22 +260,23 @@ export const AccountScreen = ({
           })}
         </Sheet>
       )}
-      <Notice>这里只显示。公司管理员在公司详情里任免；项目、班组身份点进去，在那个项目的人员资料里改。</Notice>
+      <Notice>这里只显示。公司管理员点进去在公司详情里任免；项目、班组身份点进去，在那个项目的人员资料里改；超级管理员只能在服务器上用命令开通或撤销。</Notice>
 
       <SectionTitle>账号</SectionTitle>
+      <Sheet gap>
+        <Row title="最近登录" value={accountLastLogin(account)} mute />
+        <Row
+          title="登录中的设备"
+          value={account.activeSessionCount === 0 ? "没有" : `${account.activeSessionCount} 个`}
+          mute
+        />
+      </Sheet>
       {self ? (
         <Notice>这是你自己的账号，不能停用。</Notice>
       ) : account.isSystemAdmin ? (
         <Notice>超级管理员只能由部署的人在服务器上用命令开通或撤销，这里不能停用。</Notice>
       ) : (
         <>
-          <Sheet gap>
-            <Row
-              title="登录中的设备"
-              value={account.activeSessionCount === 0 ? "没有" : `${account.activeSessionCount} 个`}
-              mute
-            />
-          </Sheet>
           {problem !== null ? <Notice tone="error">{problem}</Notice> : null}
           <Button variant={disabled ? "outline" : "danger"} wide loading={busy} disabled={busy} onClick={() => void toggle()}>
             {disabled ? "恢复账号" : "停用账号"}

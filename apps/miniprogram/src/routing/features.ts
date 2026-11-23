@@ -176,7 +176,7 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
     { title: "信用规则", sub: "扣分与恢复标准", icon: "star", url: "/pages/safety-policy/index" },
     {
       title: "平台管理",
-      sub: "公司、账号权限与平台设置",
+      sub: "公司、账号与平台设置",
       icon: "gear",
       url: "/pages/system-management/index",
     },

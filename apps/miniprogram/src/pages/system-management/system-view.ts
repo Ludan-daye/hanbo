@@ -155,18 +155,9 @@ export const accountRowStatus = (
 ): { readonly kind: StatusKind; readonly text: string } | undefined =>
   account.status === "DISABLED" ? { kind: "bad", text: "已停用" } : undefined;
 
+/** “11-18 10:20”；没登录过写“还没有”。 */
 export const accountLastLogin = (account: Pick<PlatformAccount, "lastLoginAt">): string =>
-  account.lastLoginAt === null ? "还没登录过" : `最近登录 ${auditTime(account.lastLoginAt)}`;
-
-const ROLE_WHERE: Readonly<Record<PlatformAccountRole["source"], string>> = {
-  COMPANY_APPOINTMENT: "在公司详情里任免",
-  PLATFORM: "只能在服务器上用命令开通或撤销",
-  PROJECT_MEMBERSHIP: "在项目人员里改",
-};
-
-/** 一条身份的副行：在哪，去哪改（Q6：这里只显示，不改）。 */
-export const accountRoleSub = (role: Pick<PlatformAccountRole, "scopeName" | "source">): string =>
-  `${role.scopeName}，${ROLE_WHERE[role.source]}`;
+  account.lastLoginAt === null ? "还没有" : auditTime(account.lastLoginAt);
 
 /** 点一条身份去哪：公司任命打开平台里的公司详情；项目、班组身份打开他在那个项目的人员资料。 */
 export type AccountRoleTarget =

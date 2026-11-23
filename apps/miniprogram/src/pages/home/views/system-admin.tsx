@@ -34,7 +34,7 @@ export const SystemAdminHome = ({
       <Sign>
         <SignText
           title="平台账号已就绪"
-          sub="公司、账号权限和平台设置都在平台管理里。"
+          sub="公司、账号和平台设置都在平台管理里。"
         />
       </Sign>
       <RoleGrid panel="systemAdmin" only={GRID} />
