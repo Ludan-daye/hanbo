@@ -132,6 +132,19 @@ describe("platform actions on a company (system admin phase 1)", () => {
   });
 });
 
+describe("suspending and resuming a company (system admin phase 3)", () => {
+  it("files both under 公司", () => {
+    expect(auditCategoryOf("COMPANY_SUSPENDED")).toBe("COMPANY");
+    expect(auditCategoryOf("COMPANY_RESUMED")).toBe("COMPANY");
+  });
+
+  it("says what was done, with the company name when it was recorded", () => {
+    expect(auditSentence({ action: "COMPANY_SUSPENDED", metadata: { name: "瀚渤建设" } }, "平台", null)).toBe("平台 暂停了公司“瀚渤建设”");
+    expect(auditSentence({ action: "COMPANY_SUSPENDED", metadata: {} }, "平台", null)).toBe("平台 暂停了公司");
+    expect(auditSentence({ action: "COMPANY_RESUMED", metadata: { name: "瀚渤建设" } }, "平台", null)).toBe("平台 恢复了公司“瀚渤建设”");
+  });
+});
+
 describe("platform actions on accounts and super admins (system admin phase 2)", () => {
   it("files them under 平台, which the project and company filters do not offer", () => {
     for (const action of ["ACCOUNT_DISABLED", "ACCOUNT_ENABLED", "SYSTEM_ADMIN_GRANTED", "SYSTEM_ADMIN_REVOKED"])

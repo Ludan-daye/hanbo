@@ -90,6 +90,9 @@ const CATEGORY_ACTIONS: Readonly<Record<AuditCategory, readonly string[]>> = {
     "COMPANY_ADMIN_APPOINTED",
     "COMPANY_ADMIN_REVOKED",
     "COMPANY_ADMIN_INVITATION_ISSUED",
+    // Phase 3: suspending makes the company read-only (Q5).
+    "COMPANY_SUSPENDED",
+    "COMPANY_RESUMED",
   ],
   PLATFORM: ["ACCOUNT_DISABLED", "ACCOUNT_ENABLED", "SYSTEM_ADMIN_GRANTED", "SYSTEM_ADMIN_REVOKED"],
 };
@@ -303,6 +306,12 @@ export const auditSentence = (
           .map((key: unknown) => (typeof key === "string" ? COMPANY_FIELD_NAMES[key] : undefined))
           .filter((name): name is string => name !== undefined);
         return fields.length === 0 ? "修改了公司资料" : `修改了公司的${fields.join("、")}`;
+      }
+      case "COMPANY_SUSPENDED":
+      case "COMPANY_RESUMED": {
+        const verb = entry.action === "COMPANY_SUSPENDED" ? "暂停" : "恢复";
+        const name = text(meta.name);
+        return name === null ? `${verb}了公司` : `${verb}了公司“${name}”`;
       }
       case "COMPANY_ADMIN_APPOINTED":
         return meta.invited === true
