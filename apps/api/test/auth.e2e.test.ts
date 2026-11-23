@@ -326,6 +326,11 @@ class AuthPrismaTestDouble {
       ).map((member) => ({ ...member, additionalRoles: [] }))
   };
 
+  // No company administrator appointments in these tests (system admin phase 1).
+  readonly companyManagerMember = {
+    findMany: async (): Promise<never[]> => []
+  };
+
   readonly userRole = {
     upsert: async (args: UserRoleUpsertArgs): Promise<UserRoleRecord> => {
       const { userId, roleId, scopeType, scopeId } = args.create;

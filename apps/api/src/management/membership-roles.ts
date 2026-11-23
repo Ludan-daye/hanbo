@@ -44,6 +44,13 @@ export const membershipGrants = (
   );
 };
 
+/** The role a company administrator appointment grants (CompanyManagerMember, 2026-11-22). */
+export const companyAdminGrant = (companyId: string): MembershipGrant => ({
+  roleCode: "COMPANY_ADMIN",
+  scopeId: companyId,
+  scopeType: "COMPANY",
+});
+
 export const validateAdditionalRoles = async (
   transaction: Prisma.TransactionClient,
   projectId: string,

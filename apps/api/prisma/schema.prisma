@@ -185,6 +185,7 @@ model ManagerProfile {
   user                  User?                  @relation(fields: [userId], references: [id])
   projectMemberships    ProjectManagerMember[]
   bindingInvitations    BindingInvitation[]    @relation("managerBindingInvitations")
+  companyAppointments   CompanyManagerMember[]
 
   @@index([phone])
   @@index([status])
@@ -275,6 +276,7 @@ model BindingInvitation {
   managerProfile   ManagerProfile?         @relation("managerBindingInvitations", fields: [managerProfileId], references: [id], onDelete: Restrict)
   createdByUser    User                    @relation("bindingInvitationCreator", fields: [createdByUserId], references: [id])
   acceptedByUser   User?                   @relation("bindingInvitationAcceptor", fields: [acceptedByUserId], references: [id])
+  companyAppointments CompanyManagerMember[]
 
   @@index([createdByUserId, status])
   @@index([acceptedByUserId])
@@ -285,6 +287,7 @@ model BindingInvitation {
 
 model Company {
   attendanceDefaults CompanyAttendanceDefault[]
+  managers         CompanyManagerMember[]
   transferRequests PersonnelTransferRequest[]
   id            String         @id @default(uuid())
   name          String
@@ -411,6 +414,30 @@ model ProjectWorkerMember {
   @@index([workerId, status])
   @@index([projectId, createdAt, id])
   @@map("project_worker_members")
+}
+
+/// A company administrator appointment (2026-11-22, system admin phase 1). Like a project
+/// membership it lands on the manager profile first, so a new person can be appointed before
+/// binding: binding grants the COMPANY-scoped COMPANY_ADMIN UserRole, revoking takes it back.
+/// status is ACTIVE or REVOKED; a partial unique index keeps one ACTIVE row per company and
+/// person. invitationId is the latest invitation issued for this appointment, if any.
+model CompanyManagerMember {
+  id                String             @id @default(uuid())
+  companyId         String
+  managerProfileId  String
+  status            String
+  invitationId      String?
+  appointedAt       DateTime           @default(now())
+  appointedByUserId String?
+  revokedAt         DateTime?
+  revokedByUserId   String?
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  managerProfile    ManagerProfile     @relation(fields: [managerProfileId], references: [id], onDelete: Restrict)
+  invitation        BindingInvitation? @relation(fields: [invitationId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+  @@index([managerProfileId, status])
+  @@map("company_manager_members")
 }
 
 model ProjectManagerMember {

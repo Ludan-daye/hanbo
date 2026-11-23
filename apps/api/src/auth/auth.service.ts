@@ -1,4 +1,4 @@
-import { membershipGrants, readAdditionalRoles, synchronizeMembershipGrants } from "../management/membership-roles.js";
+import { companyAdminGrant, membershipGrants, readAdditionalRoles, synchronizeMembershipGrants } from "../management/membership-roles.js";
 import { createHash, randomBytes } from "node:crypto";
 
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
@@ -565,6 +565,9 @@ export class AuthService {
   private async grantManagerMembershipRoles(transaction: Prisma.TransactionClient, userId: string, managerProfileId: string): Promise<void> {
     const memberships = await transaction.projectManagerMember.findMany({ where: { status: "ACTIVE", managerId: managerProfileId }, include: { additionalRoles: true } });
     for (const member of memberships) await synchronizeMembershipGrants(transaction, userId, [], membershipGrants(member.projectId, member.roleCode, member.teamScopeId, readAdditionalRoles(member.additionalRoles)));
+    // Company administrator appointments made before binding (system admin phase 1).
+    const appointments = await transaction.companyManagerMember.findMany({ where: { managerProfileId, status: "ACTIVE" } });
+    if (appointments.length > 0) await synchronizeMembershipGrants(transaction, userId, [], appointments.map((row) => companyAdminGrant(row.companyId)));
   }
 
   private async createAccessToken(user: User, sessionId: string): Promise<string> {

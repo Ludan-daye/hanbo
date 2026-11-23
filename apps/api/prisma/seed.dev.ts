@@ -141,6 +141,17 @@ const main = async (): Promise<void> => {
       where: { userId }
     });
     await upsertUserRole(userId, manager.roleCode, manager.scopeType, scopeIdFor(manager.scopeType));
+    if (manager.roleCode === "COMPANY_ADMIN") {
+      // Company administrators are appointments (CompanyManagerMember); the role follows them.
+      const profile = await prisma.managerProfile.findUniqueOrThrow({ where: { userId } });
+      const appointment = await prisma.companyManagerMember.findFirst({
+        where: { companyId: company.id, managerProfileId: profile.id, status: "ACTIVE" }
+      });
+      if (appointment === null)
+        await prisma.companyManagerMember.create({
+          data: { companyId: company.id, managerProfileId: profile.id, status: "ACTIVE" }
+        });
+    }
   }
 
   const workerUserId = await upsertUser("dev-worker", true);
