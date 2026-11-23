@@ -289,3 +289,53 @@
 - `deploy:test` 和用 `dev-system`、`dev-company` 在测试服务器上回归（这一期没有部署）。
 - 按 Q11 把“打卡安排”从超级管理员首页和工作台拿掉。
 - CLAUDE.md 里测试账号数改成六个。
+
+### 第二期（G3、G4；Q3、Q4、Q6，以及 Q11 的“打卡安排”）
+
+提交：`233c46b`（domain 句子）、`c96cf9e`（超级管理员命令）、`dc83f4c`（`/system/accounts` 接口）、`fae2a90`（首页和工作台去掉打卡安排）、`a150561`（小程序账号标签）、`0c7c0fb`（窄屏调整）、`d959c01`（README），以及本条记录。没有迁移：停用要用的 `User.status`、`sessionVersion`、`UserSession.revokedAt` 都已经有了。
+
+做了什么：
+- 超级管理员命令（Q3）：
+  - `corepack pnpm --filter @construction/api system-admin list | grant --phone 138… | revoke --phone 138…`；测试服务器的容器里是 `node dist/system/system-admin.cli.js …`，README 的云端测试一节写了完整的 `docker compose run` 用法。
+  - 只接受已绑定、正常、有管理档案的账号，否则 `ACCOUNT_NOT_BOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_NOT_MANAGER`；一个手机号对应几个账号时列出来、不改（`ACCOUNT_PHONE_AMBIGUOUS`）；已经是超级管理员时不重复授予。
+  - `revoke` 在 Serializable 事务里先删再数，剩 0 个就整笔回滚（`LAST_SYSTEM_ADMIN`），两个人同时撤也留得下一个。
+  - 每次写 AuditLog：`SYSTEM_ADMIN_GRANTED`／`SYSTEM_ADMIN_REVOKED`，`actorUserId` 为空，metadata 带 `source: "cli"` 和 `managerProfileId`。
+  - 返回码：0 成功，1 拒绝（打印原因），2 用法不对。
+- `/system/accounts`（都要 `system.manage`，新服务 `system-accounts.service.ts`）：
+  - `GET /system/accounts?search=&status=&role=&cursor=`：只列已绑定的账号，一页 30 个，按创建时间游标。搜手机号（账号、管理档案、工人档案三处）、管理人员姓名、工人姓名（`nameSearchHashes`，前缀匹配；没配加密密钥时跳过这一项）。
+  - `GET /system/accounts/:userId`：每条身份带 `source`（PLATFORM、COMPANY_APPOINTMENT、PROJECT_MEMBERSHIP）、`scopeName`、`companyId`、`projectId`，项目和班组身份还带他在那个项目的成员编号 `memberId`；另有 `isSystemAdmin`、有效会话数、最近登录。
+  - `POST .../disable`：一个事务里条件 `updateMany`（ACTIVE、已绑定、没有超级管理员身份）改 DISABLED 并 `sessionVersion + 1`，断言改了一行，再把未撤销的会话全写上 `revokedAt`，写 `ACCOUNT_DISABLED`（metadata 带档案和收回的会话数）。旧 access token 立刻 401 `ACCESS_TOKEN_SESSION_MISMATCH`，refresh 401，微信登录 403 `USER_DISABLED`。任职、考勤、补卡不动。
+  - `POST .../enable`：条件 `updateMany` 改回 ACTIVE，写 `ACCOUNT_ENABLED`；之后照常登录。
+  - 拒绝：自己 `CANNOT_DISABLE_SELF`，超级管理员 `SYSTEM_ADMIN_MANAGED_BY_SCRIPT`（停用、恢复都拒），状态已经变了 `ACCOUNT_STATUS_CHANGED_RELOAD`，没绑定或不存在 `ACCOUNT_NOT_FOUND`。
+- domain `audit-log.ts`：四个新动作的句子（“停用了 张三 的账号”“系统 在服务器上把 张三 设为超级管理员”），都指向档案，所以句子里有姓名。新增 `PLATFORM` 类型和 `PLATFORM_CATEGORY`（“平台”），**没有**放进 `AUDIT_CATEGORIES`，项目、公司的操作记录筛选里不出现，第四期的平台日志再用。
+- 小程序：
+  - 账号标签自己读数据：服务器上搜索、分页（“再读 30 个”），可筛全部、正常、已停用；一行写“公司管理员等 3 项身份，手机号”，只有停用的在右边标红。
+  - 账号详情：身份一条一行，只显示（Q6）。公司管理员身份点了在同一页打开平台里的那家公司；项目、班组身份点了去 `person-form?projectId=&memberId=`（没有成员编号时去那个项目的人员列表）；超级管理员身份不能点。下面一栏写最近登录、登录中的设备，然后是“停用账号”（危险按钮）或“恢复账号”，二次确认写明“会立刻退出登录”，失败用 `Notice tone="error"` 放在按钮上方。自己、超级管理员只显示说明，没有按钮。
+  - 删掉了演示版的等级、范围选择器（`ROLE_OPTIONS`、`scopeOptions`、`levelText`）和为它逐个读公司、项目、班组的 `loadScopeData`。
+  - 首页宫格和工作台去掉“打卡安排”（Q11）；平台管理的入口说明去掉“权限”二字。
+  - 新错误常量都有中文文案。
+- 演示：新增 `services/demo/system-accounts.ts`，和真实接口同口径。
+- 测试：domain 3 条；`system.e2e` 新增 1 条（公司、项目管理员 403，查询参数 400，自己和别的超级管理员被拒，什么都没写进审计）；新的数据库套件 `system-accounts.integration.test.ts` 4 条（搜索和身份来源；停用后旧 token、refresh、微信登录都被拒，恢复后能登录、任职没动；不能停用自己和超级管理员；命令的授予、拒绝、歧义、撤销最后一位被拒），已加进 `scripts/test-database.ts`；小程序视图 4 条、演示集成 1 条。
+
+与计划不同：
+- 命令放在 `apps/api/src/system/system-admin.cli.ts`（核心在 `system-admins.ts`，导出给测试直接调），没有放在 `apps/api/scripts/`。原因：`deploy:test` 只上传 `apps/api/src`，镜像里也只有 `src` 编译出的 `dist`，放在 `scripts/` 服务器上就没有这个命令。`package.json` 的 `system-admin` 脚本仍是计划里的 `tsx --env-file=.env …`，指向新位置。测试没有用 `execa` 起子进程，直接调 `runSystemAdminCommand`。
+- 命令查账号时手机号既比 `User.phone` 也比管理档案的手机号。
+- 停用、恢复返回账号详情（前端不用再读一次）；状态不对用 409 `ACCOUNT_STATUS_CHANGED_RELOAD`，没有分“已经停用”“已经正常”两个常量。
+- 列表不按昵称搜：昵称谁都能改，搜出来会混进别人。
+- 演示数据没有改成多身份的形状：`state.accounts` 还有十几处在用（`demoMe`、公司人员、项目负责人等），改它风险大。演示接口按 `demoMe` 算出每个账号的身份，返回的形状和真实接口一样；停用就是把演示账号的状态改成 SUSPENDED，`demoMe` 随即拒绝他登录。演示账号没有“最近登录”。
+- 日志标签（仍是演示版）原来用账号列表把编号换成姓名，现在只在打开日志标签时读第一页账号来换，第四期整页重写。
+- CLAUDE.md 不在仓库里（主目录下未跟踪的文件），测试账号数改成六个、加一句超级管理员命令，都直接改在主目录的那份上，没有提交。README 里的“五个 `dev-*` 账号”也改成了六个。
+
+测试结果：
+- domain：56 条。
+- 小程序：534 条（62 个文件）。
+- API：单元和 e2e 共 115 条通过，另有 127 条数据库套件在这一步按设计跳过。
+- `test:database`：13 个文件、111 条，全部通过，其中 `system-accounts.integration` 4 条。迁移 drift 检查通过。
+- 两种构建都通过；`dist-weapp` 1.70 MB。
+- 演示版 360px 截图在主目录 `output/system-admin/phase2-shots/`（不入库），脚本 `output/system-admin/tools/accounts.py`：账号列表、项目管理员、自己、停用确认、停用后、公司管理员身份跳到公司详情、首页和工作台。
+
+留到以后：
+- 第三到第五期。
+- `deploy:test` 之后在测试服务器上：用命令 `list` 看 `dev-system` 在不在；用 `dev-system` 停用、恢复 `dev-team`，确认手机上立刻退出（这一期没有部署）。
+- 被停用的人在小程序里先看到“登录已过期，请重新登录”，再登录时才看到“当前账号已停用，请联系管理员”；带上平台联系电话等第五期（Q12）。
+- 账号详情里的项目、班组身份链接到 `person-form`（项目管理员的编辑页），只在演示版里点过，没有在真机上走一遍改身份再返回。
