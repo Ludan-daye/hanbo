@@ -5,6 +5,7 @@ import { contactPhoneSchema, optionalText } from "../management/company-settings
 
 import type {
   CompanyAdminAppointment,
+  PlatformSettingsUpdate,
   SystemAccountQuery,
   SystemCompanyQuery,
   SystemCompanyStatusChange,
@@ -80,6 +81,7 @@ export const parseSystemCompanyStatusChange = (body: unknown): SystemCompanyStat
 export const parseSystemCompanyQuery = (query: unknown): SystemCompanyQuery => {
   const result = z
     .object({
+      admin: z.enum(["NONE", "NOT_BOUND"]).optional(),
       cursor: z.string().min(1).optional(),
       search: z.string().trim().max(60).optional(),
       status: z.enum(["ACTIVE", "SUSPENDED"]).optional(),
@@ -87,6 +89,7 @@ export const parseSystemCompanyQuery = (query: unknown): SystemCompanyQuery => {
     .safeParse(query);
   if (!result.success) return fail("INVALID_SYSTEM_COMPANY_QUERY", result.error.issues);
   return {
+    admin: result.data.admin ?? null,
     cursor: result.data.cursor ?? null,
     search: result.data.search ?? "",
     status: result.data.status ?? null,
@@ -133,4 +136,24 @@ export const parseSystemAccountQuery = (query: unknown): SystemAccountQuery => {
     search: result.data.search ?? "",
     status: result.data.status ?? null,
   };
+};
+
+/** A mobile, landline or 400/800 service number. */
+const SUPPORT_PHONE = /^(?:1\d{10}|0\d{2,3}-?\d{7,8}|[48]00-?\d{3}-?\d{4})$/;
+
+/**
+ * Platform settings (phase 5, Q12): the home announcement (at most 160 characters) and the
+ * support phone; either may be blank. Saved against the updatedAt the page read.
+ */
+export const parsePlatformSettingsUpdate = (body: unknown): PlatformSettingsUpdate => {
+  const result = z
+    .object({
+      announcement: z.string().trim().max(160),
+      expectedUpdatedAt: z.string().datetime({ offset: true }),
+      supportPhone: z.string().trim().refine((value) => value === "" || SUPPORT_PHONE.test(value)),
+    })
+    .strict()
+    .safeParse(body);
+  if (!result.success) return fail("INVALID_PLATFORM_SETTINGS_REQUEST", result.error.issues);
+  return result.data;
 };

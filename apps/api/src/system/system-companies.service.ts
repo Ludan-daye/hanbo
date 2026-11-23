@@ -14,6 +14,7 @@ import type {
   CompanyAdminSummary,
   CompanyAdminView,
   IssuedCompanyInvitation,
+  SystemCompanyAdminFilter,
   SystemCompanyDetail,
   SystemCompanyPage,
   SystemCompanyQuery,
@@ -61,6 +62,16 @@ const adminView = (member: Appointment, now: Date): CompanyAdminView => {
   };
 };
 
+/**
+ * Phase 5: the companies the platform home counts (Q10). NONE: nobody appointed; NOT_BOUND:
+ * at least one appointee who has not bound WeChat yet (their invitation is pending or expired).
+ */
+export const companyAdminFilter = (admin: SystemCompanyAdminFilter | null): Prisma.CompanyWhereInput => {
+  if (admin === "NONE") return { managers: { none: { status: "ACTIVE" } } };
+  if (admin === "NOT_BOUND") return { managers: { some: { managerProfile: { userId: null }, status: "ACTIVE" } } };
+  return {};
+};
+
 const isUniqueViolation = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 
@@ -83,6 +94,7 @@ export class SystemCompaniesService {
     const rows = await this.prisma.company.findMany({
       where: {
         ...(query.status === null ? {} : { status: query.status }),
+        ...companyAdminFilter(query.admin),
         ...(search.length === 0
           ? {}
           : {

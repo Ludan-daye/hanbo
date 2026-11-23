@@ -223,6 +223,27 @@ class SystemPrismaDouble {
   readonly team = { findMany: async () => [] };
   readonly teamWorkTask = { findMany: async () => [] };
 
+  /** The single platform settings row (phase 5); missing until first read, like `db push`. */
+  setting: { announcement: string; id: string; supportPhone: string; updatedAt: Date; updatedByUserId: string | null } | null = null;
+
+  readonly platformSetting = {
+    createMany: async () => {
+      if (this.setting === null)
+        this.setting = { announcement: "", id: "GLOBAL", supportPhone: "", updatedAt: new Date("2026-11-23T01:00:00.000Z"), updatedByUserId: null };
+      return { count: 1 };
+    },
+    findUnique: async () => (this.setting === null ? null : { ...this.setting }),
+    findUniqueOrThrow: async () => {
+      if (this.setting === null) throw new Error("missing");
+      return { ...this.setting };
+    },
+    updateMany: async (args: { data: { announcement: string; supportPhone: string; updatedAt: Date; updatedByUserId: string }; where: { updatedAt: Date } }) => {
+      if (this.setting === null || this.setting.updatedAt.getTime() !== args.where.updatedAt.getTime()) return { count: 0 };
+      Object.assign(this.setting, args.data);
+      return { count: 1 };
+    },
+  };
+
   async $transaction<T>(callback: (transaction: SystemPrismaDouble) => Promise<T>): Promise<T> {
     return callback(this);
   }
@@ -274,6 +295,7 @@ describe("platform companies (/system)", (): void => {
       company: prisma.signIn("user-company", "COMPANY_ADMIN", "COMPANY", "company-1"),
       project: prisma.signIn("user-project", "PROJECT_ADMIN", "PROJECT", "project-1"),
       system: prisma.signIn("user-system", "SYSTEM_ADMIN", "GLOBAL", "GLOBAL"),
+      worker: prisma.signIn("user-worker", "WORKER", "PROJECT", "project-1"),
     };
     // Another super administrator, never signed in here.
     prisma.assignments.push({ roleCode: "SYSTEM_ADMIN", scopeId: "GLOBAL", scopeType: "GLOBAL", userId: "user-other-system" });
@@ -504,5 +526,51 @@ describe("platform companies (/system)", (): void => {
     expect(await ids("actorUserId=user-company")).toEqual(["a3", "a2"]);
     expect(await ids("actorUserId=user-company&companyId=company-2&type=ATTENDANCE")).toEqual(["a3"]);
     expect(await ids("companyId=missing")).toEqual([]);
+  });
+
+  test("platform settings: everyone reads them, only SYSTEM_ADMIN saves, against the version read", async (): Promise<void> => {
+    for (const user of ["company", "project", "worker"]) {
+      await as(user).get("/system/settings").expect(403);
+      await as(user).put("/system/settings", { announcement: "x", expectedUpdatedAt: "2026-11-23T01:00:00.000Z", supportPhone: "" }).expect(403);
+    }
+    // Everyone signed in reads the announcement and the phone; empty before anything is saved.
+    const empty = await as("worker").get("/app/settings").expect(200);
+    expect(empty.headers["cache-control"]).toBe("no-store");
+    expect(empty.body).toEqual({ announcement: "", supportPhone: "" });
+    await request(app.getHttpServer()).get("/app/settings").expect(401);
+
+    const read = await as("system").get("/system/settings").expect(200);
+    expect(read.body).toEqual({ announcement: "", supportPhone: "", updatedAt: "2026-11-23T01:00:00.000Z" });
+    const valid = { announcement: " 进场请佩戴安全帽 ", expectedUpdatedAt: read.body.updatedAt, supportPhone: "400-000-0000" };
+    for (const body of [
+      { ...valid, announcement: "字".repeat(161) },
+      { ...valid, supportPhone: "12345" },
+      { ...valid, expectedUpdatedAt: "yesterday" },
+      { ...valid, extra: true },
+      { announcement: "只有公告" },
+    ])
+      expect((await as("system").put("/system/settings", body).expect(400)).body.message).toBe("INVALID_PLATFORM_SETTINGS_REQUEST");
+    expect(prisma.auditLogs).toEqual([]);
+
+    const saved = await as("system").put("/system/settings", { ...valid, announcement: "字".repeat(160) }).expect(200);
+    expect(saved.body).toMatchObject({ announcement: "字".repeat(160), supportPhone: "400-000-0000" });
+    expect(saved.body.updatedAt).not.toBe(read.body.updatedAt);
+    expect(prisma.setting?.updatedByUserId).toBe("user-system");
+    // Saving again with the old version: someone else saved in between.
+    expect((await as("system").put("/system/settings", valid).expect(409)).body.message).toBe("PLATFORM_SETTINGS_CHANGED_RELOAD");
+    await as("system").put("/system/settings", { ...valid, expectedUpdatedAt: saved.body.updatedAt }).expect(200);
+    expect((await as("company").get("/app/settings").expect(200)).body).toEqual({ announcement: "进场请佩戴安全帽", supportPhone: "400-000-0000" });
+    expect(prisma.auditLogs).toEqual([
+      {
+        action: "PLATFORM_SETTINGS_UPDATED",
+        companyId: null,
+        metadata: { announcement: "字".repeat(160), changed: ["announcement", "supportPhone"], supportPhone: "400-000-0000" },
+      },
+      {
+        action: "PLATFORM_SETTINGS_UPDATED",
+        companyId: null,
+        metadata: { announcement: "进场请佩戴安全帽", changed: ["announcement"], supportPhone: "400-000-0000" },
+      },
+    ]);
   });
 });

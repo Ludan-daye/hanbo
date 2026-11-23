@@ -701,6 +701,19 @@ model MakeupRequest {
   @@map("makeup_requests")
 }
 
+/// The platform's own settings (system admin plan phase 5, Q12): one row, id "GLOBAL".
+/// The announcement shows on everyone's home page; the support phone in the
+/// "account disabled" and "company suspended" messages.
+model PlatformSetting {
+  id              String   @id @default("GLOBAL")
+  announcement    String   @default("")
+  supportPhone    String   @default("")
+  updatedAt       DateTime @updatedAt
+  updatedByUserId String?
+
+  @@map("platform_settings")
+}
+
 model AuditLog {
   id          String   @id @default(uuid())
   actorUserId String?

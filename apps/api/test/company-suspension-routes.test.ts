@@ -45,6 +45,8 @@ describe("write routes while a company is suspended", (): void => {
       "POST /report-exports": "ALLOWED",
       "POST /safety-credit/teams/:teamId/violations": "ACTIVE_COMPANY_GUARD",
       "POST /system/companies/:companyId/status": "PLATFORM",
+      // Phase 5: one row for the whole platform, saved by super administrators only.
+      "PUT /system/settings": "PLATFORM",
       "PUT /management/companies/:companyId/profile": "PERMISSIONS_GUARD",
       "PUT /team-work/teams/:teamId/tasks/:taskId": "PERMISSIONS_GUARD",
     };

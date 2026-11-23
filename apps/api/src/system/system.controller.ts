@@ -13,12 +13,14 @@ import { RequirePermission } from "../authorization/require-permission.decorator
 import {
   parseCandidateSearch,
   parseCompanyAdminAppointment,
+  parsePlatformSettingsUpdate,
   parseSystemAccountQuery,
   parseSystemCompanyCreate,
   parseSystemCompanyQuery,
   parseSystemCompanyStatusChange,
   parseSystemCompanyUpdate,
 } from "./system.parsers.js";
+import { PlatformSettingsService } from "./platform-settings.service.js";
 import { SystemAccountsService } from "./system-accounts.service.js";
 import { SystemCompaniesService } from "./system-companies.service.js";
 import type {
@@ -26,6 +28,7 @@ import type {
   CompanyAdminCandidate,
   CompanyAdminRevoked,
   IssuedCompanyInvitation,
+  PlatformSettings,
   SystemAccountDetail,
   SystemAccountPage,
   SystemCompanyDetail,
@@ -48,6 +51,7 @@ export class SystemController {
     @Inject(SystemCompaniesService) private readonly companies: SystemCompaniesService,
     @Inject(SystemAccountsService) private readonly accounts: SystemAccountsService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
+    @Inject(PlatformSettingsService) private readonly settings: PlatformSettingsService,
   ) {}
 
   @Get("companies")
@@ -168,5 +172,21 @@ export class SystemController {
   @UseGuards(AccessTokenGuard, PermissionsGuard)
   async auditLog(@Query() query: unknown): Promise<AuditLogPageResponse> {
     return this.audit.platformLog(parsePlatformAuditLogQuery(query));
+  }
+
+  /** Phase 5 (Q12): the home announcement and the platform support phone. */
+  @Get("settings")
+  @Header("Cache-Control", "no-store")
+  @RequirePermission(platform)
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async platformSettings(): Promise<PlatformSettings> {
+    return this.settings.get();
+  }
+
+  @Put("settings")
+  @RequirePermission(platform)
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async savePlatformSettings(@CurrentUser() actor: AuthenticatedUser, @Body() body: unknown): Promise<PlatformSettings> {
+    return this.settings.update(actor.userId, parsePlatformSettingsUpdate(body));
   }
 }

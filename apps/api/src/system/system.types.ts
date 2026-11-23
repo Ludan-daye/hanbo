@@ -6,6 +6,8 @@ import type { RoleCode } from "@construction/domain/roles.js";
 export type SystemCompanyStatus = "ACTIVE" | "SUSPENDED";
 
 export type SystemCompanyQuery = {
+  /** Phase 5: only companies without an administrator, or with one still to bind. */
+  readonly admin: SystemCompanyAdminFilter | null;
   readonly cursor: string | null;
   readonly search: string;
   readonly status: SystemCompanyStatus | null;
@@ -155,4 +157,40 @@ export type SystemAccountDetail = SystemAccountRow & {
   readonly isSystemAdmin: boolean;
   readonly profileId: string | null;
   readonly roles: readonly SystemAccountRole[];
+};
+
+// Platform home and settings (phase 5, Q10, Q12).
+
+/** Which companies need the platform: none appointed, or appointed but not bound yet. */
+export type SystemCompanyAdminFilter = "NONE" | "NOT_BOUND";
+
+/**
+ * The platform home (Q10): scale numbers and what waits for this super administrator.
+ * Every number equals what the list behind it shows: companiesWithoutAdmin the ACTIVE
+ * companies listed with admin=NONE, pendingAdminInvitations the unbound administrators of
+ * the ACTIVE companies listed with admin=NOT_BOUND, makeupOnlyYou the inbox with onlyMine.
+ */
+export type SystemOverview = {
+  readonly accounts: { readonly active: number; readonly disabled: number };
+  readonly companies: { readonly active: number; readonly suspended: number };
+  readonly projects: { readonly active: number };
+  readonly todos: {
+    readonly companiesWithoutAdmin: number;
+    readonly makeupOnlyYou: number;
+    readonly pendingAdminInvitations: number;
+  };
+};
+
+/** What every signed-in user sees: the home announcement and the platform support phone. */
+export type AppSettings = {
+  readonly announcement: string;
+  readonly supportPhone: string;
+};
+
+export type PlatformSettings = AppSettings & {
+  readonly updatedAt: string;
+};
+
+export type PlatformSettingsUpdate = AppSettings & {
+  readonly expectedUpdatedAt: string;
 };

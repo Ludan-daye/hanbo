@@ -13,6 +13,7 @@ import { AuthorizationContextService } from "../authorization/authorization-cont
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
+import { platformSupportPhone } from "../system/platform-settings.js";
 import { WechatCodeSessionConnector } from "../infrastructure/wechat/wechat-code-session.connector.js";
 import { fitsTestAccount, testAccountOpenid, type TestAccountCode } from "./test-accounts.js";
 
@@ -135,6 +136,7 @@ export class AuthService {
     if (existingUser?.status === "DISABLED") {
       throw new ForbiddenException({
         message: "USER_DISABLED",
+        supportPhone: await platformSupportPhone(this.prisma),
         userId: existingUser.id
       });
     }
@@ -211,6 +213,7 @@ export class AuthService {
     if (updateResult.count !== 1) {
       throw new ForbiddenException({
         message: "USER_DISABLED",
+        supportPhone: await platformSupportPhone(this.prisma),
         userId
       });
     }
