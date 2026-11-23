@@ -33,6 +33,8 @@ import type {
   SystemSettings,
 } from "../workflows";
 import type { DemoAuditEntry } from "./audit-log";
+import { ApiError } from "../apiClient";
+import { API_ERROR_MESSAGES, withSupportPhone } from "../error-messages";
 
 export type DemoFace = FaceProfile & { readonly photo: string };
 export type DemoInvitation = ProjectInvitation & { readonly code: string };
@@ -489,17 +491,28 @@ export const initialDemoState = (): DemoState => {
     settings: {
       supportPhone: "400-000-0000",
       announcement: "安全第一，进入施工现场请佩戴安全帽。",
+      updatedAt: DEMO_SETTINGS_UPDATED_AT,
     },
     audit: [],
     boundProfileId: null,
   };
 };
+/** 演示平台设置的初始版本；旧版演示数据里的设置没有版本，也按它算。 */
+export const DEMO_SETTINGS_UPDATED_AT = "2026-11-01T00:00:00.000Z";
+
 export const demoMe = (state: DemoState, userId: string): MeResponse => {
   const account: Account | undefined = state.accounts.find(
     (row) => row.id === userId,
   );
-  if (account?.status === "SUSPENDED")
-    throw new Error("该演示账号已停用，请由系统管理员恢复。");
+  if (account?.status === "SUSPENDED") {
+    // 和服务器一样：被拒时带上平台联系电话（五级第五期，Q12）。
+    const supportPhone = state.settings.supportPhone || null;
+    throw new ApiError(
+      403,
+      withSupportPhone(API_ERROR_MESSAGES.USER_DISABLED!, { supportPhone }),
+      { message: "USER_DISABLED", supportPhone, userId },
+    );
+  }
   const profileId: string | null =
     userId === "dev-unbound"
       ? state.boundProfileId

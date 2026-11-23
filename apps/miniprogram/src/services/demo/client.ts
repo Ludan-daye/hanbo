@@ -9,7 +9,7 @@ import { memberRoleAssignments, memberRoleFields } from "../member-roles";
 import { demoMyProject } from "./my-project";
 import { demoReportPerson, saveDemoEvaluation } from "./report-details";
 import { demoProjectManagers } from "./project-managers";
-import { demoSystemCompanies } from "./system-companies";
+import { demoCompanyAdmins, demoSystemCompanies } from "./system-companies";
 import { applyDemoCompanyDefaults, demoCompanyDefaults, demoCompanyProfile, saveDemoCompanyDefaults, updateDemoCompanyProfile } from "./company-settings";
 import { demoCompanyPeoplePage, demoCompanyPerson, demoOffboard, demoProjectAdmins } from "./company-people";
 import { demoPlanRequest, effectiveDemoPlan, demoPlanLevel } from "./plans";
@@ -41,14 +41,12 @@ import type {
   TeamForm,
 } from "../management.types";
 import type { SubmitAttendanceRecordBody, SubmitMakeupBody } from "../me.types";
-import type {
-  PersonForm,
-  SystemSettings,
-} from "../workflows";
+import type { PersonForm } from "../workflows";
 import type { UploadResult } from "../uploads";
 import { chinaToday, chinaDaysAgo } from "../time";
 import { checkAttendanceGeofence } from "../geofence";
 import { managedDemoTeam } from "./teams";
+import { demoAppSettings, demoSettings, demoSystemOverview, saveDemoSettings } from "./system-home";
 import { demoAuditDetail, demoAuditLog, isDemoRegistrationView, recentDemoView, type DemoAuditEntry } from "./audit-log";
 import { demoSystemAccounts } from "./system-accounts";
 import type { TransferRequestForm } from "../transfers";
@@ -260,6 +258,17 @@ const demoOnlyYou = (
   const historical = demoMemberOn(state, person, row.attendanceDate);
   const level = ROLE_LEVEL[participantPermissionRole(historical)];
   const me = demoMe(state, userId);
+  // 超级管理员（五级第五期，G8）：这家公司的公司管理员能批的，不算“只有你能批”。
+  if (me.roles.highestRoleCode === "SYSTEM_ADMIN") {
+    const companyId = state.projects.find((project) => project.id === row.projectId)?.companyId;
+    const requester = demoCompanyAdmins(state).some(
+      (admin) => admin.companyId === companyId && admin.profileId === person.profileId,
+    );
+    const companyAdmins = demoCompanyAdmins(state).filter(
+      (admin) => admin.companyId === companyId && admin.userId !== null && admin.userId !== userId && admin.profileId !== person.profileId,
+    );
+    if (!requester && level < ROLE_LEVEL.COMPANY_ADMIN && companyAdmins.length > 0) return false;
+  }
   return !state.people.some((other) => {
     if (other.projectId !== row.projectId || other.status !== "ACTIVE") return false;
     if (other.profileId === person.profileId || other.profileId === me.profile.id) return false;
@@ -669,7 +678,7 @@ const routeDemo = (
         query.date,
       ),
     );
-  if (path === "/app/settings") return response(state, state.settings);
+  if (path === "/app/settings") return response(state, demoAppSettings(state));
   if (path === "/auth/me") return response(state, me);
   if (path === "/account/worker-registration") {
     const profileId: string | null = me.profile.id;
@@ -851,13 +860,15 @@ const routeDemo = (
       const result = demoSystemAccounts(state, userId, method, parts, query);
       return response(result.state, result.data);
     }
-    if (parts[1] === "settings")
-      return method === "GET"
-        ? response(state, state.settings)
-        : response(
-            { ...state, settings: options.data as SystemSettings },
-            options.data,
-          );
+    if (parts[1] === "settings") {
+      if (method === "GET") return response(state, demoSettings(state));
+      const saved = saveDemoSettings(state, (options.data ?? {}) as Record<string, unknown>);
+      return response(saved.state, saved.data);
+    }
+    if (parts[1] === "overview" && method === "GET") {
+      const inbox = routeDemo(state, userId, "/makeups/pending?onlyMine=true", { method: "GET" }).data as { readonly items: readonly unknown[] };
+      return response(state, demoSystemOverview(state, inbox.items.length));
+    }
     if (parts[1] === "audit-logs" && method === "GET")
       return response(
         state,

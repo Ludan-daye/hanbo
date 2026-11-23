@@ -1438,9 +1438,10 @@ describe("standalone frontend workflows using persistent demo storage", () => {
       { method: "POST" },
     );
     expect(revoked.remainingAdmins).toBe(1);
+    const settings = await client.request<SystemSettings>("/system/settings", { method: "GET" });
     await client.request("/system/settings", {
       method: "PUT",
-      data: { supportPhone: "13800000000", announcement: "测试公告" },
+      data: { supportPhone: "13800000000", announcement: "测试公告", expectedUpdatedAt: settings.updatedAt },
     });
     await login("dev-project");
     expect(
@@ -1459,5 +1460,65 @@ describe("standalone frontend workflows using persistent demo storage", () => {
       client.request("/system/accounts", { method: "GET" }),
     ).rejects.toThrow();
     expect(readDemoState().audit.length).toBeGreaterThanOrEqual(3);
+  });
+  test("platform home numbers equal the lists behind them; settings are versioned and logged (phase 5)", async () => {
+    await login("dev-system");
+    type Overview = {
+      accounts: { active: number; disabled: number };
+      companies: { active: number; suspended: number };
+      projects: { active: number };
+      todos: { companiesWithoutAdmin: number; makeupOnlyYou: number; pendingAdminInvitations: number };
+    };
+    const overview = () => client.request<Overview>("/system/overview", { method: "GET" });
+    const companies = (query: string) =>
+      client.request<PlatformCompanyPage>(`/system/companies${query}`, { method: "GET" }).then((page) => page.items);
+    const before = await overview();
+    const created = await client.request<PlatformCompanyDetail>("/system/companies", { method: "POST", data: { name: "首页演示公司" } });
+    await client.request(`/system/companies/${created.id}/admins`, { method: "POST", data: { name: "待绑定经理", phone: "13900000088" } });
+    const second = await client.request<PlatformCompanyDetail>("/system/companies", { method: "POST", data: { name: "没人管公司" } });
+    const home = await overview();
+    expect(home.todos.companiesWithoutAdmin).toBe(before.todos.companiesWithoutAdmin + 1);
+    expect(home.todos.pendingAdminInvitations).toBe(before.todos.pendingAdminInvitations + 1);
+    const none = await companies("?status=ACTIVE&admin=NONE");
+    expect(none.map((row) => row.id)).toContain(second.id);
+    expect(home.todos.companiesWithoutAdmin).toBe(none.length);
+    const notBound = await companies("?status=ACTIVE&admin=NOT_BOUND");
+    expect(home.todos.pendingAdminInvitations).toBe(
+      notBound.reduce((total, row) => total + row.admins.filter((admin) => !admin.isBound).length, 0),
+    );
+    const mine = await client.request<{ items: { onlyYou: boolean }[] }>("/makeups/pending?onlyMine=true", { method: "GET" });
+    expect(home.todos.makeupOnlyYou).toBe(mine.items.length);
+    // 演示的补卡是工人的，项目里有项目管理员、公司里有公司管理员：不是平台“只有你能批”。
+    const all = await client.request<{ items: { onlyYou: boolean }[] }>("/makeups/pending", { method: "GET" });
+    expect(all.items.length).toBeGreaterThan(0);
+    expect(all.items.every((item) => !item.onlyYou)).toBe(true);
+    expect(home.companies.active).toBe((await companies("?status=ACTIVE")).length);
+    expect(home.projects.active).toBe((await companies("")).reduce((total, row) => total + row.activeProjectCount, 0));
+    await expect(client.request("/system/companies?admin=SOME", { method: "GET" })).rejects.toMatchObject({
+      responseBody: { message: "INVALID_SYSTEM_COMPANY_QUERY" },
+    });
+
+    const settings = await client.request<SystemSettings>("/system/settings", { method: "GET" });
+    await expect(
+      client.request("/system/settings", { method: "PUT", data: { announcement: "字".repeat(161), expectedUpdatedAt: settings.updatedAt, supportPhone: "" } }),
+    ).rejects.toMatchObject({ responseBody: { message: "INVALID_PLATFORM_SETTINGS_REQUEST" } });
+    const saved = await client.request<SystemSettings>("/system/settings", {
+      method: "PUT",
+      data: { announcement: " 进场请佩戴安全帽 ", expectedUpdatedAt: settings.updatedAt, supportPhone: "400-800-1234" },
+    });
+    expect(saved).toMatchObject({ announcement: "进场请佩戴安全帽", supportPhone: "400-800-1234" });
+    await expect(
+      client.request("/system/settings", { method: "PUT", data: { announcement: "旧的", expectedUpdatedAt: settings.updatedAt, supportPhone: "" } }),
+    ).rejects.toMatchObject({ responseBody: { message: "PLATFORM_SETTINGS_CHANGED_RELOAD" } });
+    const log = await client.request<{ items: { action: string; sentence: string }[] }>("/system/audit-logs?type=PLATFORM", { method: "GET" });
+    expect(log.items[0]).toMatchObject({ action: "PLATFORM_SETTINGS_UPDATED" });
+    expect(log.items[0]!.sentence).toContain("修改了首页公告、平台联系电话");
+
+    // 被停用的人登录时，提示里有平台联系电话（Q12）。
+    await client.request("/system/accounts/dev-team/disable", { method: "POST" });
+    await expect(login("dev-team")).rejects.toThrow("当前账号已停用，请联系管理员。平台联系电话 400-800-1234。");
+    await login("dev-worker");
+    expect(await client.request("/app/settings", { method: "GET" })).toEqual({ announcement: "进场请佩戴安全帽", supportPhone: "400-800-1234" });
+    await expect(client.request("/system/overview", { method: "GET" })).rejects.toThrow();
   });
 });

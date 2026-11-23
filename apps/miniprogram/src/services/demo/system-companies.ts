@@ -64,6 +64,18 @@ export const demoCompanyAdmins = (state: DemoState): readonly DemoCompanyAdmin[]
       userId: account.id,
     }));
 
+/** 第五期：没有管理员（NONE）、有管理员还没绑定微信（NOT_BOUND），和服务器的 admin 筛选一样。 */
+export const demoCompanyAdminFilter = (
+  admins: readonly DemoCompanyAdmin[],
+  companyId: string,
+  filter: string | null,
+): boolean => {
+  const own = admins.filter((admin) => admin.companyId === companyId);
+  if (filter === "NONE") return own.length === 0;
+  if (filter === "NOT_BOUND") return own.some((admin) => admin.userId === null);
+  return true;
+};
+
 const adminView = (admin: DemoCompanyAdmin): CompanyAdmin => ({
   appointedAt: admin.appointedAt,
   invitation:
@@ -188,10 +200,14 @@ export const demoSystemCompanies = (
     if (method === "GET") {
       const search = (query.search ?? "").trim().toLowerCase();
       const status = query.status ?? null;
+      const admin = query.admin ?? null;
+      if (admin !== null && admin !== "NONE" && admin !== "NOT_BOUND") fail(400, "INVALID_SYSTEM_COMPANY_QUERY");
+      const admins = demoCompanyAdmins(state);
       const rows = [...(state.companies as readonly DemoCompany[])]
         .filter(
           (company) =>
             (status === null || company.status === status) &&
+            demoCompanyAdminFilter(admins, company.id, admin) &&
             `${company.name}${company.shortName ?? ""}${company.creditCode ?? ""}`.toLowerCase().includes(search),
         )
         .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id.localeCompare(a.id));

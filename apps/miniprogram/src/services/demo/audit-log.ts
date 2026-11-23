@@ -8,6 +8,7 @@ import {
 import type { AuditLogEntry, AuditLogPage } from "../audit-log";
 import type { PlatformCompanyDetail } from "../workflows";
 import type { DemoState } from "./state";
+import { demoSettingsChanged } from "./system-home";
 import { demoSystemCompanies } from "./system-companies";
 
 const PAGE_SIZE = 30;
@@ -85,6 +86,8 @@ export const demoAuditDetail = (
     return { name: data.displayName ?? null };
   if (parts[0] === "safety-credit" && parts[1] === "policies")
     return { startsOn: data.startsOn, version: data.version };
+  if (parts[0] === "system" && parts[1] === "settings" && method === "PUT")
+    return { changed: demoSettingsChanged(before, result) };
   return undefined;
 };
 
@@ -148,6 +151,8 @@ const derive = (state: DemoState, entry: DemoAuditEntry): Derived | null => {
   }
   if (parts[0] === "safety-credit" && parts[1] === "policies" && parts.length === 2 && method === "POST")
     return { action: "SAFETY_POLICY_PUBLISHED", projectId: null, target: null, metadata: detail };
+  if (parts[0] === "system" && parts[1] === "settings" && method === "PUT")
+    return { action: "PLATFORM_SETTINGS_UPDATED", projectId: null, target: null, metadata: { changed: detail.changed ?? [] } };
   if (method === "GET" && parts[0] === "management" && parts[1] === "projects" && parts[5] === "registration")
     return {
       action: "WORKER_REGISTRATION_VIEWED",
