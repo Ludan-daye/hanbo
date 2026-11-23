@@ -170,10 +170,10 @@ export const FEATURES: Readonly<Record<PanelKey, readonly Feature[]>> = {
       url: "/pages/audit-log/index",
     },
   ],
+  // 打卡安排不放在这里（五级 Q11）：全平台一次读太多，要设就进入公司 → 进入项目再设。
   systemAdmin: [
     APPROVALS,
     { title: "信用规则", sub: "扣分与恢复标准", icon: "star", url: "/pages/safety-policy/index" },
-    { title: "打卡安排", sub: "设置授权范围内下级的打卡要求", icon: "clock", url: "/pages/schedules/index" },
     {
       title: "平台管理",
       sub: "公司、账号权限与平台设置",

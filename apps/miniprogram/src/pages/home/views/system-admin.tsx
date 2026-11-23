@@ -5,10 +5,10 @@ import type { MeResponse } from "../../../services/auth.types";
 
 import { HomeShell, useAnnouncement, usePullRefresh } from "./parts";
 
+// 打卡安排不放在首页（五级 Q11），要设就进入公司 → 进入项目再设。
 const GRID: readonly string[] = [
   "/pages/system-management/index",
   "/pages/safety-policy/index",
-  "/pages/schedules/index",
 ];
 const LIST: readonly string[] = ["/pages/team-makeups/index"];
 

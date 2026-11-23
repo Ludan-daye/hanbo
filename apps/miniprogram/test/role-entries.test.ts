@@ -67,10 +67,11 @@ describe("FEATURES", () => {
       systemAdmin: [
         "/pages/system-management/index",
         "/pages/safety-policy/index",
-        "/pages/schedules/index",
         "/pages/team-makeups/index",
       ],
     };
+    // 五级 Q11：超级管理员的工作台没有打卡安排。
+    expect(FEATURES.systemAdmin.some((feature) => feature.url === "/pages/schedules/index")).toBe(false);
     for (const [panel, urls] of Object.entries(picks))
       for (const url of urls)
         expect(
