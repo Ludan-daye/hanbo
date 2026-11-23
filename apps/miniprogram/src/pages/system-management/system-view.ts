@@ -1,20 +1,11 @@
 import type { StatusKind } from "../../components/ui/status-kind";
 import { FEATURES, displayProjectRole, type Feature } from "../../routing/features";
-import {
-  PERMISSION_LEVELS,
-  permissionLevel,
-} from "../../routing/permissionLevels";
-import type { RoleCode } from "../../services/auth.types";
-import type {
-  CompanyProject,
-  ProjectTeam,
-} from "../../services/management.types";
 import { formatChinaDate, formatChinaHm } from "../../services/time";
 import type {
-  Account,
-  Company,
   CompanyAdmin,
   CompanyForm,
+  PlatformAccount,
+  PlatformAccountRole,
   PlatformCompany,
   PlatformCompanyDetail,
 } from "../../services/workflows";
@@ -23,14 +14,14 @@ import type {
 export type SystemScreen = "list" | "company" | "new-company" | "account";
 
 export const systemScreen = (input: {
-  /** 点开了一个账号，正在改它的权限。 */
-  readonly editingAccount: boolean;
+  /** 点开了一个账号。 */
+  readonly hasAccount: boolean;
   /** 点了“新增公司”。 */
   readonly addingCompany: boolean;
   /** 点开的公司还在不在。 */
   readonly hasCompany: boolean;
 }): SystemScreen =>
-  input.editingAccount
+  input.hasAccount
     ? "account"
     : input.addingCompany
       ? "new-company"
@@ -145,46 +136,58 @@ export const companyFormProblem = (form: CompanyForm): string | null => {
   return null;
 };
 
-export type ScopeOption = { readonly id: string; readonly name: string };
+/** 账号那一行的副行：最高身份（几项身份），手机号。 */
+export const accountRowSub = (
+  account: Pick<PlatformAccount, "highestRoleCode" | "phone" | "roleCount">,
+): string => {
+  const roles =
+    account.highestRoleCode === null
+      ? "还没有身份"
+      : account.roleCount > 1
+        ? `${displayProjectRole(account.highestRoleCode)}等 ${account.roleCount} 项身份`
+        : displayProjectRole(account.highestRoleCode);
+  return account.phone === null ? roles : `${roles}，${account.phone}`;
+};
 
-export const ROLE_OPTIONS: readonly RoleCode[] = PERMISSION_LEVELS.map(
-  (level) => level.roleCode,
-);
+/** 只有停用的写状态，正常的不写，副行才放得下。 */
+export const accountRowStatus = (
+  account: Pick<PlatformAccount, "status">,
+): { readonly kind: StatusKind; readonly text: string } | undefined =>
+  account.status === "DISABLED" ? { kind: "bad", text: "已停用" } : undefined;
 
-/** 这个等级能管的范围。班组名后面带上项目，不同项目里同名的班组才分得开。 */
-export const scopeOptions = (
-  role: RoleCode,
-  companies: readonly Company[],
-  projects: readonly CompanyProject[],
-  teams: readonly ProjectTeam[],
-): readonly ScopeOption[] =>
-  role === "SYSTEM_ADMIN"
-    ? [{ id: "GLOBAL", name: "全平台" }]
-    : role === "COMPANY_ADMIN"
-      ? companies
-      : role === "TEAM_LEADER"
-        ? teams.map((team) => {
-            const project = projects.find((row) => row.id === team.projectId);
-            return {
-              id: team.id,
-              name: project ? `${team.name}（${project.name}）` : team.name,
-            };
-          })
-        : projects;
+export const accountLastLogin = (account: Pick<PlatformAccount, "lastLoginAt">): string =>
+  account.lastLoginAt === null ? "还没登录过" : `最近登录 ${auditTime(account.lastLoginAt)}`;
 
-/** “三级 项目管理员”。 */
-export const levelText = (role: RoleCode): string =>
-  `${"一二三四五"[permissionLevel(role).level - 1]}级 ${displayProjectRole(role)}`;
+const ROLE_WHERE: Readonly<Record<PlatformAccountRole["source"], string>> = {
+  COMPANY_APPOINTMENT: "在公司详情里任免",
+  PLATFORM: "只能在服务器上用命令开通或撤销",
+  PROJECT_MEMBERSHIP: "在项目人员里改",
+};
 
-/** 账号那一行的副行：身份，手机号。 */
-export const accountSub = (
-  account: Pick<Account, "roleCode" | "phone">,
-): string => `${displayProjectRole(account.roleCode)}，${account.phone}`;
+/** 一条身份的副行：在哪，去哪改（Q6：这里只显示，不改）。 */
+export const accountRoleSub = (role: Pick<PlatformAccountRole, "scopeName" | "source">): string =>
+  `${role.scopeName}，${ROLE_WHERE[role.source]}`;
+
+/** 点一条身份去哪：公司任命打开平台里的公司详情；项目、班组身份打开他在那个项目的人员资料。 */
+export type AccountRoleTarget =
+  | { readonly kind: "company"; readonly companyId: string; readonly name: string }
+  | { readonly kind: "page"; readonly url: string };
+
+export const accountRoleTarget = (role: PlatformAccountRole): AccountRoleTarget | null => {
+  if (role.source === "COMPANY_APPOINTMENT")
+    return role.companyId === null ? null : { kind: "company", companyId: role.companyId, name: role.scopeName };
+  if (role.source !== "PROJECT_MEMBERSHIP" || role.projectId === null) return null;
+  const project = `projectId=${encodeURIComponent(role.projectId)}`;
+  return role.memberId === null
+    ? { kind: "page", url: `/pages/participants/index?${project}` }
+    : { kind: "page", url: `/pages/person-form/index?${project}&memberId=${encodeURIComponent(role.memberId)}` };
+};
 
 // 演示数据里的日志只记了“请求方式 路径”，这里换成一句人话。
 const NAMED: ReadonlyArray<readonly [RegExp, string]> = [
   [/^POST \/system\/companies$/, "保存公司"],
-  [/^PUT \/system\/accounts\//, "调整账号权限"],
+  [/^POST \/system\/accounts\/[^/]+\/disable$/, "停用账号"],
+  [/^POST \/system\/accounts\/[^/]+\/enable$/, "恢复账号"],
   [/^PUT \/system\/settings$/, "修改平台设置"],
   [/^POST \/management\/companies\/[^/]+\/projects$/, "新建项目"],
   [/^POST \/management\/projects\/[^/]+\/participants$/, "添加成员"],
@@ -237,7 +240,7 @@ export const describeAudit = (action: string): string => {
 /** 日志里“谁做的”：能对上账号就写姓名。 */
 export const auditActor = (
   actor: string,
-  accounts: readonly Pick<Account, "id" | "name">[],
+  accounts: readonly { readonly id: string; readonly name: string }[],
 ): string => accounts.find((row) => row.id === actor)?.name ?? actor;
 
 /** “11-18 10:20”，按中国时间。 */

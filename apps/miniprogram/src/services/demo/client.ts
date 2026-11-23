@@ -41,7 +41,6 @@ import type {
 } from "../management.types";
 import type { SubmitAttendanceRecordBody, SubmitMakeupBody } from "../me.types";
 import type {
-  Account,
   PersonForm,
   SystemSettings,
 } from "../workflows";
@@ -50,6 +49,7 @@ import { chinaToday, chinaDaysAgo } from "../time";
 import { checkAttendanceGeofence } from "../geofence";
 import { managedDemoTeam } from "./teams";
 import { demoAuditLog } from "./audit-log";
+import { demoSystemAccounts } from "./system-accounts";
 import type { TransferRequestForm } from "../transfers";
 import { dayHeadcount } from "../day-headcount";
 import { demoDaySummary, demoReport, dailyPerson } from "./reports";
@@ -817,21 +817,8 @@ const routeDemo = (
       return response(result.state, result.data);
     }
     if (parts[1] === "accounts") {
-      if (method === "GET") return response(state, state.accounts);
-      const account = options.data as Account;
-      if (account.id === userId)
-        throw new ApiError(400, "不能修改当前登录账号的权限或状态。", {
-          accountId: account.id,
-        });
-      return response(
-        {
-          ...state,
-          accounts: state.accounts.map((row) =>
-            row.id === account.id ? account : row,
-          ),
-        },
-        account,
-      );
+      const result = demoSystemAccounts(state, userId, method, parts, query);
+      return response(result.state, result.data);
     }
     if (parts[1] === "settings")
       return method === "GET"

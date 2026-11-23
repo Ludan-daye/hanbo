@@ -10,6 +10,11 @@ import {
   personRow,
 } from "../src/pages/company-people/person-row";
 import {
+  accountLastLogin,
+  accountRoleSub,
+  accountRoleTarget,
+  accountRowStatus,
+  accountRowSub,
   auditActor,
   auditTime,
   companyAdminSub,
@@ -21,15 +26,10 @@ import {
   companyRowSub,
   describeAudit,
   EMPTY_COMPANY_DRAFT,
-  levelText,
-  scopeOptions,
   systemScreen,
 } from "../src/pages/system-management/system-view";
-import type {
-  CompanyParticipant,
-  CompanyProject,
-  ProjectTeam,
-} from "../src/services/management.types";
+import type { CompanyParticipant } from "../src/services/management.types";
+import type { PlatformAccount, PlatformAccountRole } from "../src/services/workflows";
 
 const person = (patch: Partial<CompanyParticipant>): CompanyParticipant => ({
   displayName: "张建国",
@@ -188,61 +188,22 @@ describe("公司人员一人一行", () => {
 });
 
 describe("平台管理", () => {
-  it("改账号时显示账号那一屏，其次是新增公司、点开的公司，否则是列表", () => {
+  it("点开账号时显示账号那一屏，其次是新增公司、点开的公司，否则是列表", () => {
     const none = {
-      editingAccount: false,
+      hasAccount: false,
       addingCompany: false,
       hasCompany: false,
     };
     expect(systemScreen(none)).toBe("list");
     expect(systemScreen({ ...none, hasCompany: true })).toBe("company");
     expect(systemScreen({ ...none, addingCompany: true })).toBe("new-company");
-    expect(systemScreen({ ...none, editingAccount: true })).toBe("account");
-  });
-
-  it("权限等级写成“几级 身份”，不用间隔号", () => {
-    expect(levelText("WORKER")).toBe("一级 普通工人");
-    expect(levelText("PROJECT_ADMIN")).toBe("三级 项目管理员");
-    expect(levelText("SYSTEM_ADMIN")).toBe("五级 超级管理员");
-  });
-
-  it("管理范围跟着等级走，班组名后面带项目", () => {
-    const companies = [
-      { id: "company-1", name: "瀚渤建设", status: "ACTIVE" as const },
-    ];
-    const projects = [
-      { id: "project-1", companyId: "company-1", name: "滨江花园一期" },
-    ] as readonly CompanyProject[];
-    const teams: readonly ProjectTeam[] = [
-      {
-        id: "team-1",
-        projectId: "project-1",
-        name: "钢筋一班",
-        status: "ACTIVE",
-      },
-      { id: "team-2", projectId: "gone", name: "木工一班", status: "ACTIVE" },
-    ];
-    expect(scopeOptions("SYSTEM_ADMIN", companies, projects, teams)).toEqual([
-      { id: "GLOBAL", name: "全平台" },
-    ]);
-    expect(scopeOptions("COMPANY_ADMIN", companies, projects, teams)).toBe(
-      companies,
-    );
-    expect(scopeOptions("PROJECT_ADMIN", companies, projects, teams)).toBe(
-      projects,
-    );
-    expect(scopeOptions("WORKER", companies, projects, teams)).toBe(projects);
-    expect(scopeOptions("TEAM_LEADER", companies, projects, teams)).toEqual([
-      { id: "team-1", name: "钢筋一班（滨江花园一期）" },
-      { id: "team-2", name: "木工一班" },
-    ]);
+    expect(systemScreen({ ...none, hasAccount: true })).toBe("account");
   });
 
   it("日志把“请求方式 路径”换成一句话，屏上不出现英文", () => {
     expect(describeAudit("POST /system/companies")).toBe("保存公司");
-    expect(describeAudit("PUT /system/accounts/dev-admin")).toBe(
-      "调整账号权限",
-    );
+    expect(describeAudit("POST /system/accounts/dev-admin/disable")).toBe("停用账号");
+    expect(describeAudit("POST /system/accounts/dev-admin/enable")).toBe("恢复账号");
     expect(describeAudit("PUT /system/settings")).toBe("修改平台设置");
     expect(describeAudit("POST /management/companies/c1/projects")).toBe(
       "新建项目",
@@ -342,5 +303,63 @@ describe("平台的公司一行", () => {
         updatedAt: "2026-11-22T00:00:00.000Z",
       }),
     ).toEqual({ ...EMPTY_COMPANY_DRAFT, contactName: "王经理", name: "瀚渤建设" });
+  });
+});
+
+describe("平台的账号", () => {
+  const account = (patch: Partial<PlatformAccount>): PlatformAccount => ({
+    displayName: "陈工",
+    highestRoleCode: "PROJECT_ADMIN",
+    lastLoginAt: "2026-11-18T02:20:00.000Z",
+    phone: "13800000004",
+    profileType: "MANAGER",
+    roleCount: 1,
+    status: "ACTIVE",
+    userId: "u1",
+    ...patch,
+  });
+  const role = (patch: Partial<PlatformAccountRole>): PlatformAccountRole => ({
+    companyId: "c1",
+    memberId: "m1",
+    projectId: "p1",
+    roleCode: "PROJECT_ADMIN",
+    scopeId: "p1",
+    scopeName: "滨江花园一期",
+    scopeType: "PROJECT",
+    source: "PROJECT_MEMBERSHIP",
+    ...patch,
+  });
+
+  it("一行写最高身份、身份数和手机号；只有停用的写状态", () => {
+    expect(accountRowSub(account({}))).toBe("项目管理员，13800000004");
+    expect(accountRowSub(account({ highestRoleCode: "COMPANY_ADMIN", roleCount: 3 }))).toBe("公司管理员等 3 项身份，13800000004");
+    expect(accountRowSub(account({ highestRoleCode: null, phone: null, roleCount: 0 }))).toBe("还没有身份");
+    expect(accountRowStatus(account({}))).toBeUndefined();
+    expect(accountRowStatus(account({ status: "DISABLED" }))).toEqual({ kind: "bad", text: "已停用" });
+  });
+
+  it("最近登录按中国时间写", () => {
+    expect(accountLastLogin(account({}))).toBe("最近登录 11-18 10:20");
+    expect(accountLastLogin(account({ lastLoginAt: null }))).toBe("还没登录过");
+  });
+
+  it("每条身份写在哪、去哪改", () => {
+    expect(accountRoleSub(role({}))).toBe("滨江花园一期，在项目人员里改");
+    expect(accountRoleSub(role({ roleCode: "COMPANY_ADMIN", scopeName: "瀚渤建设", scopeType: "COMPANY", source: "COMPANY_APPOINTMENT" }))).toBe(
+      "瀚渤建设，在公司详情里任免",
+    );
+    expect(accountRoleSub(role({ roleCode: "SYSTEM_ADMIN", scopeName: "全平台", scopeType: "GLOBAL", source: "PLATFORM" }))).toBe(
+      "全平台，只能在服务器上用命令开通或撤销",
+    );
+  });
+
+  it("项目、班组身份跳到他在那个项目的人员资料，公司身份打开公司详情，平台身份不跳", () => {
+    expect(accountRoleTarget(role({}))).toEqual({ kind: "page", url: "/pages/person-form/index?projectId=p1&memberId=m1" });
+    expect(accountRoleTarget(role({ memberId: null }))).toEqual({ kind: "page", url: "/pages/participants/index?projectId=p1" });
+    expect(accountRoleTarget(role({ memberId: null, projectId: null }))).toBeNull();
+    expect(
+      accountRoleTarget(role({ companyId: "c1", memberId: null, projectId: null, scopeName: "瀚渤建设", scopeType: "COMPANY", source: "COMPANY_APPOINTMENT" })),
+    ).toEqual({ kind: "company", companyId: "c1", name: "瀚渤建设" });
+    expect(accountRoleTarget(role({ companyId: null, scopeType: "GLOBAL", source: "PLATFORM" }))).toBeNull();
   });
 });

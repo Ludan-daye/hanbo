@@ -11,24 +11,12 @@ import {
 import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import {
-  fetchCompanyProjects,
-  fetchProjectTeams,
-} from "../../services/management";
-import type {
-  CompanyProject,
-  ProjectTeam,
-} from "../../services/management.types";
-import {
   createCompany,
   fetchAccounts,
   fetchAuditEntries,
-  fetchCompanies,
   fetchSystemSettings,
-  saveAccount,
   saveSystemSettings,
-  type Account,
   type AuditEntry,
-  type Company,
   type SystemSettings,
 } from "../../services/workflows";
 import { useSession } from "../../store/session";
@@ -37,12 +25,10 @@ import {
   EMPTY_COMPANY_DRAFT,
   companyFormOf,
   companyFormProblem,
-  levelText,
-  scopeOptions,
   systemScreen,
   type CompanyDraft,
 } from "./system-view";
-import { AccountView, AccountsTab } from "./views/accounts";
+import { AccountScreen, AccountsTab } from "./views/accounts";
 import { AuditTab } from "./views/audit";
 import { CompaniesTab, NewCompanyView } from "./views/companies";
 import { CompanyScreen, type CompanyMode } from "./views/company";
@@ -80,19 +66,12 @@ const useTabData = <T,>(
   return { data, error };
 };
 
-/** 账号的管理范围要用的公司、项目、班组：点开一个账号时才读（账号标签现在只有演示版）。 */
-const loadScopeData = async (): Promise<{
-  readonly companies: readonly Company[];
-  readonly projects: readonly CompanyProject[];
-  readonly teams: readonly ProjectTeam[];
-}> => {
-  const companies = (await fetchCompanies({ search: "", status: null, cursor: null })).items.map(
-    (row): Company => ({ id: row.id, name: row.name, status: row.status === "ACTIVE" ? "ACTIVE" : "SUSPENDED" }),
-  );
-  const projects = (await Promise.all(companies.map((row) => fetchCompanyProjects(row.id)))).flat();
-  const teams = (await Promise.all(projects.map((row) => fetchProjectTeams(row.id)))).flat();
-  return { companies, projects, teams };
-};
+/** 日志（现在只有演示版）里的账号编号换成姓名：读第一页账号就够了。 */
+const loadAuditNames = async (): Promise<readonly { readonly id: string; readonly name: string }[]> =>
+  (await fetchAccounts({ search: "", status: null, cursor: null })).items.map((row) => ({
+    id: row.userId,
+    name: row.displayName,
+  }));
 
 export default function SystemManagement(): JSX.Element {
   useSessionGuard();
@@ -100,18 +79,16 @@ export default function SystemManagement(): JSX.Element {
   const { revision, refresh } = usePageRefresh();
   const [tab, setTab] = useState<Tab>("COMPANIES");
   const allowed = state.me?.roles.highestRoleCode === "SYSTEM_ADMIN";
-  // 同一个页面里的另外几屏：点开的公司（看、改资料、任命）、新增公司、改账号权限。
+  // 同一个页面里的另外几屏：点开的公司（看、改资料、任命）、新增公司、点开的账号。
   const [openCompany, setOpenCompany] = useState<{ readonly id: string; readonly name: string } | null>(null);
   const [companyMode, setCompanyMode] = useState<CompanyMode>("detail");
   const [addingCompany, setAddingCompany] = useState<boolean>(false);
   const [companyDraft, setCompanyDraft] = useState<CompanyDraft>(EMPTY_COMPANY_DRAFT);
-  const [draft, setDraft] = useState<Account | null>(null);
-  const [scopeData, setScopeData] = useState<Awaited<ReturnType<typeof loadScopeData>> | null>(null);
-  const [search, setSearch] = useState<string>("");
+  const [openAccount, setOpenAccount] = useState<{ readonly id: string; readonly name: string } | null>(null);
   // 读取失败各标签自己显示；保存、校验失败只在按钮旁边说明，填的东西留着。
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
-  const accounts = useTabData(allowed && (tab === "ACCOUNTS" || tab === "AUDIT"), revision, fetchAccounts);
+  const auditNames = useTabData(allowed && tab === "AUDIT", revision, loadAuditNames);
   const settingsRead = useTabData(allowed && tab === "SETTINGS", revision, fetchSystemSettings);
   const audit = useTabData<readonly AuditEntry[]>(allowed && tab === "AUDIT", revision, fetchAuditEntries);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -132,39 +109,8 @@ export default function SystemManagement(): JSX.Element {
     }
   };
 
-  const openAccount = (account: Account): void => {
-    setDraft(account);
-    setError(null);
-    if (scopeData !== null) return;
-    loadScopeData().then(setScopeData, (cause: unknown) =>
-      setError(errorMessage(cause, "管理范围没读到，请返回重试。")),
-    );
-  };
-  const scopes =
-    draft && scopeData
-      ? scopeOptions(draft.roleCode, scopeData.companies, scopeData.projects, scopeData.teams)
-      : [];
-  const savePermissions = async (): Promise<void> => {
-    if (!draft || busy) return;
-    const scope = scopes.find((row) => row.id === draft.scopeId);
-    if (!draft.scopeId || scope === undefined) {
-      setError("请选择和权限等级对应的管理范围。");
-      return;
-    }
-    const confirmed = await Taro.showModal({
-      title: "调整账号权限",
-      content: `${draft.name}：${levelText(draft.roleCode)}，${scope.name}，${draft.status === "ACTIVE" ? "正常使用" : "停用"}。新权限在这个账号下次进入时生效。`,
-      confirmText: "保存权限",
-    });
-    if (confirmed.confirm)
-      await runAction(async () => {
-        await saveAccount(draft);
-        setDraft(null);
-      });
-  };
-
   const screen = systemScreen({
-    editingAccount: draft !== null,
+    hasAccount: openAccount !== null,
     addingCompany,
     hasCompany: openCompany !== null,
   });
@@ -174,15 +120,15 @@ export default function SystemManagement(): JSX.Element {
       setError(null);
       return;
     }
-    setDraft(null);
+    setOpenAccount(null);
     setAddingCompany(false);
     setOpenCompany(null);
     setCompanyMode("detail");
     setError(null);
   };
   const title =
-    screen === "account"
-      ? "账号权限"
+    screen === "account" && openAccount !== null
+      ? openAccount.name
       : screen === "new-company"
         ? "新增公司"
         : screen === "company" && openCompany !== null
@@ -235,28 +181,19 @@ export default function SystemManagement(): JSX.Element {
     );
 
   const renderScreen = (): JSX.Element | null => {
-    if (screen === "account" && draft !== null)
+    if (screen === "account" && openAccount !== null)
       return (
-        <AccountView
-          saved={accounts.data?.find((row) => row.id === draft.id) ?? draft}
-          draft={draft}
-          self={draft.id === state.me?.user.id}
-          scopes={scopes}
-          busy={busy}
-          problem={error}
-          onRole={(roleCode) =>
-            setDraft({
-              ...draft,
-              roleCode,
-              scopeId: scopeData
-                ? (scopeOptions(roleCode, scopeData.companies, scopeData.projects, scopeData.teams)[0]?.id ?? "")
-                : "",
-            })
-          }
-          onScope={(scopeId) => setDraft({ ...draft, scopeId })}
-          onStatus={(status) => setDraft({ ...draft, status })}
-          onSave={() => {
-            void savePermissions();
+        <AccountScreen
+          userId={openAccount.id}
+          self={openAccount.id === state.me?.user.id}
+          onLoaded={(name) => setOpenAccount({ id: openAccount.id, name })}
+          onChanged={refresh}
+          onOpenCompany={(company) => {
+            // 公司管理员身份在公司详情里任免：换到那家公司，返回时回到列表。
+            setOpenAccount(null);
+            setOpenCompany(company);
+            setCompanyMode("detail");
+            setError(null);
           }}
         />
       );
@@ -297,14 +234,16 @@ export default function SystemManagement(): JSX.Element {
         />
       );
     if (tab === "ACCOUNTS")
-      return tabState(accounts.data, accounts.error, () => (
+      return (
         <AccountsTab
-          accounts={accounts.data ?? []}
-          search={search}
-          onSearch={setSearch}
-          onOpen={openAccount}
+          revision={revision}
+          onRetry={refresh}
+          onOpen={(account) => {
+            setOpenAccount({ id: account.userId, name: account.displayName });
+            setError(null);
+          }}
         />
-      ));
+      );
     if (tab === "SETTINGS")
       return tabState(settings, settingsRead.error, () =>
         settings ? (
@@ -320,7 +259,7 @@ export default function SystemManagement(): JSX.Element {
         ) : null,
       );
     return tabState(audit.data, audit.error, () => (
-      <AuditTab audit={audit.data ?? []} accounts={accounts.data ?? []} />
+      <AuditTab audit={audit.data ?? []} accounts={auditNames.data ?? []} />
     ));
   };
 

@@ -46,6 +46,8 @@ import type { TransferRequest } from "../src/services/transfers";
 import type {
   CompanyAdminAppointed,
   CompanyAdminCandidate,
+  PlatformAccountDetail,
+  PlatformAccountPage,
   PlatformCompanyDetail,
   PlatformCompanyPage,
   SystemSettings,
@@ -1285,6 +1287,34 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     await login("dev-worker");
     expect((await client.request<{ name: string }>(`/me/projects/demo-project/attendance-plan?date=${nextDay}`, { method: "GET" })).name).toBe("班组班次");
     await expect(client.request("/attendance/planning/demo-project/TEAM/demo-team", { method: "POST", data: { ...input, name: "越权" } })).rejects.toThrow();
+  });
+  test("system accounts: roles with their source, disable signs the person out, never oneself", async () => {
+    await login("dev-system");
+    const page = await client.request<PlatformAccountPage>("/system/accounts?search=陈工", { method: "GET" });
+    expect(page.items).toEqual([expect.objectContaining({ displayName: "陈工", highestRoleCode: "PROJECT_ADMIN", status: "ACTIVE", userId: "dev-project" })]);
+    const project = await client.request<PlatformAccountDetail>("/system/accounts/dev-project", { method: "GET" });
+    expect(project.roles).toContainEqual(
+      expect.objectContaining({ memberId: expect.any(String), projectId: "demo-project", roleCode: "PROJECT_ADMIN", source: "PROJECT_MEMBERSHIP" }),
+    );
+    const company = await client.request<PlatformAccountDetail>("/system/accounts/dev-company", { method: "GET" });
+    expect(company.roles).toEqual([expect.objectContaining({ companyId: "demo-company", roleCode: "COMPANY_ADMIN", source: "COMPANY_APPOINTMENT" })]);
+    const system = await client.request<PlatformAccountDetail>("/system/accounts/dev-system", { method: "GET" });
+    expect(system).toMatchObject({ isSystemAdmin: true, roles: [{ scopeName: "全平台", source: "PLATFORM" }] });
+    await expect(client.request("/system/accounts/dev-system/disable", { method: "POST" })).rejects.toMatchObject({
+      responseBody: { message: "CANNOT_DISABLE_SELF" },
+    });
+
+    const disabled = await client.request<PlatformAccountDetail>("/system/accounts/dev-team/disable", { method: "POST" });
+    expect(disabled.status).toBe("DISABLED");
+    const filtered = await client.request<PlatformAccountPage>("/system/accounts?status=DISABLED", { method: "GET" });
+    expect(filtered.items.map((row) => row.userId)).toEqual(["dev-team"]);
+    await expect(login("dev-team")).rejects.toThrow();
+    await login("dev-system");
+    await expect(client.request("/system/accounts/dev-team/disable", { method: "POST" })).rejects.toMatchObject({
+      responseBody: { message: "ACCOUNT_STATUS_CHANGED_RELOAD" },
+    });
+    await client.request("/system/accounts/dev-team/enable", { method: "POST" });
+    expect((await login("dev-team")).roles.highestRoleCode).toBe("TEAM_LEADER");
   });
   test("system company, company admin, announcement and audit changes persist", async () => {
     await login("dev-system");

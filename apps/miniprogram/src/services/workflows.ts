@@ -103,6 +103,7 @@ export type CompanyAdminAppointed = {
   readonly invitation: IssuedInvitation | null;
   readonly member: CompanyAdmin;
 };
+/** 演示数据里的账号：一个账号一个等级（真实账号的身份见 PlatformAccountDetail）。 */
 export type Account = {
   readonly id: string;
   readonly name: string;
@@ -110,6 +111,40 @@ export type Account = {
   readonly status: "ACTIVE" | "SUSPENDED";
   readonly roleCode: RoleCode;
   readonly scopeId: string;
+};
+/** 平台“账号”标签的一行：/system/accounts，只列绑定了的账号。 */
+export type PlatformAccountStatus = "ACTIVE" | "DISABLED";
+export type PlatformAccount = {
+  readonly displayName: string;
+  readonly highestRoleCode: RoleCode | null;
+  readonly lastLoginAt: string | null;
+  readonly phone: string | null;
+  readonly profileType: "MANAGER" | "WORKER" | null;
+  readonly roleCount: number;
+  readonly status: PlatformAccountStatus;
+  readonly userId: string;
+};
+export type PlatformAccountPage = {
+  readonly items: readonly PlatformAccount[];
+  readonly nextCursor: string | null;
+};
+/** 一条身份从哪来，也就是去哪改：平台（服务器命令）、公司任命、项目成员。 */
+export type PlatformAccountRole = {
+  readonly companyId: string | null;
+  readonly memberId: string | null;
+  readonly projectId: string | null;
+  readonly roleCode: RoleCode;
+  readonly scopeId: string;
+  readonly scopeName: string;
+  readonly scopeType: "GLOBAL" | "COMPANY" | "PROJECT" | "TEAM";
+  readonly source: "PLATFORM" | "COMPANY_APPOINTMENT" | "PROJECT_MEMBERSHIP";
+};
+export type PlatformAccountDetail = PlatformAccount & {
+  readonly activeSessionCount: number;
+  readonly createdAt: string;
+  readonly isSystemAdmin: boolean;
+  readonly profileId: string | null;
+  readonly roles: readonly PlatformAccountRole[];
 };
 export type SystemSettings = {
   readonly supportPhone: string;
@@ -286,14 +321,29 @@ export const revokeCompanyAdmin = (
     `/system/companies/${encodeURIComponent(companyId)}/admins/${encodeURIComponent(memberId)}/revoke`,
     { method: "POST" },
   );
-// 下面账号、设置、日志三组接口服务器还没有（平台规划第二、四、五期），现在只有演示版。
-export const fetchAccounts = (): Promise<readonly Account[]> =>
-  apiClient.request("/system/accounts", { method: "GET" });
-export const saveAccount = (body: Account): Promise<Account> =>
-  apiClient.request(`/system/accounts/${body.id}`, {
-    method: "PUT",
-    data: body,
-  });
+/** 平台的账号，一页 30 个，新的在前；按姓名、手机号在服务器上查。 */
+export const fetchAccounts = (options: {
+  readonly search: string;
+  readonly status: PlatformAccountStatus | null;
+  readonly cursor: string | null;
+}): Promise<PlatformAccountPage> => {
+  const query: string[] = [];
+  if (options.search.trim()) query.push(`search=${encodeURIComponent(options.search.trim())}`);
+  if (options.status !== null) query.push(`status=${options.status}`);
+  if (options.cursor !== null) query.push(`cursor=${encodeURIComponent(options.cursor)}`);
+  return apiClient.request(
+    `/system/accounts${query.length > 0 ? `?${query.join("&")}` : ""}`,
+    { method: "GET" },
+  );
+};
+export const fetchAccount = (userId: string): Promise<PlatformAccountDetail> =>
+  apiClient.request(`/system/accounts/${encodeURIComponent(userId)}`, { method: "GET" });
+/** 停用：他立刻退出登录，任职和记录都不动。 */
+export const disableAccount = (userId: string): Promise<PlatformAccountDetail> =>
+  apiClient.request(`/system/accounts/${encodeURIComponent(userId)}/disable`, { method: "POST" });
+export const enableAccount = (userId: string): Promise<PlatformAccountDetail> =>
+  apiClient.request(`/system/accounts/${encodeURIComponent(userId)}/enable`, { method: "POST" });
+// 下面设置、日志两组接口服务器还没有（平台规划第四、五期），现在只有演示版。
 export const fetchSystemSettings = (): Promise<SystemSettings> =>
   apiClient.request("/system/settings", { method: "GET" });
 export const saveSystemSettings = (

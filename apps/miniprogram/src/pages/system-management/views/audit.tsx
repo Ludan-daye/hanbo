@@ -1,7 +1,7 @@
 import { View } from "@tarojs/components";
 
 import { Notice, Row, Sheet, StateView } from "../../../components/ui";
-import type { Account, AuditEntry } from "../../../services/workflows";
+import type { AuditEntry } from "../../../services/workflows";
 import { auditActor, auditTime, describeAudit } from "../system-view";
 
 /** “日志”标签：只读。谁、什么时候、做了什么。 */
@@ -11,7 +11,7 @@ export const AuditTab = ({
 }: {
   readonly audit: readonly AuditEntry[];
   /** 用来把日志里的账号编号换成姓名。 */
-  readonly accounts: readonly Account[];
+  readonly accounts: readonly { readonly id: string; readonly name: string }[];
 }): JSX.Element =>
   audit.length === 0 ? (
     <StateView
