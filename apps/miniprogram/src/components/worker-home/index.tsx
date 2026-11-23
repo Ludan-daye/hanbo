@@ -20,7 +20,7 @@ import {
   formatChinaDate,
   formatChinaHm,
 } from "../../services/time";
-import { fetchAppSettings, type SystemSettings } from "../../services/workflows";
+import { fetchAppSettings, type AppSettings } from "../../services/workflows";
 import {
   summarizeWorkerMonth,
   type WorkerMonthSummary,
@@ -156,8 +156,9 @@ export const WorkerHome = ({
     revision,
     "本月考勤没读到，请重试。",
   );
-  const settings = useCachedRead<SystemSettings>(
-    FRONTEND_DEMO ? `${userId}:app-settings` : null,
+  // 平台的首页公告（五级第五期），和管理人员首页同一份缓存。
+  const settings = useCachedRead<AppSettings>(
+    `${userId}:app-settings`,
     fetchAppSettings,
     revision,
     "公告没读到，请重试。",

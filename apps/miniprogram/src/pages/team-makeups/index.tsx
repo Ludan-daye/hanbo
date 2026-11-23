@@ -137,11 +137,14 @@ export default function TeamMakeups(): JSX.Element {
   const requestedProjectId: string | null = router.params.projectId
     ? decodeURIComponent(router.params.projectId)
     : null;
-  // 从项目进来时看这个项目的全部；从公司进来默认“需要你批”，链接可带 onlyMine=false。
+  // 从项目进来时看这个项目的全部；公司管理员、超级管理员默认“需要你批”（五级 Q11），
+  // 链接可带 onlyMine=false。
   const companyLevel: boolean =
     requestedProjectId === null &&
     (state.me?.roles.assignments ?? []).some(
-      (assignment) => assignment.roleCode === "COMPANY_ADMIN",
+      (assignment) =>
+        assignment.roleCode === "COMPANY_ADMIN" ||
+        assignment.roleCode === "SYSTEM_ADMIN",
     );
   const [onlyMine, setOnlyMine] = useState<boolean>(
     router.params.onlyMine !== "false",
@@ -370,7 +373,11 @@ export default function TeamMakeups(): JSX.Element {
             <RequestLine item={open} />
             <CardMeta>{scopeLabel(open)}</CardMeta>
             {companyLevel && open.onlyYou === true ? (
-              <CardMeta>项目里没有更高职级的人能批，只能由你处理。</CardMeta>
+              <CardMeta>
+                {state.me?.roles.highestRoleCode === "SYSTEM_ADMIN"
+                  ? "公司里没有别人能批，只能由你处理。"
+                  : "项目里没有更高职级的人能批，只能由你处理。"}
+              </CardMeta>
             ) : null}
             <View className="team-makeups__text">{open.reason}</View>
             <View className="team-makeups__quick">

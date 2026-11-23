@@ -34,4 +34,16 @@ describe("公司暂停的说明（五级第三期）", () => {
     expect(companySuspendedNotice(me(undefined))).toBeNull();
     expect(companySuspendedNotice(me([company("甲", "SUSPENDED")], "SYSTEM_ADMIN"))).toBeNull();
   });
+
+  test("平台设了联系电话就写上（五级第五期，Q12）", () => {
+    expect(companySuspendedNotice(me([company("瀚渤建设", "SUSPENDED")]), "400-800-1234")?.sub).toBe(
+      "现在只能查看和导出记录，不能打卡、补卡、审批或修改。请联系平台恢复，电话 400-800-1234。",
+    );
+    expect(companySuspendedNotice(me([company("甲", "SUSPENDED"), company("乙", "ACTIVE")]), "400-800-1234")?.sub).toBe(
+      "那里的项目只能查看和导出，不能打卡、补卡、审批或修改；别的公司照常。要恢复请联系平台，电话 400-800-1234。",
+    );
+    expect(companySuspendedNotice(me([company("甲", "SUSPENDED")]), "  ")?.sub).toBe(
+      "现在只能查看和导出记录，不能打卡、补卡、审批或修改。请联系平台恢复。",
+    );
+  });
 });

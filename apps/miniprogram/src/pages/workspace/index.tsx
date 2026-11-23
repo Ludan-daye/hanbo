@@ -34,8 +34,13 @@ import type {
 } from "../../services/management.types";
 import { chinaToday } from "../../services/time";
 import {
+  fetchSystemOverview,
+  type SystemOverview,
+} from "../../services/workflows";
+import {
   companyAdminStatuses,
   projectAdminStatuses,
+  systemAdminStatuses,
 } from "../home/home-model";
 import { useSession } from "../../store/session";
 
@@ -118,8 +123,17 @@ export default function Workspace(): JSX.Element {
     () => fetchCompanyOverview(companyId ?? "", date),
     revision,
   );
+  // 超级管理员的平台管理、补卡审批后面写数，和平台首页同一份缓存。
+  const platform = selected?.roleCode === "SYSTEM_ADMIN";
+  const system = useCachedRead<SystemOverview>(
+    userId === undefined || !platform ? null : `${userId}:system-overview`,
+    fetchSystemOverview,
+    revision,
+  );
   const statuses =
-    companyId !== null
+    platform
+      ? systemAdminStatuses(system.data?.todos ?? null)
+      : companyId !== null
       ? companyAdminStatuses(company.data?.todos ?? null)
       : projectId !== null
       ? projectAdminStatuses(overview.data?.todos ?? null)

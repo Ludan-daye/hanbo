@@ -67,6 +67,9 @@ export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   // 平台管理：公司和公司管理员（2026-11-22 五级第一期）。
   INVALID_SYSTEM_COMPANY_REQUEST: "公司资料填得不对，请检查名称和联系电话。",
   INVALID_SYSTEM_COMPANY_QUERY: "公司列表的筛选条件不对，请返回重新打开。",
+  INVALID_PLATFORM_SETTINGS_REQUEST:
+    "公告最多 160 字；联系电话填手机号、座机或 400 电话，也可以空着。",
+  PLATFORM_SETTINGS_CHANGED_RELOAD: "平台设置刚被别人改过，请重新打开再改。",
   INVALID_CREDIT_CODE: "统一社会信用代码是 18 位数字和大写字母，请核对。",
   COMPANY_NAME_EXISTS: "已经有同名的公司了，请换个名称。",
   COMPANY_CREDIT_CODE_EXISTS: "这个信用代码已经用在别的公司上了，请核对。",
@@ -240,6 +243,20 @@ export const STATUS_MESSAGES: Readonly<Record<number, string>> = {
 
 const CJK = /[㐀-鿿]/;
 const SCREAMING = /^[A-Z][A-Z0-9_]+$/;
+
+/**
+ * 服务端在“账号已停用”等让人找平台的拒绝里带上的平台联系电话（五级第五期，Q12），
+ * 接在文案后面；没设电话就原样返回。
+ */
+export const withSupportPhone = (message: string, body: unknown): string => {
+  const phone =
+    typeof body === "object" && body !== null && "supportPhone" in body
+      ? (body as { readonly supportPhone?: unknown }).supportPhone
+      : null;
+  if (typeof phone !== "string" || phone.trim() === "") return message;
+  const sentence = /[。！？]$/.test(message) ? message : `${message}。`;
+  return `${sentence}平台联系电话 ${phone.trim()}。`;
+};
 
 /** 服务端错误 → 用户可读文案。服务端已返回中文说明时直接透传。 */
 export const messageForApiError = (

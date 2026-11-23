@@ -5,6 +5,7 @@ import {
   errorMessage,
   isUserCancel,
   messageForApiError,
+  withSupportPhone,
 } from "../src/services/error-messages";
 
 describe("messageForApiError", () => {
@@ -52,5 +53,22 @@ describe("isUserCancel", () => {
     expect(isUserCancel({ errMsg: "makePhoneCall:fail cancel" })).toBe(true);
     expect(isUserCancel(new Error("chooseLocation:fail cancel"))).toBe(true);
     expect(isUserCancel({ errMsg: "getLocation:fail timeout" })).toBe(false);
+  });
+});
+
+describe("withSupportPhone", () => {
+  it("adds the platform phone the server sent, and nothing otherwise", () => {
+    expect(withSupportPhone("当前账号已停用，请联系管理员。", { supportPhone: "400-800-1234" })).toBe(
+      "当前账号已停用，请联系管理员。平台联系电话 400-800-1234。",
+    );
+    expect(withSupportPhone("请联系平台恢复", { supportPhone: "13800000000" })).toBe("请联系平台恢复。平台联系电话 13800000000。");
+    expect(withSupportPhone("停用了", { supportPhone: "" })).toBe("停用了");
+    expect(withSupportPhone("停用了", null)).toBe("停用了");
+    expect(withSupportPhone("停用了", "oops")).toBe("停用了");
+  });
+
+  it("has copy for the platform settings constants", () => {
+    expect(messageForApiError(409, "PLATFORM_SETTINGS_CHANGED_RELOAD")).toContain("刚");
+    expect(messageForApiError(400, "INVALID_PLATFORM_SETTINGS_REQUEST")).toContain("160");
   });
 });

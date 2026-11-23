@@ -7,10 +7,11 @@ import type {
   WorkRoleScope,
 } from "../../services/management.types";
 import { projectPunchUrl } from "../../services/project-attendance";
+import type { SystemOverview } from "../../services/workflows";
 import type { LeaderPunchSummary } from "../../services/worker-home-selection";
 import { cardName } from "../../services/worker-home-sign";
 
-// 管理人员首页（班组长、项目管理员、公司管理员）上要算的东西都在这里，不碰界面，方便单测。
+// 管理人员首页（班组长、项目管理员、公司管理员、超级管理员）上要算的东西都在这里，不碰界面，方便单测。
 
 const WEEKDAY = "日一二三四五六";
 
@@ -407,4 +408,81 @@ export const companyAdminStatuses = (
       .filter(([, count]) => count > 0)
       .map(([url, count]) => [url, { kind: "warn" as const, text: `${count} 条` }]),
   );
+};
+
+/**
+ * 超级管理员首页的标牌（五级第五期，Q10）：只说平台的规模，不放全平台出勤。
+ * 暂停的公司、停用的账号有才说。
+ */
+export const systemAdminSign = (
+  overview: SystemOverview,
+): { readonly title: string; readonly sub: string } => {
+  const { accounts, companies, projects } = overview;
+  if (companies.active + companies.suspended === 0)
+    return { title: "还没有公司", sub: "在平台管理里新增第一家公司。" };
+  const extra = [
+    ...(companies.suspended > 0 ? [`${companies.suspended} 家公司已暂停`] : []),
+    ...(accounts.disabled > 0 ? [`${accounts.disabled} 个账号已停用`] : []),
+  ];
+  return {
+    title: `${companies.active} 家公司，${projects.active} 个进行中项目`,
+    sub: [`${accounts.active} 个账号在用`, ...extra].join("，"),
+  };
+};
+
+const PLATFORM_COMPANIES_URL = "/pages/system-management/index?tab=COMPANIES";
+
+/**
+ * 超级管理员的“等你处理”：没有管理员的公司、还没绑定的公司管理员、只有你能批的补卡。
+ * 点进去就是平台管理里筛好的公司列表和补卡审批（默认“需要你批”），条数和这里一样。
+ */
+export const systemAdminTodos = (
+  overview: Pick<SystemOverview, "todos"> | null,
+): readonly HomeTodo[] => {
+  if (overview === null) return [];
+  const todos = overview.todos;
+  return [
+    ...(todos.companiesWithoutAdmin > 0
+      ? [
+          {
+            key: "companies-without-admin",
+            title: `没有管理员的公司 ${todos.companiesWithoutAdmin} 家`,
+            sub: "任命公司管理员，或录入新人发邀请码",
+            url: `${PLATFORM_COMPANIES_URL}&admin=NONE`,
+          },
+        ]
+      : []),
+    ...(todos.pendingAdminInvitations > 0
+      ? [
+          {
+            key: "admin-invitations",
+            title: `公司管理员还没绑定 ${todos.pendingAdminInvitations} 人`,
+            sub: "等他用邀请码绑定微信；过期了可以重新生成",
+            url: `${PLATFORM_COMPANIES_URL}&admin=NOT_BOUND`,
+          },
+        ]
+      : []),
+    ...(todos.makeupOnlyYou > 0
+      ? [
+          {
+            key: "makeups",
+            title: `补卡申请 ${todos.makeupOnlyYou} 条只有你能批`,
+            sub: "申请人是公司管理员，或这家公司没有别人能批",
+            url: "/pages/team-makeups/index",
+          },
+        ]
+      : []),
+  ];
+};
+
+/** 平台首页的数写在工作台入口上：平台管理（公司的两类待办）、补卡审批（只有你能批的）。 */
+export const systemAdminStatuses = (
+  todos: SystemOverview["todos"] | null,
+): Readonly<Record<string, { readonly kind: "warn"; readonly text: string }>> => {
+  if (todos === null) return {};
+  const companies = todos.companiesWithoutAdmin + todos.pendingAdminInvitations;
+  return {
+    ...(companies > 0 ? { "/pages/system-management/index": { kind: "warn" as const, text: `${companies} 件` } } : {}),
+    ...(todos.makeupOnlyYou > 0 ? { "/pages/team-makeups/index": { kind: "warn" as const, text: `${todos.makeupOnlyYou} 条` } } : {}),
+  };
 };

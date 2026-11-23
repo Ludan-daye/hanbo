@@ -22,6 +22,21 @@ describe("apiClient", () => {
     expect(data).toEqual({ ok: true });
   });
 
+  test("a disabled account's refusal carries the platform support phone (Q12)", async () => {
+    __setRequestHandler(async () => ({
+      statusCode: 403,
+      data: { message: "USER_DISABLED", supportPhone: "400-800-1234", userId: "u-1" },
+    }));
+    const client = createApiClient("http://api");
+    await expect(client.request("/auth/wechat/login", { method: "POST", auth: false })).rejects.toThrow(
+      "当前账号已停用，请联系管理员。平台联系电话 400-800-1234。",
+    );
+    __setRequestHandler(async () => ({ statusCode: 403, data: { message: "USER_DISABLED", supportPhone: null } }));
+    await expect(client.request("/auth/wechat/login", { method: "POST", auth: false })).rejects.toThrow(
+      /^当前账号已停用，请联系管理员。$/,
+    );
+  });
+
   test.each([200, 201])("on 401 refreshes with status %i and retries with the new token", async (statusCode: number) => {
     Taro.setStorageSync("accessToken", "old");
     Taro.setStorageSync("refreshToken", "r1");

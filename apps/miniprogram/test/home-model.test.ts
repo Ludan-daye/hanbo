@@ -15,6 +15,9 @@ import {
   overviewMissingText,
   resolveHomeScope,
   signDateLabel,
+  systemAdminSign,
+  systemAdminStatuses,
+  systemAdminTodos,
 } from "../src/pages/home/home-model";
 import type {
   DailyReportParticipant,
@@ -496,5 +499,47 @@ describe("companyAdminTodos", () => {
       "/pages/transfer-approvals/index": { kind: "warn", text: "2 条" },
     });
     expect(companyAdminStatuses(null)).toEqual({});
+  });
+});
+
+const systemOverview = {
+  accounts: { active: 412, disabled: 0 },
+  companies: { active: 3, suspended: 0 },
+  projects: { active: 7 },
+  todos: { companiesWithoutAdmin: 2, makeupOnlyYou: 1, pendingAdminInvitations: 1 },
+};
+
+describe("systemAdminSign", () => {
+  test("says how big the platform is; suspended companies and disabled accounts only when there are any", () => {
+    expect(systemAdminSign(systemOverview)).toEqual({ title: "3 家公司，7 个进行中项目", sub: "412 个账号在用" });
+    expect(
+      systemAdminSign({ ...systemOverview, accounts: { active: 40, disabled: 2 }, companies: { active: 3, suspended: 1 } }),
+    ).toEqual({ title: "3 家公司，7 个进行中项目", sub: "40 个账号在用，1 家公司已暂停，2 个账号已停用" });
+    expect(systemAdminSign({ ...systemOverview, companies: { active: 0, suspended: 0 }, projects: { active: 0 } })).toEqual({
+      title: "还没有公司",
+      sub: "在平台管理里新增第一家公司。",
+    });
+  });
+});
+
+describe("systemAdminTodos", () => {
+  test("companies without an administrator, administrators still to bind, only-you makeups; each opens its list", () => {
+    expect(systemAdminTodos(systemOverview).map((todo) => [todo.title, todo.url])).toEqual([
+      ["没有管理员的公司 2 家", "/pages/system-management/index?tab=COMPANIES&admin=NONE"],
+      ["公司管理员还没绑定 1 人", "/pages/system-management/index?tab=COMPANIES&admin=NOT_BOUND"],
+      ["补卡申请 1 条只有你能批", "/pages/team-makeups/index"],
+    ]);
+  });
+
+  test("nothing pending, nothing listed; the workbench count is the only-you makeups", () => {
+    expect(
+      systemAdminTodos({ ...systemOverview, todos: { companiesWithoutAdmin: 0, makeupOnlyYou: 0, pendingAdminInvitations: 0 } }),
+    ).toEqual([]);
+    expect(systemAdminTodos(null)).toEqual([]);
+    expect(systemAdminStatuses(systemOverview.todos)).toEqual({
+      "/pages/system-management/index": { kind: "warn", text: "3 件" },
+      "/pages/team-makeups/index": { kind: "warn", text: "1 条" },
+    });
+    expect(systemAdminStatuses(null)).toEqual({});
   });
 });

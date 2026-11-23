@@ -23,12 +23,11 @@ import {
   SkeletonRows,
   SkeletonSign,
 } from "../../../components/ui/index";
-import { FRONTEND_DEMO } from "../../../config/env";
 import { useCachedRead, type CachedRead } from "../../../hooks/use-cached-read";
 import type { DailyReport } from "../../../services/management.types";
 import {
   fetchAppSettings,
-  type SystemSettings,
+  type AppSettings,
 } from "../../../services/workflows";
 import { signDateLabel, type HomeTodo } from "../home-model";
 import type { HomeScope } from "../use-home-scope";
@@ -51,13 +50,13 @@ export const usePullRefresh = (refresh: () => void, busy: boolean): void => {
   }, [busy]);
 };
 
-/** 首页公告。平台设置的接口目前只有演示版有，所以只在演示版读。 */
+/** 首页公告：平台设置里的一条，所有人的首页都显示（五级第五期，Q12）。 */
 export const useAnnouncement = (
   userId: string,
   revision: number,
-): CachedRead<SystemSettings> =>
-  useCachedRead<SystemSettings>(
-    FRONTEND_DEMO ? `${userId}:app-settings` : null,
+): CachedRead<AppSettings> =>
+  useCachedRead<AppSettings>(
+    `${userId}:app-settings`,
     fetchAppSettings,
     revision,
     "公告没读到，请重试。",

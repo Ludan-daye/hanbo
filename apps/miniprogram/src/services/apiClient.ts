@@ -1,6 +1,6 @@
 import Taro from "@tarojs/taro";
 
-import { messageForApiError } from "./error-messages";
+import { messageForApiError, withSupportPhone } from "./error-messages";
 import { noteWrite } from "./read-cache";
 
 export type RequestOptions = {
@@ -175,7 +175,7 @@ export const createApiClient = (baseUrl: string): ApiClient => {
         : "";
     throw new ApiError(
       res.statusCode,
-      messageForApiError(res.statusCode, code),
+      withSupportPhone(messageForApiError(res.statusCode, code), res.data),
       res.data,
     );
   };

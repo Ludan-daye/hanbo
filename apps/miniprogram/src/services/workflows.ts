@@ -146,9 +146,30 @@ export type PlatformAccountDetail = PlatformAccount & {
   readonly profileId: string | null;
   readonly roles: readonly PlatformAccountRole[];
 };
-export type SystemSettings = {
-  readonly supportPhone: string;
+/** 人人都能读的平台设置（五级第五期，Q12）：首页公告和平台联系电话，没设是空字符串。 */
+export type AppSettings = {
   readonly announcement: string;
+  readonly supportPhone: string;
+};
+/** 平台管理“设置”标签读到的：多一个版本，保存时带回去。 */
+export type SystemSettings = AppSettings & {
+  readonly updatedAt: string;
+};
+/** 公司列表的待办筛选：没有管理员的、管理员还没绑定微信的。 */
+export type CompanyAdminFilter = "NONE" | "NOT_BOUND";
+/**
+ * 平台首页（五级第五期，Q10）：规模数字和等你处理的三类事，每个数都等于点进去的列表条数。
+ * 没有管理员、还没绑定只算正常的公司。
+ */
+export type SystemOverview = {
+  readonly accounts: { readonly active: number; readonly disabled: number };
+  readonly companies: { readonly active: number; readonly suspended: number };
+  readonly projects: { readonly active: number };
+  readonly todos: {
+    readonly companiesWithoutAdmin: number;
+    readonly makeupOnlyYou: number;
+    readonly pendingAdminInvitations: number;
+  };
 };
 
 export const createPerson = (
@@ -267,8 +288,10 @@ export const fetchCompanies = (options: {
   readonly search: string;
   readonly status: CompanyStatus | null;
   readonly cursor: string | null;
+  readonly admin?: CompanyAdminFilter | null;
 }): Promise<PlatformCompanyPage> => {
   const query: string[] = [];
+  if (options.admin) query.push(`admin=${options.admin}`);
   if (options.search.trim()) query.push(`search=${encodeURIComponent(options.search.trim())}`);
   if (options.status !== null) query.push(`status=${options.status}`);
   if (options.cursor !== null) query.push(`cursor=${encodeURIComponent(options.cursor)}`);
@@ -345,13 +368,23 @@ export const disableAccount = (userId: string): Promise<PlatformAccountDetail> =
   apiClient.request(`/system/accounts/${encodeURIComponent(userId)}/disable`, { method: "POST" });
 export const enableAccount = (userId: string): Promise<PlatformAccountDetail> =>
   apiClient.request(`/system/accounts/${encodeURIComponent(userId)}/enable`, { method: "POST" });
-// 平台设置的接口服务器还没有（平台规划第五期），现在只有演示版。
+/** 平台首页的数字和待办。 */
+export const fetchSystemOverview = (): Promise<SystemOverview> =>
+  apiClient.request("/system/overview", { method: "GET" });
 export const fetchSystemSettings = (): Promise<SystemSettings> =>
   apiClient.request("/system/settings", { method: "GET" });
+/** 带上读到的版本；别人刚保存过是 409 PLATFORM_SETTINGS_CHANGED_RELOAD。 */
 export const saveSystemSettings = (
   body: SystemSettings,
 ): Promise<SystemSettings> =>
-  apiClient.request("/system/settings", { method: "PUT", data: body });
+  apiClient.request("/system/settings", {
+    method: "PUT",
+    data: {
+      announcement: body.announcement.trim(),
+      expectedUpdatedAt: body.updatedAt,
+      supportPhone: body.supportPhone.trim(),
+    },
+  });
 export const fetchProject = (projectId: string): Promise<ManagedProject> =>
   apiClient.request(`/management/projects/${projectId}`, { method: "GET" });
 export const updateProject = (body: ManagedProject): Promise<ManagedProject> =>
@@ -360,5 +393,5 @@ export const updateProject = (body: ManagedProject): Promise<ManagedProject> =>
     data: { ...body, expectedUpdatedAt: body.updatedAt },
   });
 
-export const fetchAppSettings = (): Promise<SystemSettings> =>
+export const fetchAppSettings = (): Promise<AppSettings> =>
   apiClient.request("/app/settings", { method: "GET" });
