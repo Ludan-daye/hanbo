@@ -17,9 +17,10 @@ export const AUDIT_CATEGORIES: readonly {
 ];
 
 /**
- * Platform actions that belong to no company (accounts, super admins; system admin plan
- * phase 2). Not in AUDIT_CATEGORIES: the project and company logs never show them, only the
- * platform log (phase 4) offers this filter.
+ * Platform actions (system admin plan Q9): accounts, super admins and the safety credit
+ * policy, which belong to no company, plus what the platform did to one company. Not in
+ * AUDIT_CATEGORIES: the project and company logs never offer it, only the platform log does
+ * (auditCategoriesFor).
  */
 export const PLATFORM_CATEGORY: { readonly value: AuditCategory; readonly label: string } = {
   value: "PLATFORM",
@@ -28,6 +29,34 @@ export const PLATFORM_CATEGORY: { readonly value: AuditCategory; readonly label:
 
 /** Only in the company log: company-level actions (建项目、导出、离岗、默认规则、公司资料). */
 export const COMPANY_ONLY_CATEGORIES: readonly AuditCategory[] = ["COMPANY"];
+
+/** Which operation log is read: one project's, one company's, or the whole platform's (phase 4). */
+export type AuditLogKind = "PROJECT" | "COMPANY" | "PLATFORM";
+
+/** The type filter each log offers: 公司 from the company log up, 平台 only on the platform. */
+export const auditCategoriesFor = (
+  kind: AuditLogKind,
+): readonly { readonly value: AuditCategory; readonly label: string }[] =>
+  kind === "PROJECT"
+    ? AUDIT_CATEGORIES.filter((item) => !COMPANY_ONLY_CATEGORIES.includes(item.value))
+    : kind === "COMPANY"
+      ? AUDIT_CATEGORIES
+      : [...AUDIT_CATEGORIES, PLATFORM_CATEGORY];
+
+/**
+ * What the platform did to one company. The company's own log files these under 公司 (its
+ * people should see who created, renamed or suspended it); the platform log files them under
+ * 平台 with the other platform actions (Q9).
+ */
+const PLATFORM_COMPANY_ACTIONS: readonly string[] = [
+  "COMPANY_CREATED",
+  "COMPANY_UPDATED",
+  "COMPANY_ADMIN_APPOINTED",
+  "COMPANY_ADMIN_REVOKED",
+  "COMPANY_ADMIN_INVITATION_ISSUED",
+  "COMPANY_SUSPENDED",
+  "COMPANY_RESUMED",
+];
 
 const CATEGORY_ACTIONS: Readonly<Record<AuditCategory, readonly string[]>> = {
   PEOPLE: [
@@ -94,17 +123,37 @@ const CATEGORY_ACTIONS: Readonly<Record<AuditCategory, readonly string[]>> = {
     "COMPANY_SUSPENDED",
     "COMPANY_RESUMED",
   ],
-  PLATFORM: ["ACCOUNT_DISABLED", "ACCOUNT_ENABLED", "SYSTEM_ADMIN_GRANTED", "SYSTEM_ADMIN_REVOKED"],
+  PLATFORM: [
+    "ACCOUNT_DISABLED",
+    "ACCOUNT_ENABLED",
+    "SYSTEM_ADMIN_GRANTED",
+    "SYSTEM_ADMIN_REVOKED",
+    // Phase 4: the one platform-wide policy (level-4 Q7).
+    "SAFETY_POLICY_PUBLISHED",
+  ],
 };
 
-/** The actions a category filter keeps. */
-export const auditActionsIn = (category: AuditCategory): readonly string[] =>
-  CATEGORY_ACTIONS[category];
+/** The actions a category filter keeps in the given log (project and company logs by default). */
+export const auditActionsIn = (
+  category: AuditCategory,
+  kind: AuditLogKind = "COMPANY",
+): readonly string[] => {
+  if (kind !== "PLATFORM") return CATEGORY_ACTIONS[category];
+  if (category === "PLATFORM") return [...CATEGORY_ACTIONS.PLATFORM, ...PLATFORM_COMPANY_ACTIONS];
+  if (category === "COMPANY")
+    return CATEGORY_ACTIONS.COMPANY.filter((action) => !PLATFORM_COMPANY_ACTIONS.includes(action));
+  return CATEGORY_ACTIONS[category];
+};
 
-export const auditCategoryOf = (action: string): AuditCategory | null =>
-  (Object.keys(CATEGORY_ACTIONS) as AuditCategory[]).find((category) =>
-    CATEGORY_ACTIONS[category].includes(action),
-  ) ?? null;
+export const auditCategoryOf = (
+  action: string,
+  kind: AuditLogKind = "COMPANY",
+): AuditCategory | null =>
+  kind === "PLATFORM" && PLATFORM_COMPANY_ACTIONS.includes(action)
+    ? "PLATFORM"
+    : ((Object.keys(CATEGORY_ACTIONS) as AuditCategory[]).find((category) =>
+        CATEGORY_ACTIONS[category].includes(action),
+      ) ?? null);
 
 /** What an entry is about, so its name can be looked up for the sentence. */
 export type AuditTargetRef =
@@ -329,6 +378,22 @@ export const auditSentence = (
         return `${meta.source === "cli" ? "在服务器上" : ""}把 ${person} 设为超级管理员`;
       case "SYSTEM_ADMIN_REVOKED":
         return `${meta.source === "cli" ? "在服务器上" : ""}撤销了 ${person} 的超级管理员身份`;
+      case "SAFETY_POLICY_PUBLISHED": {
+        const version = typeof meta.version === "number" ? meta.version : null;
+        const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text(meta.startsOn) ?? "");
+        return version === null
+          ? "发布了新的安全信用规则"
+          : `发布了第 ${version} 版安全信用规则${
+              day === null ? "" : `，${day[1]}年${Number(day[2])}月${Number(day[3])}日起执行`
+            }`;
+      }
+      case "auth.bind.worker":
+      case "auth.bind.manager":
+        return "用邀请码绑定了微信";
+      case "worker.registration.submit":
+        return "提交了用工资料";
+      case "TEST_ACCOUNT_LOGIN":
+        return "用测试账号直接登录";
       case "FACE_PROFILE_REVIEWED":
         return meta.decision === "REJECTED"
           ? `退回了 ${person} 的人脸底照`

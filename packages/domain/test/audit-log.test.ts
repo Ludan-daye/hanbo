@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AUDIT_CATEGORIES,
+  auditCategoriesFor,
   PLATFORM_CATEGORY,
   auditActionsIn,
   auditCategoryOf,
@@ -173,5 +174,65 @@ describe("platform actions on accounts and super admins (system admin phase 2)",
     expect(auditSentence({ action: "SYSTEM_ADMIN_REVOKED", metadata: { source: "cli" } }, null, "张三")).toBe(
       "系统 在服务器上撤销了 张三 的超级管理员身份",
     );
+  });
+});
+
+describe("platform operation log (system admin phase 4)", () => {
+  const platformCompanyActions = [
+    "COMPANY_CREATED",
+    "COMPANY_UPDATED",
+    "COMPANY_ADMIN_APPOINTED",
+    "COMPANY_ADMIN_REVOKED",
+    "COMPANY_ADMIN_INVITATION_ISSUED",
+    "COMPANY_SUSPENDED",
+    "COMPANY_RESUMED",
+  ];
+
+  it("offers 平台 only in the platform log", () => {
+    expect(auditCategoriesFor("PROJECT").map((item) => item.value)).toEqual(["PEOPLE", "TEAM", "ATTENDANCE", "SAFETY", "PROJECT"]);
+    expect(auditCategoriesFor("COMPANY").map((item) => item.value)).toEqual(AUDIT_CATEGORIES.map((item) => item.value));
+    expect(auditCategoriesFor("PLATFORM").at(-1)).toEqual(PLATFORM_CATEGORY);
+    expect(auditCategoriesFor("PLATFORM")).toHaveLength(AUDIT_CATEGORIES.length + 1);
+  });
+
+  it("files what the platform did on a company under 平台 there, and under 公司 in the company's own log", () => {
+    for (const action of platformCompanyActions) {
+      expect(auditCategoryOf(action)).toBe("COMPANY");
+      expect(auditCategoryOf(action, "COMPANY")).toBe("COMPANY");
+      expect(auditCategoryOf(action, "PLATFORM")).toBe("PLATFORM");
+      expect(auditActionsIn("PLATFORM", "PLATFORM")).toContain(action);
+      expect(auditActionsIn("COMPANY", "PLATFORM")).not.toContain(action);
+      expect(auditActionsIn("COMPANY")).toContain(action);
+    }
+    // The company's own actions stay under 公司 in the platform log too.
+    expect(auditCategoryOf("project.create", "PLATFORM")).toBe("COMPANY");
+    expect(auditActionsIn("COMPANY", "PLATFORM")).toContain("project.create");
+    expect(auditActionsIn("PLATFORM", "PLATFORM")).toEqual(
+      expect.arrayContaining(["ACCOUNT_DISABLED", "SYSTEM_ADMIN_GRANTED", "SAFETY_POLICY_PUBLISHED"]),
+    );
+  });
+
+  it("keeps an entry's category equal to the filter that finds it, in every log", () => {
+    // Exports are the one known exception: filed under 考勤, also found by 公司.
+    for (const kind of ["PROJECT", "COMPANY", "PLATFORM"] as const)
+      for (const category of auditCategoriesFor(kind))
+        for (const action of auditActionsIn(category.value, kind))
+          if (!action.startsWith("report.export"))
+            expect([action, auditCategoryOf(action, kind)]).toEqual([action, category.value]);
+  });
+
+  it("files a published safety credit policy under 平台 and says which version and from when", () => {
+    expect(auditCategoryOf("SAFETY_POLICY_PUBLISHED")).toBe("PLATFORM");
+    expect(
+      auditSentence({ action: "SAFETY_POLICY_PUBLISHED", metadata: { startsOn: "2026-12-01", version: 3 } }, "平台", null),
+    ).toBe("平台 发布了第 3 版安全信用规则，2026年12月1日起执行");
+    expect(auditSentence({ action: "SAFETY_POLICY_PUBLISHED", metadata: {} }, "平台", null)).toBe("平台 发布了新的安全信用规则");
+  });
+
+  it("says what the account-level actions without a company did", () => {
+    expect(auditSentence({ action: "auth.bind.worker", metadata: {} }, "张三", null)).toBe("张三 用邀请码绑定了微信");
+    expect(auditSentence({ action: "auth.bind.manager", metadata: {} }, "李四", null)).toBe("李四 用邀请码绑定了微信");
+    expect(auditSentence({ action: "worker.registration.submit", metadata: {} }, "张三", null)).toBe("张三 提交了用工资料");
+    expect(auditSentence({ action: "TEST_ACCOUNT_LOGIN", metadata: {} }, "张三", null)).toBe("张三 用测试账号直接登录");
   });
 });
