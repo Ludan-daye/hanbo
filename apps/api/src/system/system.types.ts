@@ -1,3 +1,5 @@
+import type { RoleCode } from "@construction/domain/roles.js";
+
 // Platform management (/system/*, SYSTEM_ADMIN only). Phase 1 (2026-11-22): companies and
 // their administrators; later phases add accounts, platform audit and settings here.
 
@@ -92,4 +94,59 @@ export type CompanyAdminAppointed = {
 export type CompanyAdminRevoked = {
   /** 0 means the company has no administrator left (Q2: allowed, shown in red). */
   readonly remainingAdmins: number;
+};
+
+// Accounts (phase 2, Q4, Q6): find a person, see every role they hold and where it comes
+// from, disable or enable the account. Roles themselves are changed where they are granted.
+
+export type SystemAccountStatus = "ACTIVE" | "DISABLED";
+
+export type SystemAccountQuery = {
+  readonly cursor: string | null;
+  readonly role: RoleCode | null;
+  readonly search: string;
+  readonly status: SystemAccountStatus | null;
+};
+
+export type SystemAccountRow = {
+  readonly displayName: string;
+  readonly highestRoleCode: RoleCode | null;
+  readonly lastLoginAt: string | null;
+  readonly phone: string | null;
+  readonly profileType: "MANAGER" | "WORKER" | null;
+  readonly roleCount: number;
+  readonly status: SystemAccountStatus;
+  readonly userId: string;
+};
+
+export type SystemAccountPage = {
+  readonly items: readonly SystemAccountRow[];
+  readonly nextCursor: string | null;
+};
+
+/**
+ * Where a role comes from, and so where it is changed: PLATFORM by the server command,
+ * COMPANY_APPOINTMENT in the company's detail, PROJECT_MEMBERSHIP in the project's people.
+ */
+export type SystemAccountRoleSource = "PLATFORM" | "COMPANY_APPOINTMENT" | "PROJECT_MEMBERSHIP";
+
+export type SystemAccountRole = {
+  readonly companyId: string | null;
+  /** The project membership behind a project or team role, for the link to it. */
+  readonly memberId: string | null;
+  readonly projectId: string | null;
+  readonly roleCode: RoleCode;
+  readonly scopeId: string;
+  readonly scopeName: string;
+  readonly scopeType: "GLOBAL" | "COMPANY" | "PROJECT" | "TEAM";
+  readonly source: SystemAccountRoleSource;
+};
+
+export type SystemAccountDetail = SystemAccountRow & {
+  readonly activeSessionCount: number;
+  readonly createdAt: string;
+  /** Super administrators are only changed by the server command (Q3). */
+  readonly isSystemAdmin: boolean;
+  readonly profileId: string | null;
+  readonly roles: readonly SystemAccountRole[];
 };

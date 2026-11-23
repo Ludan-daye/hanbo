@@ -5,6 +5,7 @@ import { contactPhoneSchema, optionalText } from "../management/company-settings
 
 import type {
   CompanyAdminAppointment,
+  SystemAccountQuery,
   SystemCompanyQuery,
   SystemCompanyUpdate,
   SystemCompanyWrite,
@@ -102,4 +103,23 @@ export const parseCompanyAdminAppointment = (body: unknown): CompanyAdminAppoint
     .safeParse(body);
   if (!result.success) return fail("INVALID_COMPANY_ADMIN_REQUEST", result.error.issues);
   return result.data;
+};
+
+/** Accounts: search by name or mobile number, filter by status or a role the account holds. */
+export const parseSystemAccountQuery = (query: unknown): SystemAccountQuery => {
+  const result = z
+    .object({
+      cursor: z.string().min(1).optional(),
+      role: z.enum(["SYSTEM_ADMIN", "COMPANY_ADMIN", "PROJECT_ADMIN", "TEAM_LEADER", "WORKER"]).optional(),
+      search: z.string().trim().max(30).optional(),
+      status: z.enum(["ACTIVE", "DISABLED"]).optional(),
+    })
+    .safeParse(query);
+  if (!result.success) return fail("INVALID_SYSTEM_ACCOUNT_QUERY", result.error.issues);
+  return {
+    cursor: result.data.cursor ?? null,
+    role: result.data.role ?? null,
+    search: result.data.search ?? "",
+    status: result.data.status ?? null,
+  };
 };

@@ -152,6 +152,27 @@ class SystemPrismaDouble {
         : [],
   };
 
+  /** Accounts: only enough for the refusals that come before any change. */
+  readonly user = {
+    findUnique: async (args: { where: { id: string } }) => {
+      const roles = this.assignments.filter((row) => row.userId === args.where.id);
+      if (roles.length === 0) return null;
+      return {
+        createdAt: new Date("2026-11-01T00:00:00.000Z"),
+        encryptedRealName: null,
+        id: args.where.id,
+        isBound: true,
+        lastLoginAt: null,
+        managerProfile: { id: `profile-${args.where.id}`, name: "某人", phone: "13900000009" },
+        nickname: null,
+        phone: "13900000009",
+        roles: roles.map((row) => ({ createdAt: new Date(), role: { code: row.roleCode }, scopeId: row.scopeId, scopeType: row.scopeType })),
+        status: "ACTIVE",
+        workerProfile: null,
+      };
+    },
+  };
+
   readonly auditLog = {
     create: async (args: { data: { action: string; companyId?: string | null; metadata: unknown } }) => {
       this.auditLogs.push({ action: args.data.action, companyId: args.data.companyId ?? null, metadata: args.data.metadata });
@@ -211,6 +232,8 @@ describe("platform companies (/system)", (): void => {
       project: prisma.signIn("user-project", "PROJECT_ADMIN", "PROJECT", "project-1"),
       system: prisma.signIn("user-system", "SYSTEM_ADMIN", "GLOBAL", "GLOBAL"),
     };
+    // Another super administrator, never signed in here.
+    prisma.assignments.push({ roleCode: "SYSTEM_ADMIN", scopeId: "GLOBAL", scopeType: "GLOBAL", userId: "user-other-system" });
     const moduleRef = await Test.createTestingModule({ imports: [SystemModule] })
       .overrideProvider(PrismaService)
       .useValue(prisma)
@@ -334,5 +357,25 @@ describe("platform companies (/system)", (): void => {
       const response = await as("system").post("/system/companies/company-1/admins", body).expect(400);
       expect(response.body.message).toBe("INVALID_COMPANY_ADMIN_REQUEST");
     }
+  });
+
+  test("accounts: only SYSTEM_ADMIN; never oneself or another super administrator", async (): Promise<void> => {
+    for (const user of ["company", "project"]) {
+      await as(user).get("/system/accounts").expect(403);
+      await as(user).get("/system/accounts/user-project").expect(403);
+      await as(user).post("/system/accounts/user-project/disable").expect(403);
+      await as(user).post("/system/accounts/user-project/enable").expect(403);
+    }
+    for (const query of ["status=SUSPENDED", "role=BOSS", `search=${"长".repeat(31)}`])
+      expect((await as("system").get(`/system/accounts?${query}`).expect(400)).body.message).toBe("INVALID_SYSTEM_ACCOUNT_QUERY");
+
+    const self = await as("system").post("/system/accounts/user-system/disable").expect(403);
+    expect(self.body.message).toBe("CANNOT_DISABLE_SELF");
+    for (const action of ["disable", "enable"]) {
+      const other = await as("system").post(`/system/accounts/user-other-system/${action}`).expect(403);
+      expect(other.body.message).toBe("SYSTEM_ADMIN_MANAGED_BY_SCRIPT");
+    }
+    expect((await as("system").post("/system/accounts/nobody/disable").expect(404)).body.message).toBe("ACCOUNT_NOT_FOUND");
+    expect(prisma.auditLogs).toEqual([]);
   });
 });

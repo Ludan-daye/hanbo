@@ -10,16 +10,20 @@ import { RequirePermission } from "../authorization/require-permission.decorator
 import {
   parseCandidateSearch,
   parseCompanyAdminAppointment,
+  parseSystemAccountQuery,
   parseSystemCompanyCreate,
   parseSystemCompanyQuery,
   parseSystemCompanyUpdate,
 } from "./system.parsers.js";
+import { SystemAccountsService } from "./system-accounts.service.js";
 import { SystemCompaniesService } from "./system-companies.service.js";
 import type {
   CompanyAdminAppointed,
   CompanyAdminCandidate,
   CompanyAdminRevoked,
   IssuedCompanyInvitation,
+  SystemAccountDetail,
+  SystemAccountPage,
   SystemCompanyDetail,
   SystemCompanyPage,
 } from "./system.types.js";
@@ -30,10 +34,13 @@ const platform = {
   target: { source: "static", targetScope: { scopeId: GLOBAL_SCOPE_ID, scopeType: "GLOBAL" } },
 } as const;
 
-/** Platform management (system admin plan): companies and company administrators so far. */
+/** Platform management (system admin plan): companies, company administrators and accounts. */
 @Controller("system")
 export class SystemController {
-  constructor(@Inject(SystemCompaniesService) private readonly companies: SystemCompaniesService) {}
+  constructor(
+    @Inject(SystemCompaniesService) private readonly companies: SystemCompaniesService,
+    @Inject(SystemAccountsService) private readonly accounts: SystemAccountsService,
+  ) {}
 
   @Get("companies")
   @RequirePermission(platform)
@@ -105,5 +112,33 @@ export class SystemController {
     @Param("memberId") memberId: string,
   ): Promise<CompanyAdminRevoked> {
     return this.companies.revoke(actor.userId, companyId, memberId);
+  }
+
+  @Get("accounts")
+  @RequirePermission(platform)
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async listAccounts(@Query() query: unknown): Promise<SystemAccountPage> {
+    return this.accounts.list(parseSystemAccountQuery(query));
+  }
+
+  @Get("accounts/:userId")
+  @RequirePermission(platform)
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async account(@Param("userId") userId: string): Promise<SystemAccountDetail> {
+    return this.accounts.detail(userId);
+  }
+
+  @Post("accounts/:userId/disable")
+  @RequirePermission(platform)
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async disableAccount(@CurrentUser() actor: AuthenticatedUser, @Param("userId") userId: string): Promise<SystemAccountDetail> {
+    return this.accounts.disable(actor.userId, userId);
+  }
+
+  @Post("accounts/:userId/enable")
+  @RequirePermission(platform)
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async enableAccount(@CurrentUser() actor: AuthenticatedUser, @Param("userId") userId: string): Promise<SystemAccountDetail> {
+    return this.accounts.enable(actor.userId, userId);
   }
 }
