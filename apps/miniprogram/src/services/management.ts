@@ -1,8 +1,6 @@
 import { apiClient } from "./client";
 import type {
-  DefaultAttendanceConfiguration,
   CompanyOverview,
-  CompanyParticipant,
   CompanyAttendanceDefaults,
   CompanyAttendanceDefaultValues,
   CompanyPeoplePage,
@@ -15,8 +13,6 @@ import type {
   CompanyProject,
   CreateProjectBody,
   DailyReport,
-  DefaultScheduleBody,
-  DefaultShiftBody,
   ProjectInvitation,
   ProjectParticipant,
   ProjectManagerCandidate,
@@ -157,14 +153,6 @@ export const fetchCompanyProjects = async (
     { method: "GET" },
   );
 
-export const fetchCompanyParticipants = async (
-  companyId: string,
-): Promise<ReadonlyArray<CompanyParticipant>> =>
-  apiClient.request<ReadonlyArray<CompanyParticipant>>(
-    `/management/companies/${companyId}/participants`,
-    { method: "GET" },
-  );
-
 export const fetchProjectTeams = async (
   projectId: string,
 ): Promise<ReadonlyArray<ProjectTeam>> =>
@@ -188,24 +176,6 @@ export const revokeProjectInvitation = async (
   apiClient.request<ProjectInvitation>(
     `/management/projects/${projectId}/invitations/${invitationId}/revoke`,
     { method: "POST" },
-  );
-
-export const configureDefaultShift = async (
-  projectId: string,
-  body: DefaultShiftBody,
-): Promise<unknown> =>
-  apiClient.request<unknown>(
-    `/attendance/projects/${projectId}/default-shift`,
-    { data: body, method: "PUT" },
-  );
-
-export const configureDefaultSchedule = async (
-  projectId: string,
-  body: DefaultScheduleBody,
-): Promise<unknown> =>
-  apiClient.request<unknown>(
-    `/attendance/projects/${projectId}/default-schedule`,
-    { data: body, method: "PUT" },
   );
 
 export const createCompanyProject = async (
@@ -253,14 +223,6 @@ export const fetchCompanyMonthlyReport = async (
 ): Promise<RangeReport> =>
   apiClient.request<RangeReport>(
     `/reports/companies/${companyId}/monthly?month=${month}${teamFilterQuery(filter)}`,
-    { method: "GET" },
-  );
-
-export const fetchDefaultAttendanceConfiguration = async (
-  projectId: string,
-): Promise<DefaultAttendanceConfiguration> =>
-  apiClient.request<DefaultAttendanceConfiguration>(
-    `/attendance/projects/${projectId}/default-configuration`,
     { method: "GET" },
   );
 

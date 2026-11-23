@@ -23,7 +23,3 @@ export const mondayForDate = (value: string): string => {
   return dateText(date);
 };
 export const chinaMonday = (): string => mondayForDate(chinaToday());
-export const chinaDateLabel = (): string => {
-  const date = chinaDate(new Date());
-  return `${date.getUTCMonth() + 1}月${date.getUTCDate()}日 · 星期${"日一二三四五六"[date.getUTCDay()]}`;
-};

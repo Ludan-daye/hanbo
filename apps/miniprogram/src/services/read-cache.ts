@@ -60,12 +60,6 @@ export const peekRead = <T>(
     : undefined;
 };
 
-/** 距上次成功读取过了多少毫秒；没读过返回 null。 */
-export const readAge = (key: string, now: number = Date.now()): number | null => {
-  const entry = entries.get(key);
-  return entry === undefined ? null : now - entry.at;
-};
-
 /** 丢弃匹配前缀的缓存；不传前缀则全部丢弃。还在路上的请求不再写回。 */
 export const invalidateReads = (prefix?: string): void => {
   generation += 1;

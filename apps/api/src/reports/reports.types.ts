@@ -1,8 +1,6 @@
 import type { ProfileOwnerTypeValue } from "../attendance/attendance.types.js";
 import type { MemberStatusValue } from "../management/management.types.js";
 
-export type ReportPeriodType = "DAILY" | "MONTHLY" | "WEEKLY";
-
 export type AttendanceReportTotals = {
   readonly abnormalRecordCount: number;
   readonly absenceCount: number;

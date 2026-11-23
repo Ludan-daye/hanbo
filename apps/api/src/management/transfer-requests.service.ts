@@ -253,13 +253,6 @@ export class TransferRequestsService {
     };
   }
 
-  /** How many requests wait for this company's decision (company home). */
-  async countPending(companyId: string): Promise<number> {
-    return this.prisma.personnelTransferRequest.count({
-      where: { companyId, status: "PENDING" },
-    });
-  }
-
   async approve(
     companyId: string,
     requestId: string,

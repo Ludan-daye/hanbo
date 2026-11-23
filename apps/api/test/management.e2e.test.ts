@@ -893,9 +893,6 @@ describe("ManagementModule", (): void => {
       projectId: "project-1",
       status: "ACTIVE"
     });
-
-    for (const route of ["workers", "managers"]) await request(app.getHttpServer()).post(`/management/projects/project-1/${route}`)
-      .set("Authorization", `Bearer ${accessToken}`).send({}).expect(410);
   });
 
   test("GET /management/teams/:teamId/participants returns only team participants", async (): Promise<void> => {

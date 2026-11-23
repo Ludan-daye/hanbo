@@ -1,4 +1,4 @@
-import { Body, Controller, GoneException, Get, Header, Inject, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, Inject, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
 
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
@@ -7,10 +7,8 @@ import { PermissionsGuard } from "../authorization/permissions.guard.js";
 import { RequirePermission } from "../authorization/require-permission.decorator.js";
 
 import {
-  parseCreateProjectManagerRequest,
   parseCreateProjectRequest,
   parseProjectManagerSearch,
-  parseCreateProjectWorkerRequest,
   parseCreateTeamRequest,
   parseUpdateProjectRequest,
   parseUpdateTeamRequest
@@ -32,11 +30,9 @@ import type { BindingInvitationListItem } from "./management-invitation.types.js
 import type {
   CompanyParticipantResponse,
   ManagedProjectResponse,
-  ProjectManagerMemberResponse,
   ProjectManagerCandidate,
   ProjectParticipantResponse,
   ProjectResponse,
-  ProjectWorkerMemberResponse,
   TeamResponse,
   WorkRoleScope
 } from "./management.types.js";
@@ -244,38 +240,6 @@ export class ManagementController {
     @Body() body: unknown
   ): Promise<TeamResponse> {
     return this.managementService.createTeam(projectId, parseCreateTeamRequest(body));
-  }
-
-  @Post("projects/:projectId/workers")
-  @RequirePermission({
-    permissionCode: "worker.manage",
-    target: {
-      paramName: "projectId",
-      source: "projectParam"
-    }
-  })
-  @UseGuards(AccessTokenGuard, PermissionsGuard)
-  async createProjectWorker(
-    @Param("projectId") projectId: string,
-    @Body() body: unknown
-  ): Promise<ProjectWorkerMemberResponse> {
-    throw new GoneException({ message: "请使用统一人员建档接口 /management/projects/:projectId/participants。" });
-  }
-
-  @Post("projects/:projectId/managers")
-  @RequirePermission({
-    permissionCode: "project.manage",
-    target: {
-      paramName: "projectId",
-      source: "projectParam"
-    }
-  })
-  @UseGuards(AccessTokenGuard, PermissionsGuard)
-  async createProjectManager(
-    @Param("projectId") projectId: string,
-    @Body() body: unknown
-  ): Promise<ProjectManagerMemberResponse> {
-    throw new GoneException({ message: "请使用统一人员建档接口 /management/projects/:projectId/participants。" });
   }
 
   @Get("companies/:companyId/projects")

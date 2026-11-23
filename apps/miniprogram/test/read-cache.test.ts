@@ -6,18 +6,15 @@ import {
   invalidateReads,
   noteWrite,
   peekRead,
-  readAge,
   writeVersion,
 } from "../src/services/read-cache";
 
 beforeEach(() => clearReadCache());
 
 describe("read cache", () => {
-  it("stores the last successful result and its age", async () => {
+  it("stores the last successful result", async () => {
     await cachedRead("u1:a", async () => 1);
     expect(peekRead<number>("u1:a")).toBe(1);
-    expect(readAge("u1:a", Date.now() + 500)).toBeGreaterThanOrEqual(500);
-    expect(readAge("u1:missing")).toBeNull();
   });
 
   it("merges concurrent reads of the same key", async () => {

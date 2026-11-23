@@ -1,6 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
-  GLOBAL_SCOPE_ID,
   ROLE_LEVEL,
   type AuthorizationTargetScope,
   type PermissionCode,
@@ -202,13 +201,6 @@ export class AuthorizationContextService {
       scopeId: team.id,
       scopeType: "TEAM",
       teamId: team.id
-    };
-  }
-
-  createGlobalTargetScope(): AuthorizationTargetScope {
-    return {
-      scopeId: GLOBAL_SCOPE_ID,
-      scopeType: "GLOBAL"
     };
   }
 }

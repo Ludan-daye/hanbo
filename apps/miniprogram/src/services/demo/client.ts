@@ -28,8 +28,6 @@ import type { AccountProfile } from "../account";
 import { emptyWorkerRegistration, normalizeWorkerRegistration, workerRegistrationError, type WorkerRegistration } from "@construction/domain";
 import type {
   DailyReportParticipant,
-  DefaultScheduleBody,
-  DefaultShiftBody,
   ManagedProject,
   WorkRoleScope,
   ManagedParticipant,
@@ -1723,74 +1721,7 @@ const routeDemo = (
   }
   if (parts[0] === "attendance" && parts[1] === "projects") {
     const projectId = parts[2];
-    const scoped = parts[3] === "teams" || parts[3] === "members";
-    const resource = scoped ? parts[5] : parts[3];
-    const configKey = scoped
-      ? `${projectId}/${parts[3]}/${parts[4]}`
-      : projectId;
-    if (
-      method !== "GET" &&
-      [
-        "default-shift",
-        "default-schedule",
-        "shift",
-        "schedule",
-        "configuration",
-      ].includes(resource)
-    )
-      throw new ApiError(410, "旧排班写入接口已停用，请使用打卡安排。", {});
-    if (scoped && method === "DELETE" && resource === "configuration")
-      return response(
-        {
-          ...state,
-          configurations: Object.fromEntries(
-            Object.entries(state.configurations).filter(
-              ([key]) => key !== configKey,
-            ),
-          ),
-        },
-        {},
-      );
-    const config = state.configurations[configKey] ?? {
-      shift: null,
-      schedule: null,
-    };
-    if (resource === "default-configuration" || resource === "configuration")
-      return response(state, config);
-    if (resource === "default-shift" || resource === "shift") {
-      const shift = {
-        ...(options.data as DefaultShiftBody),
-        id: config.shift?.id ?? demoId("shift"),
-      };
-      return response(
-        {
-          ...state,
-          configurations: {
-            ...state.configurations,
-            [configKey]: { ...config, shift },
-          },
-        },
-        shift,
-      );
-    }
-    if (resource === "default-schedule" || resource === "schedule") {
-      if (!config.shift)
-        throw new ApiError(400, "请先保存班次。", { projectId });
-      const schedule = {
-        ...(options.data as DefaultScheduleBody),
-        shiftId: config.shift.id,
-      };
-      return response(
-        {
-          ...state,
-          configurations: {
-            ...state.configurations,
-            [configKey]: { ...config, schedule },
-          },
-        },
-        schedule,
-      );
-    }
+    const resource = parts[3];
     if (resource === "tasks" && parts[5] === "today" && method === "GET") return response(state, demoTaskToday(state, requirePerson(state, userId, projectId), parts[4]));
     if (resource === "overtime" && parts[4] === "today" && method === "GET") return response(state, demoOvertimeToday(state, requirePerson(state, userId, projectId)));
     if (resource === "safety") return response(state, demoSafetyNotice(state, requirePerson(state, userId, projectId), query.pointCode));

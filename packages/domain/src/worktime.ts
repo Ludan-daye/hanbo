@@ -49,10 +49,6 @@ export const worktimeRuleError = (rule: WorktimeRule): string | null => {
 export const legacyWorktimeRule: WorktimeRuleVersion = {
   config: { ...defaultWorktimeRule, overtimeStart: null }, startsOn: "0001-01-01", version: 0,
 };
-export const emptyWorktimeTotals: WorktimeTotals = {
-  normalMinutes: 0, overtimeMinutes: 0, unclassifiedMinutes: 0, workedMinutes: 0,
-  normalHours: "0", overtimeHours: "0", totalHours: "0",
-};
 export const worktimeChinaDate = (value: Date): string =>
   new Date(value.getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
 export const resolveWorktimeRule = (
@@ -73,9 +69,6 @@ const totals = (normalMinutes: number, overtimeMinutes: number, unclassifiedMinu
   normalHours: worktimeDecimal(normalMinutes / 60), overtimeHours: worktimeDecimal(overtimeMinutes / 60),
   totalHours: worktimeDecimal((normalMinutes + overtimeMinutes + unclassifiedMinutes) / 60),
 });
-export const addWorktimeTotals = (left: WorktimeTotals, right: WorktimeTotals): WorktimeTotals =>
-  totals(left.normalMinutes + right.normalMinutes, left.overtimeMinutes + right.overtimeMinutes,
-    left.unclassifiedMinutes + right.unclassifiedMinutes);
 
 export const scheduledWorkIntervals = (
   points: readonly ScheduledAttendancePoint[], date: string,

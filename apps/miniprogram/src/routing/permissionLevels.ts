@@ -80,11 +80,6 @@ export const permissionLevel = (roleCode: RoleCode): PermissionLevel => {
     throw new Error(`Unknown permission role: ${roleCode}`);
   return level;
 };
-export const permissionLabel = (roleCode: RoleCode | null): string =>
-  roleCode === null ? "待分配权限" : permissionLevel(roleCode).label;
-export const permissionCategoryLabel = (
-  category: PermissionCategory,
-): string => (category === "WORKER" ? "工人权限" : "管理人员权限");
 
 export const participantPermissionRole = (
   person: Pick<ProjectParticipant, "participantType" | "projectRoleLabel">,

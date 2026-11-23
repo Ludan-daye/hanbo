@@ -13,6 +13,7 @@ coverage/
 *.tsbuildinfo
 .superpowers/
 .swc/
+__pycache__/
 .temp/
 apps/api/var/
 apps/miniprogram/project.private.config.json

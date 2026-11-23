@@ -4,11 +4,7 @@ import {
   managerSub,
   managerSummary,
 } from "../src/components/project-manager-picker/summary";
-import {
-  companyPersonLine,
-  matchesPerson,
-  personRow,
-} from "../src/pages/company-people/person-row";
+import { companyPersonLine } from "../src/pages/company-people/person-row";
 import {
   accountLastLogin,
   accountRoleTarget,
@@ -28,24 +24,7 @@ import {
   systemScreen,
   systemTabOf,
 } from "../src/pages/system-management/system-view";
-import type { CompanyParticipant } from "../src/services/management.types";
 import type { PlatformAccount, PlatformAccountRole } from "../src/services/workflows";
-
-const person = (patch: Partial<CompanyParticipant>): CompanyParticipant => ({
-  displayName: "张建国",
-  memberId: "member-1",
-  participantType: "WORKER",
-  phone: "13800000001",
-  profileId: "profile-1",
-  projectId: "project-1",
-  projectName: "滨江花园一期",
-  projectRoleLabel: "钢筋工",
-  requiresAttendance: true,
-  status: "ACTIVE",
-  teamId: "team-1",
-  teamName: "钢筋一班",
-  ...patch,
-});
 
 describe("项目管理员那一行", () => {
   it("没选时是空的，选一个写姓名，选多个写“等几人”", () => {
@@ -65,78 +44,6 @@ describe("项目管理员那一行", () => {
     expect(managerSub({ phone: "13800000003", isBound: false })).toBe(
       "13800000003，还没绑定微信",
     );
-  });
-});
-
-describe("公司人员的一行", () => {
-  it("普通工人：副行是工种、项目、班组，右侧不写身份", () => {
-    expect(personRow(person({}))).toEqual({
-      title: "张建国",
-      avatar: "张",
-      sub: "钢筋工，滨江花园一期，钢筋一班",
-      status: null,
-      tag: null,
-    });
-  });
-
-  it("班组长、管理员：身份写在右侧，副行不重复", () => {
-    const leader = personRow(
-      person({ displayName: "王师傅", projectRoleLabel: "TEAM_LEADER" }),
-    );
-    expect(leader.tag).toBe("班组长");
-    expect(leader.sub).toBe("滨江花园一期，钢筋一班");
-    const admin = personRow(
-      person({
-        participantType: "MANAGER",
-        projectRoleLabel: "PROJECT_ADMIN",
-        teamId: null,
-        teamName: null,
-        additionalRoles: [{ roleCode: "TEAM_LEADER", teamId: "team-1" }],
-      }),
-    );
-    expect(admin.tag).toBe("管理员、班组长");
-    expect(admin.sub).toBe("滨江花园一期");
-  });
-
-  it("不在场的写状态；没有姓名的靠手机尾号分辨", () => {
-    expect(personRow(person({ status: "SUSPENDED" })).status).toEqual({
-      kind: "warn",
-      text: "已暂停",
-    });
-    expect(personRow(person({ status: "EXITED" })).status).toEqual({
-      kind: "idle",
-      text: "已退场",
-    });
-    const unnamed = personRow(person({ displayName: null }));
-    expect(unnamed.title).toBe("姓名待补录");
-    expect(unnamed.avatar).toBe("？");
-    expect(unnamed.sub).toBe("尾号 0001，钢筋工，滨江花园一期，钢筋一班");
-  });
-
-  it("岗位配置认不出来的人照样显示，只是不归到工人或管理里", () => {
-    const odd = person({
-      participantType: "MANAGER",
-      projectRoleLabel: "安全员",
-    });
-    expect(personRow(odd).tag).toBeNull();
-    expect(personRow(odd).sub).toBe("安全员，滨江花园一期，钢筋一班");
-    expect(matchesPerson(odd, "ALL", "安全员")).toBe(true);
-    expect(matchesPerson(odd, "WORKER", "")).toBe(false);
-    expect(matchesPerson(odd, "MANAGEMENT", "")).toBe(false);
-  });
-
-  it("按工人、管理两类筛，搜得到班组和项目", () => {
-    const worker = person({});
-    const admin = person({
-      participantType: "MANAGER",
-      projectRoleLabel: "PROJECT_ADMIN",
-    });
-    expect(matchesPerson(worker, "WORKER", "")).toBe(true);
-    expect(matchesPerson(worker, "MANAGEMENT", "")).toBe(false);
-    expect(matchesPerson(admin, "MANAGEMENT", "")).toBe(true);
-    expect(matchesPerson(worker, "ALL", " 钢筋一班 ")).toBe(true);
-    expect(matchesPerson(worker, "ALL", "滨江")).toBe(true);
-    expect(matchesPerson(worker, "ALL", "木工")).toBe(false);
   });
 });
 

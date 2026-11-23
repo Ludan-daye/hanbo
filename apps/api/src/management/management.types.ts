@@ -2,7 +2,6 @@ import type { RoleCode } from "@construction/domain/roles.js";
 
 export type ProjectStatusValue = "ACTIVE" | "COMPLETED" | "PREPARING" | "SUSPENDED";
 export type MemberStatusValue = "ACTIVE" | "EXITED" | "SUSPENDED";
-export type ProjectManagerRoleCode = Extract<RoleCode, "WORKER" | "PROJECT_ADMIN" | "TEAM_LEADER">;
 export type ParticipantTypeValue = "MANAGER" | "WORKER";
 
 export type WorkRoleScope = {
@@ -85,59 +84,6 @@ export type TeamResponse = {
   readonly name: string;
   readonly projectId: string;
   readonly status: string;
-};
-
-export type CreateProjectWorkerRequest = {
-  readonly employmentStatus: string;
-  readonly encryptedIdNumber: string;
-  readonly encryptedName: string;
-  readonly enteredAt: string;
-  readonly exitedAt: string | null;
-  readonly faceProfileStatus: string;
-  readonly idNumberHash: string;
-  readonly memberStatus: MemberStatusValue;
-  readonly phone: string;
-  readonly projectRoleLabel: string;
-  readonly realNameStatus: string;
-  readonly requiresAttendance: boolean;
-  readonly teamId: string | null;
-  readonly workType: string;
-};
-
-export type ProjectWorkerMemberResponse = {
-  readonly enteredAt: string;
-  readonly exitedAt: string | null;
-  readonly id: string;
-  readonly participantType: "WORKER";
-  readonly phone: string;
-  readonly profileId: string;
-  readonly projectId: string;
-  readonly projectRoleLabel: string;
-  readonly requiresAttendance: boolean;
-  readonly status: MemberStatusValue;
-  readonly teamId: string | null;
-};
-
-export type CreateProjectManagerRequest = {
-  readonly memberStatus: MemberStatusValue;
-  readonly name: string;
-  readonly phone: string;
-  readonly profileStatus: string;
-  readonly requiresAttendance: boolean;
-  readonly roleCode: ProjectManagerRoleCode;
-  readonly teamScopeId: string | null;
-};
-
-export type ProjectManagerMemberResponse = {
-  readonly id: string;
-  readonly participantType: "MANAGER";
-  readonly phone: string;
-  readonly profileId: string;
-  readonly projectId: string;
-  readonly projectRoleLabel: ProjectManagerRoleCode;
-  readonly requiresAttendance: boolean;
-  readonly status: MemberStatusValue;
-  readonly teamId: string | null;
 };
 
 export type ProjectParticipantResponse = {

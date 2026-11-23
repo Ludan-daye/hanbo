@@ -197,23 +197,6 @@ export class SafetyCreditService {
       ]),
     );
   }
-  reportEvents(
-    projectIds: readonly string[],
-    workerIds: readonly string[],
-    fromDate: string,
-    toDate: string,
-    asOf: Date,
-  ): Promise<readonly SafetyViolationView[]> {
-    return this.reportEventsIn(
-      this.db,
-      projectIds,
-      workerIds,
-      fromDate,
-      toDate,
-      asOf,
-      new Date(),
-    );
-  }
   async reportEventsIn(
     database: Prisma.TransactionClient,
     projectIds: readonly string[],

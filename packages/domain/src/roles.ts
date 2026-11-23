@@ -99,18 +99,6 @@ export const hasRoleAtLeast = (
   requiredRole: RoleCode
 ): boolean => assignments.some((assignment: RoleAssignment): boolean => roleIncludes(assignment.roleCode, requiredRole));
 
-export const canApproveMakeupRequest = (
-  approverAssignments: readonly RoleAssignment[],
-  approverUserId: string,
-  requesterUserId: string
-): boolean => {
-  if (approverUserId === requesterUserId) {
-    return false;
-  }
-
-  return hasRoleAtLeast(approverAssignments, "TEAM_LEADER");
-};
-
 export const getInheritedRoleCodes = (roleCode: RoleCode): readonly RoleCode[] =>
   ROLE_CODES.filter((candidateRoleCode: RoleCode): boolean => roleIncludes(roleCode, candidateRoleCode));
 

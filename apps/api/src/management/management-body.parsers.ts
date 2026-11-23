@@ -3,16 +3,12 @@ import { z } from "zod";
 import type { TeamWriteRequest } from "./teams.types.js";
 
 import type {
-  CreateProjectManagerRequest,
   CreateProjectRequest,
-  CreateProjectWorkerRequest,
   CreateTeamRequest,
   UpdateProjectRequest
 } from "./management.types.js";
 
 const projectStatusValues = ["ACTIVE", "COMPLETED", "PREPARING", "SUSPENDED"] as const;
-const memberStatusValues = ["ACTIVE", "EXITED", "SUSPENDED"] as const;
-const projectManagerRoleCodes = ["PROJECT_ADMIN", "TEAM_LEADER"] as const;
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 const decimalPattern = /^-?\d{1,3}(\.\d{1,7})?$/;
 
@@ -42,7 +38,6 @@ const isCoordinate = (value: string, min: number, max: number): boolean => {
 const nonEmptyStringSchema = z.string().min(1);
 const dateOnlySchema = z.string().refine(isValidDateOnly);
 const dateTimeSchema = z.string().datetime({ offset: true });
-const nullableDateTimeSchema = z.union([dateTimeSchema, z.null()]);
 
 const projectWriteFieldsSchema = z.object({
   address: nonEmptyStringSchema,
@@ -77,33 +72,6 @@ const createTeamRequestSchema = z.object({
   status: z.enum(["ACTIVE", "SUSPENDED"])
 });
 
-const createProjectWorkerRequestSchema = z.object({
-  employmentStatus: nonEmptyStringSchema,
-  encryptedIdNumber: nonEmptyStringSchema,
-  encryptedName: nonEmptyStringSchema,
-  enteredAt: dateTimeSchema,
-  exitedAt: nullableDateTimeSchema,
-  faceProfileStatus: nonEmptyStringSchema,
-  idNumberHash: nonEmptyStringSchema,
-  memberStatus: z.enum(memberStatusValues),
-  phone: nonEmptyStringSchema,
-  projectRoleLabel: nonEmptyStringSchema,
-  realNameStatus: nonEmptyStringSchema,
-  requiresAttendance: z.boolean(),
-  teamId: z.union([nonEmptyStringSchema, z.null()]),
-  workType: nonEmptyStringSchema
-});
-
-const createProjectManagerRequestSchema = z.object({
-  memberStatus: z.enum(memberStatusValues),
-  name: nonEmptyStringSchema,
-  phone: nonEmptyStringSchema,
-  profileStatus: nonEmptyStringSchema,
-  requiresAttendance: z.boolean(),
-  roleCode: z.enum(projectManagerRoleCodes),
-  teamScopeId: z.union([nonEmptyStringSchema, z.null()])
-});
-
 const parseBody = <T>(body: unknown, schema: z.ZodType<T>, message: string): T => {
   const result = schema.safeParse(body);
 
@@ -125,12 +93,6 @@ export const parseProjectManagerSearch = (query: unknown): { readonly search: st
 
 export const parseCreateTeamRequest = (body: unknown): CreateTeamRequest =>
   parseBody(body, createTeamRequestSchema, "INVALID_CREATE_TEAM_REQUEST");
-
-export const parseCreateProjectWorkerRequest = (body: unknown): CreateProjectWorkerRequest =>
-  parseBody(body, createProjectWorkerRequestSchema, "INVALID_CREATE_PROJECT_WORKER_REQUEST");
-
-export const parseCreateProjectManagerRequest = (body: unknown): CreateProjectManagerRequest =>
-  parseBody(body, createProjectManagerRequestSchema, "INVALID_CREATE_PROJECT_MANAGER_REQUEST");
 
 export const parseUpdateProjectRequest = (body: unknown): UpdateProjectRequest =>
   parseBody(body, projectWriteFieldsSchema.extend({

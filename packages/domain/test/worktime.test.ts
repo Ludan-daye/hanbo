@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  addWorktimeTotals, classifyWorktime, defaultAttendancePoints, defaultWorktimeRule,
+  classifyWorktime, defaultAttendancePoints, defaultWorktimeRule,
   legacyWorktimeRule, overtimeWorkIntervals, overtimePointCode, resolveWorktimeRule, scheduledWorkIntervals, taskWorkIntervals,
   type WorktimeInterval, type WorktimeRule, type WorktimeRuleVersion,
 } from "../src/index.js";
@@ -57,7 +57,6 @@ describe("classified worktime", () => {
   test("retains minute precision and sums hours from integer minutes", () => {
     const value = summarize([interval("09:00", "10:29", "HOURLY"), interval("18:00", "22:29", "OVERTIME")], {});
     expect(value).toMatchObject({ normalMinutes: 89, overtimeMinutes: 269, workedMinutes: 358 });
-    expect(addWorktimeTotals(value, value).workedMinutes).toBe(716);
   });
   test("future versions never change historical classification", () => {
     const versions = [version({}), { ...version({ overtimeStart: "19:00" }), startsOn: "2026-12-01", version: 2 }];
@@ -84,7 +83,7 @@ describe("classified worktime", () => {
   test("does not mutate evidence and transports summed decimals as strings", () => {
     const rows = Object.freeze([Object.freeze(interval("09:00", "12:00", "HOURLY"))]);
     const value = summarize(rows, {});
-    expect(addWorktimeTotals(value, value).normalHours).toBe("6");
+    expect(value.normalHours).toBe("3");
     expect(rows[0]?.start).toEqual(at("09:00"));
   });
 });

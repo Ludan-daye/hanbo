@@ -848,11 +848,6 @@ describe.skipIf(process.env.DATABASE_FOUNDATION_TEST_URL === undefined)(
           where: { participantId: person.profileId },
         }),
       ).toBeGreaterThan(0);
-      await request(app.getHttpServer())
-        .post(`/management/projects/${projectId}/workers`)
-        .auth(auth("admin"), { type: "bearer" })
-        .send({})
-        .expect(410);
     });
 
     test("project scoring and person detail preserve scope, hierarchy, versions and audit history", async () => {

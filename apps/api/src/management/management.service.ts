@@ -21,18 +21,13 @@ import { CompanySettingsService } from "./company-settings.service.js";
 
 import type {
   CompanyParticipantResponse,
-  CreateProjectManagerRequest,
   CreateProjectRequest,
-  CreateProjectWorkerRequest,
   CreateTeamRequest,
   MemberStatusValue,
-  ProjectManagerRoleCode,
   ProjectManagerCandidate,
-  ProjectManagerMemberResponse,
   ProjectParticipantResponse,
   ProjectResponse,
   ProjectStatusValue,
-  ProjectWorkerMemberResponse,
   ManagedProjectResponse,
   UpdateProjectRequest,
   TeamResponse,
@@ -73,14 +68,6 @@ const eligibleWorkerManagers = (companyId: string): Prisma.WorkerProfileWhereInp
 });
 
 const toDateOnly = (value: Date): string => value.toISOString().slice(0, 10);
-
-const toIsoStringOrNull = (value: Date | null): string | null => {
-  if (value === null) {
-    return null;
-  }
-
-  return value.toISOString();
-};
 
 const createProjectResponse = (project: Project): ProjectResponse => ({
   address: project.address,
@@ -123,38 +110,6 @@ const createInvitationListItem = (
   projectId,
   status: inv.status as "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED",
   targetType: inv.targetType
-});
-
-const createWorkerMemberResponse = (
-  member: ProjectWorkerMember,
-  worker: WorkerProfile
-): ProjectWorkerMemberResponse => ({
-  enteredAt: member.enteredAt.toISOString(),
-  exitedAt: toIsoStringOrNull(member.exitedAt),
-  id: member.id,
-  participantType: "WORKER",
-  phone: worker.phone,
-  profileId: worker.id,
-  projectId: member.projectId,
-  projectRoleLabel: member.projectRoleLabel,
-  requiresAttendance: member.requiresAttendance,
-  status: member.status as MemberStatusValue,
-  teamId: member.teamId
-});
-
-const createManagerMemberResponse = (
-  member: ProjectManagerMember,
-  manager: ManagerProfile
-): ProjectManagerMemberResponse => ({
-  id: member.id,
-  participantType: "MANAGER",
-  phone: manager.phone,
-  profileId: manager.id,
-  projectId: member.projectId,
-  projectRoleLabel: member.roleCode as ProjectManagerRoleCode,
-  requiresAttendance: member.requiresAttendance,
-  status: member.status as MemberStatusValue,
-  teamId: member.teamScopeId
 });
 
 const createWorkerParticipantResponse = (member: WorkerMemberWithProfileAndTeam, keyHex: string): ProjectParticipantResponse => ({
@@ -456,91 +411,6 @@ export class ManagementService {
     }
   }
 
-  async createProjectWorker(
-    projectId: string,
-    request: CreateProjectWorkerRequest
-  ): Promise<ProjectWorkerMemberResponse> {
-    await this.getProjectOrThrow(projectId);
-    await this.getProjectTeamOrThrow(projectId, request.teamId);
-
-    try {
-      return await this.prisma.$transaction(async (transaction): Promise<ProjectWorkerMemberResponse> => {
-        const worker = await transaction.workerProfile.create({
-          data: {
-            employmentStatus: request.employmentStatus,
-            encryptedIdNumber: request.encryptedIdNumber,
-            encryptedName: request.encryptedName,
-            faceProfileStatus: request.faceProfileStatus,
-            idNumberHash: request.idNumberHash,
-            phone: request.phone,
-            realNameStatus: request.realNameStatus,
-            workType: request.workType
-          }
-        });
-        const member = await transaction.projectWorkerMember.create({
-          data: {
-            enteredAt: new Date(request.enteredAt),
-            exitedAt: request.exitedAt === null ? null : new Date(request.exitedAt),
-            projectId,
-            projectRoleLabel: request.projectRoleLabel,
-            requiresAttendance: request.requiresAttendance,
-            status: request.memberStatus,
-            teamId: request.teamId,
-            workerId: worker.id
-          }
-        });
-
-        return createWorkerMemberResponse(member, worker);
-      });
-    } catch (error: unknown) {
-      return throwConflictForUniqueError(error, "PROJECT_WORKER_MEMBER_CONFLICT", {
-        idNumberHash: request.idNumberHash,
-        projectId,
-        teamId: request.teamId
-      });
-    }
-  }
-
-  async createProjectManager(
-    projectId: string,
-    request: CreateProjectManagerRequest
-  ): Promise<ProjectManagerMemberResponse> {
-    this.assertManagerRoleScope(request);
-    await this.getProjectOrThrow(projectId);
-    await this.getProjectTeamOrThrow(projectId, request.teamScopeId);
-
-    try {
-      return await this.prisma.$transaction(async (transaction): Promise<ProjectManagerMemberResponse> => {
-        const manager = await transaction.managerProfile.create({
-          data: {
-            name: request.name,
-            phone: request.phone,
-            status: request.profileStatus
-          }
-        });
-        const member = await transaction.projectManagerMember.create({
-          data: {
-            managerId: manager.id,
-            projectId,
-            requiresAttendance: request.requiresAttendance,
-            roleCode: request.roleCode,
-            status: request.memberStatus,
-            teamScopeId: request.teamScopeId
-          }
-        });
-
-        return createManagerMemberResponse(member, manager);
-      });
-    } catch (error: unknown) {
-      return throwConflictForUniqueError(error, "PROJECT_MANAGER_MEMBER_CONFLICT", {
-        phone: request.phone,
-        projectId,
-        roleCode: request.roleCode,
-        teamScopeId: request.teamScopeId
-      });
-    }
-  }
-
   async listCompanyProjects(companyId: string): Promise<readonly ProjectResponse[]> {
     const company = await this.prisma.company.findUnique({ where: { id: companyId } });
     if (company === null) {
@@ -776,22 +646,5 @@ export class ManagementService {
     }
 
     return team;
-  }
-
-  private assertManagerRoleScope(request: CreateProjectManagerRequest): void {
-    if (request.roleCode === "TEAM_LEADER" && request.teamScopeId === null) {
-      throw new BadRequestException({
-        message: "TEAM_LEADER_MANAGER_REQUIRES_TEAM_SCOPE",
-        roleCode: request.roleCode
-      });
-    }
-
-    if (request.roleCode === "PROJECT_ADMIN" && request.teamScopeId !== null) {
-      throw new BadRequestException({
-        message: "PROJECT_ADMIN_MANAGER_REJECTS_TEAM_SCOPE",
-        roleCode: request.roleCode,
-        teamScopeId: request.teamScopeId
-      });
-    }
   }
 }

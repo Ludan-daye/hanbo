@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 
 import {
   authorizePermission,
-  canApproveMakeupRequest,
   canApproveScopedMakeupRequest,
   canAssignRole,
   getEffectivePermissionCodes,
@@ -38,24 +37,6 @@ describe("role hierarchy", (): void => {
     const assignments: readonly RoleAssignment[] = [{ roleCode: "COMPANY_ADMIN" }];
 
     expect(hasRoleAtLeast(assignments, "WORKER")).toBe(true);
-  });
-
-  test("self approval is blocked", (): void => {
-    const assignments: readonly RoleAssignment[] = [{ roleCode: "SYSTEM_ADMIN" }];
-
-    expect(canApproveMakeupRequest(assignments, "user-1", "user-1")).toBe(false);
-  });
-
-  test("non-self team leader can approve makeup request", (): void => {
-    const assignments: readonly RoleAssignment[] = [{ roleCode: "TEAM_LEADER" }];
-
-    expect(canApproveMakeupRequest(assignments, "leader-1", "worker-1")).toBe(true);
-  });
-
-  test("worker cannot approve makeup request", (): void => {
-    const assignments: readonly RoleAssignment[] = [{ roleCode: "WORKER" }];
-
-    expect(canApproveMakeupRequest(assignments, "worker-1", "worker-2")).toBe(false);
   });
 
   test("system administrator inherits worker permissions", (): void => {
