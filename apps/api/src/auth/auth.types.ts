@@ -76,7 +76,16 @@ export type MeProfileSummary = {
   readonly type: "MANAGER" | "WORKER" | null;
 };
 
+/** A company the user works in through a non-platform role, with its state (system admin plan phase 3). */
+export type MeCompany = {
+  readonly id: string;
+  readonly name: string;
+  readonly status: string;
+};
+
 export type MeResponse = {
+  /** Companies behind the user's company, project and team roles; empty for platform-only or no roles. */
+  readonly companies: readonly MeCompany[];
   readonly profile: MeProfileSummary;
   readonly roles: {
     readonly assignments: readonly MeRoleAssignment[];

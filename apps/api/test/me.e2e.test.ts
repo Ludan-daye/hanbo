@@ -55,6 +55,24 @@ class MePrismaTestDouble {
   readonly role = {
     findMany: async (): Promise<MeRole[]> => this.roles
   };
+  /** Companies with the projects and teams in them, for /auth/me's company list. */
+  readonly companies: { id: string; name: string; projectIds: string[]; status: string; teamIds: string[] }[] = [
+    { id: "company-1", name: "瀚渤建设", projectIds: ["project-1"], status: "ACTIVE", teamIds: ["team-1"] },
+    { id: "company-2", name: "别的公司", projectIds: ["project-2"], status: "SUSPENDED", teamIds: [] }
+  ];
+  readonly company = {
+    findMany: async (args: { where: { OR: [{ id: { in: string[] } }, { projects: { some: { id: { in: string[] } } } }, { projects: { some: { teams: { some: { id: { in: string[] } } } } } }] } }) => {
+      const [byId, byProject, byTeam] = args.where.OR;
+      return this.companies
+        .filter(
+          (company) =>
+            byId.id.in.includes(company.id) ||
+            company.projectIds.some((id) => byProject.projects.some.id.in.includes(id)) ||
+            company.teamIds.some((id) => byTeam.projects.some.teams.some.id.in.includes(id))
+        )
+        .map(({ id, name, status }) => ({ id, name, status }));
+    }
+  };
 }
 
 const applyTestEnv = (): void => {
@@ -164,6 +182,7 @@ describe("GET /auth/me", () => {
       .expect(200);
 
     expect(response.body).toEqual({
+      companies: [{ id: "company-1", name: "瀚渤建设", status: "ACTIVE" }],
       profile: { id: "worker-1", type: "WORKER" },
       roles: {
         assignments: [{ roleCode: "WORKER", scope: { scopeId: "project-1", scopeType: "PROJECT" } }],
@@ -233,6 +252,30 @@ describe("GET /auth/me", () => {
       .expect(200);
 
     expect(response.body.roles).toEqual({ assignments: [], highestRoleCode: null });
+    expect(response.body.companies).toEqual([]);
+  });
+
+  test("lists the companies behind company, project and team roles with their state (phase 3)", async (): Promise<void> => {
+    seedUser(prisma, {
+      managerProfile: { id: "manager-1" },
+      roles: [
+        { role: { code: "TEAM_LEADER" }, scopeId: "team-1", scopeType: "TEAM" },
+        { role: { code: "PROJECT_ADMIN" }, scopeId: "project-2", scopeType: "PROJECT" },
+        { role: { code: "SYSTEM_ADMIN" }, scopeId: "GLOBAL", scopeType: "GLOBAL" }
+      ],
+      sessionId: "session-1",
+      userId: "user-1",
+      workerProfile: null
+    });
+    app = await createApp(prisma);
+    const token = await createAccessToken(app, "user-1", "session-1");
+
+    const response = await request(app.getHttpServer()).get("/auth/me").set("Authorization", `Bearer ${token}`).expect(200);
+
+    expect(response.body.companies).toEqual([
+      { id: "company-1", name: "瀚渤建设", status: "ACTIVE" },
+      { id: "company-2", name: "别的公司", status: "SUSPENDED" }
+    ]);
   });
 
   test("rejects a request without a token", async (): Promise<void> => {

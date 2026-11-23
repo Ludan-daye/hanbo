@@ -5,7 +5,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { JwtService } from "@nestjs/jwt";
 import type { BindingInvitation, ManagerProfile, User, WorkerProfile } from "@prisma/client";
 import { Prisma } from "@prisma/client";
-import { getHighestRoleCode } from "@construction/domain/roles.js";
+import { getHighestRoleCode, type ScopeType, type ScopedRoleAssignment } from "@construction/domain/roles.js";
 
 import { assertAccountProfileComplete, assertIdentityMatches } from "./account-onboarding.js";
 import { decryptPersonnelName } from "../management/personnel-name.js";
@@ -23,6 +23,7 @@ import type {
   BindByInvitationRequest,
   BindByInvitationResponse,
   LoginResponse,
+  MeCompany,
   MeProfileSummary,
   MeResponse,
   RefreshResponse,
@@ -352,6 +353,7 @@ export class AuthService {
     const { assignments } = await this.authorizationContext.loadAuthorizationData(userId);
 
     return {
+      companies: await this.companiesOf(assignments),
       profile: createProfileSummary(user),
       roles: {
         assignments: assignments.map((assignment) => ({
@@ -369,6 +371,25 @@ export class AuthService {
         status: user.status
       }
     };
+  }
+
+  /** The companies behind company, project and team roles, so the client can say a company is suspended. */
+  private async companiesOf(assignments: readonly ScopedRoleAssignment[]): Promise<readonly MeCompany[]> {
+    const ids = (scopeType: ScopeType): string[] =>
+      assignments.filter((assignment) => assignment.scope.scopeType === scopeType).map((assignment) => assignment.scope.scopeId);
+    const [companyIds, projectIds, teamIds] = [ids("COMPANY"), ids("PROJECT"), ids("TEAM")];
+    if (companyIds.length + projectIds.length + teamIds.length === 0) return [];
+    return this.prisma.company.findMany({
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      select: { id: true, name: true, status: true },
+      where: {
+        OR: [
+          { id: { in: companyIds } },
+          { projects: { some: { id: { in: projectIds } } } },
+          { projects: { some: { teams: { some: { id: { in: teamIds } } } } } }
+        ]
+      }
+    });
   }
 
   private async bindWorkerProfile(
