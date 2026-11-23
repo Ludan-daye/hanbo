@@ -12,7 +12,15 @@ import {
 import {
   auditActor,
   auditTime,
+  companyAdminSub,
+  companyDraftOf,
+  companyEntries,
+  companyFormOf,
+  companyFormProblem,
+  companyRowStatus,
+  companyRowSub,
   describeAudit,
+  EMPTY_COMPANY_DRAFT,
   levelText,
   scopeOptions,
   systemScreen,
@@ -259,5 +267,80 @@ describe("平台管理", () => {
     expect(auditTime("2026-11-18T02:20:00.000Z")).toBe("11-18 10:20");
     expect(auditTime("2026-12-31T16:05:00.000Z")).toBe("01-01 00:05");
     expect(auditTime("不是时间")).toBe("");
+  });
+});
+
+describe("平台的公司一行", () => {
+  const admin = (name: string) => ({ isBound: true, memberId: name, name, phone: "13900000001" });
+  it("写进行中项目数和管理员姓名，没有管理员的标红，正常的不写状态", () => {
+    expect(companyRowSub({ activeProjectCount: 3, projectCount: 5, admins: [admin("张三"), admin("李四")] })).toBe(
+      "3 个进行中项目，管理员：张三、李四",
+    );
+    expect(companyRowSub({ activeProjectCount: 0, projectCount: 0, admins: [] })).toBe("还没有项目");
+    expect(companyRowStatus({ admins: [], status: "ACTIVE" })).toEqual({ kind: "bad", text: "没有管理员" });
+    expect(companyRowStatus({ admins: [admin("张三")], status: "ACTIVE" })).toBeUndefined();
+    expect(companyRowStatus({ admins: [admin("张三")], status: "SUSPENDED" })).toEqual({ kind: "warn", text: "已暂停" });
+  });
+
+  it("管理员副行：绑定了没有，邀请码到哪天", () => {
+    expect(companyAdminSub({ phone: "13900000001", isBound: true, invitation: null })).toBe("13900000001，已绑定微信");
+    expect(
+      companyAdminSub({ phone: "13900000001", isBound: false, invitation: { status: "PENDING", expiresAt: "2026-11-29T02:00:00.000Z" } }),
+    ).toBe("13900000001，等他用邀请码绑定，11-29 前有效");
+    expect(
+      companyAdminSub({ phone: "13900000001", isBound: false, invitation: { status: "EXPIRED", expiresAt: "2026-11-20T02:00:00.000Z" } }),
+    ).toBe("13900000001，邀请码已过期");
+    expect(companyAdminSub({ phone: "13900000001", isBound: false, invitation: null })).toBe("13900000001，还没绑定微信");
+  });
+
+  it("进入公司：公司管理员的那些页面，每个都带上这家公司", () => {
+    const entries = companyEntries("c 1");
+    expect(entries.map((entry) => entry.title)).toEqual([
+      "公司项目",
+      "公司人员",
+      "项目负责人",
+      "各项目一览",
+      "调人申请",
+      "公司报表",
+      "操作记录",
+      "公司设置",
+      "新建项目",
+    ]);
+    expect(entries.every((entry) => entry.url.endsWith("?companyId=c%201"))).toBe(true);
+    expect(entries.some((entry) => entry.url.startsWith("/pages/schedules/") || entry.url.startsWith("/pages/team-makeups/"))).toBe(false);
+  });
+
+  it("公司资料：空着的写 null，信用代码大写，先在手机上查格式", () => {
+    const form = companyFormOf({ ...EMPTY_COMPANY_DRAFT, name: " 瀚渤建设 ", creditCode: "91310115ma1k3yj12x", contactPhone: " " });
+    expect(form).toEqual({
+      address: null,
+      contactName: null,
+      contactPhone: null,
+      creditCode: "91310115MA1K3YJ12X",
+      name: "瀚渤建设",
+      shortName: null,
+    });
+    expect(companyFormProblem(form)).toBeNull();
+    expect(companyFormProblem({ ...form, name: "" })).toBe("请填写公司名称。");
+    expect(companyFormProblem({ ...form, creditCode: "91310115MA1K3YO12X" })).toContain("18 位");
+    expect(companyFormProblem({ ...form, contactPhone: "12345" })).toContain("联系电话");
+    expect(companyFormProblem({ ...form, contactPhone: "021-12345678" })).toBeNull();
+    expect(
+      companyDraftOf({
+        activeProjectCount: 0,
+        address: null,
+        admins: [],
+        contactName: "王经理",
+        contactPhone: null,
+        createdAt: "2026-11-22T00:00:00.000Z",
+        creditCode: null,
+        id: "c",
+        name: "瀚渤建设",
+        projectCount: 0,
+        shortName: null,
+        status: "ACTIVE",
+        updatedAt: "2026-11-22T00:00:00.000Z",
+      }),
+    ).toEqual({ ...EMPTY_COMPANY_DRAFT, contactName: "王经理", name: "瀚渤建设" });
   });
 });

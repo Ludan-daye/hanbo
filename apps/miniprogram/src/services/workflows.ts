@@ -30,10 +30,78 @@ export type PersonForm = {
   readonly expectedUpdatedAt: string | null;
   readonly expectedProfileUpdatedAt: string | null;
 };
+export type CompanyStatus = "ACTIVE" | "SUSPENDED";
+/** 一家公司最基本的三项（演示数据、账号的管理范围用）。 */
 export type Company = {
   readonly id: string;
   readonly name: string;
-  readonly status: "ACTIVE" | "SUSPENDED";
+  readonly status: CompanyStatus;
+};
+/** 平台“公司”标签的一行：/system/companies。 */
+export type CompanyAdminSummary = {
+  readonly isBound: boolean;
+  readonly memberId: string;
+  readonly name: string;
+  readonly phone: string;
+};
+export type PlatformCompany = {
+  readonly activeProjectCount: number;
+  readonly admins: readonly CompanyAdminSummary[];
+  readonly createdAt: string;
+  readonly creditCode: string | null;
+  readonly id: string;
+  readonly name: string;
+  readonly projectCount: number;
+  readonly shortName: string | null;
+  readonly status: string;
+};
+export type PlatformCompanyPage = {
+  readonly items: readonly PlatformCompany[];
+  readonly nextCursor: string | null;
+};
+/** 还没绑定的公司管理员，最近一张邀请码的情况；过期是服务器算的。 */
+export type CompanyAdminInvitation = {
+  readonly expiresAt: string;
+  readonly status: "PENDING" | "EXPIRED" | "ACCEPTED" | "REVOKED";
+};
+export type CompanyAdmin = CompanyAdminSummary & {
+  readonly appointedAt: string;
+  readonly invitation: CompanyAdminInvitation | null;
+  readonly managerProfileId: string;
+};
+export type PlatformCompanyDetail = Omit<PlatformCompany, "admins"> & {
+  readonly address: string | null;
+  readonly admins: readonly CompanyAdmin[];
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+  readonly updatedAt: string;
+};
+/** 新增、修改公司时填的资料；名称以外都可以空着（null）。 */
+export type CompanyForm = {
+  readonly address: string | null;
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+  readonly creditCode: string | null;
+  readonly name: string;
+  readonly shortName: string | null;
+};
+export type CompanyAdminCandidate = {
+  readonly managerProfileId: string;
+  readonly name: string;
+  readonly phone: string;
+};
+/** 选一个已有的管理账号，或录入新人（他用邀请码绑定）。 */
+export type CompanyAdminAppointment =
+  | { readonly managerProfileId: string }
+  | { readonly name: string; readonly phone: string };
+/** 邀请码只在生成的这一次返回。 */
+export type IssuedInvitation = {
+  readonly code: string;
+  readonly expiresAt: string;
+};
+export type CompanyAdminAppointed = {
+  readonly invitation: IssuedInvitation | null;
+  readonly member: CompanyAdmin;
 };
 export type Account = {
   readonly id: string;
@@ -165,11 +233,60 @@ export const reusePerson = (
     method: "POST",
     data: body,
   });
-/** Frontend-first contracts below are implemented by the local demo adapter until backend work resumes. */
-export const fetchCompanies = (): Promise<readonly Company[]> =>
-  apiClient.request("/system/companies", { method: "GET" });
-export const saveCompany = (body: Company): Promise<Company> =>
+/** 平台的公司列表，一页 30 家，新建的在前。 */
+export const fetchCompanies = (options: {
+  readonly search: string;
+  readonly status: CompanyStatus | null;
+  readonly cursor: string | null;
+}): Promise<PlatformCompanyPage> => {
+  const query: string[] = [];
+  if (options.search.trim()) query.push(`search=${encodeURIComponent(options.search.trim())}`);
+  if (options.status !== null) query.push(`status=${options.status}`);
+  if (options.cursor !== null) query.push(`cursor=${encodeURIComponent(options.cursor)}`);
+  return apiClient.request(
+    `/system/companies${query.length > 0 ? `?${query.join("&")}` : ""}`,
+    { method: "GET" },
+  );
+};
+export const createCompany = (body: CompanyForm): Promise<PlatformCompanyDetail> =>
   apiClient.request("/system/companies", { method: "POST", data: body });
+export const fetchCompany = (companyId: string): Promise<PlatformCompanyDetail> =>
+  apiClient.request(`/system/companies/${encodeURIComponent(companyId)}`, { method: "GET" });
+export const updateCompany = (
+  companyId: string,
+  body: CompanyForm & { readonly expectedUpdatedAt: string },
+): Promise<PlatformCompanyDetail> =>
+  apiClient.request(`/system/companies/${encodeURIComponent(companyId)}`, { method: "PUT", data: body });
+export const fetchCompanyAdminCandidates = (
+  companyId: string,
+  search: string,
+): Promise<readonly CompanyAdminCandidate[]> =>
+  apiClient.request(
+    `/system/companies/${encodeURIComponent(companyId)}/admin-candidates?search=${encodeURIComponent(search.trim())}`,
+    { method: "GET" },
+  );
+export const appointCompanyAdmin = (
+  companyId: string,
+  body: CompanyAdminAppointment,
+): Promise<CompanyAdminAppointed> =>
+  apiClient.request(`/system/companies/${encodeURIComponent(companyId)}/admins`, { method: "POST", data: body });
+export const reissueCompanyAdminInvitation = (
+  companyId: string,
+  memberId: string,
+): Promise<IssuedInvitation> =>
+  apiClient.request(
+    `/system/companies/${encodeURIComponent(companyId)}/admins/${encodeURIComponent(memberId)}/invitation`,
+    { method: "POST" },
+  );
+export const revokeCompanyAdmin = (
+  companyId: string,
+  memberId: string,
+): Promise<{ readonly remainingAdmins: number }> =>
+  apiClient.request(
+    `/system/companies/${encodeURIComponent(companyId)}/admins/${encodeURIComponent(memberId)}/revoke`,
+    { method: "POST" },
+  );
+// 下面账号、设置、日志三组接口服务器还没有（平台规划第二、四、五期），现在只有演示版。
 export const fetchAccounts = (): Promise<readonly Account[]> =>
   apiClient.request("/system/accounts", { method: "GET" });
 export const saveAccount = (body: Account): Promise<Account> =>

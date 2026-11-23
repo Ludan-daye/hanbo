@@ -117,10 +117,10 @@ export const demoCompanyProfile = (state: DemoState, companyId: string): Company
     address: extra?.address ?? null,
     contactName: extra?.contactName ?? null,
     contactPhone: extra?.contactPhone ?? null,
-    creditCode: null,
+    creditCode: company.creditCode ?? null,
     id: company.id,
     name: company.name,
-    shortName: null,
+    shortName: company.shortName ?? null,
     status: company.status,
     updatedAt: extra?.updatedAt ?? "2026-01-01T00:00:00.000Z",
   };

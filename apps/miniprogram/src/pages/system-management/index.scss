@@ -1,4 +1,4 @@
-// 平台管理。公共样式在 components/ui/kit.scss，这里只有这一页独有的两样。
+// 平台管理。公共样式在 components/ui/kit.scss，这里只有这一页独有的几样。
 
 // 点一下去选的表单行包在 Picker 里，成了 Picker 唯一的孩子，
 // 公共样式会把它当成最后一行去掉分隔线。分隔线改由这层补上。
@@ -15,4 +15,12 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+// 公司管理员的邀请码有 32 位，字号放小、可以折行。
+.system-code .ui-code {
+  font-size: 44rpx;
+  line-height: 1.35;
+  letter-spacing: 2rpx;
+  word-break: break-all;
 }

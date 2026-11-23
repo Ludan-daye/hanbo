@@ -9,6 +9,7 @@ import { memberRoleAssignments, memberRoleFields } from "../member-roles";
 import { demoMyProject } from "./my-project";
 import { demoReportPerson, saveDemoEvaluation } from "./report-details";
 import { demoProjectManagers } from "./project-managers";
+import { demoSystemCompanies } from "./system-companies";
 import { applyDemoCompanyDefaults, demoCompanyDefaults, demoCompanyProfile, saveDemoCompanyDefaults, updateDemoCompanyProfile } from "./company-settings";
 import { demoCompanyPeoplePage, demoCompanyPerson, demoOffboard, demoProjectAdmins } from "./company-people";
 import { demoPlanRequest, effectiveDemoPlan, demoPlanLevel } from "./plans";
@@ -41,7 +42,6 @@ import type {
 import type { SubmitAttendanceRecordBody, SubmitMakeupBody } from "../me.types";
 import type {
   Account,
-  Company,
   PersonForm,
   SystemSettings,
 } from "../workflows";
@@ -813,25 +813,8 @@ const routeDemo = (
     if (me.roles.highestRoleCode !== "SYSTEM_ADMIN")
       throw new ApiError(403, "仅系统管理员可以访问平台管理。", { path });
     if (parts[1] === "companies") {
-      if (method === "GET") return response(state, state.companies);
-      const body = options.data as Company;
-      if (
-        state.companies.some(
-          (row) => row.name === body.name && row.id !== body.id,
-        )
-      )
-        throw new ApiError(409, "已有同名公司。", { name: body.name });
-      const company: Company = { ...body, id: body.id || demoId("company") };
-      return response(
-        {
-          ...state,
-          companies: [
-            ...state.companies.filter((row) => row.id !== company.id),
-            company,
-          ],
-        },
-        company,
-      );
+      const result = demoSystemCompanies(state, method, parts, query, (options.data ?? {}) as Record<string, unknown>);
+      return response(result.state, result.data);
     }
     if (parts[1] === "accounts") {
       if (method === "GET") return response(state, state.accounts);

@@ -44,8 +44,10 @@ import type { FaceProfile, MyFace } from "../src/services/face";
 import type { MemberRegistration } from "../src/services/registration-review";
 import type { TransferRequest } from "../src/services/transfers";
 import type {
-  Account,
-  Company,
+  CompanyAdminAppointed,
+  CompanyAdminCandidate,
+  PlatformCompanyDetail,
+  PlatformCompanyPage,
   SystemSettings,
 } from "../src/services/workflows";
 import { chinaDaysAgo, chinaToday } from "../src/services/time";
@@ -1284,28 +1286,53 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     expect((await client.request<{ name: string }>(`/me/projects/demo-project/attendance-plan?date=${nextDay}`, { method: "GET" })).name).toBe("班组班次");
     await expect(client.request("/attendance/planning/demo-project/TEAM/demo-team", { method: "POST", data: { ...input, name: "越权" } })).rejects.toThrow();
   });
-  test("system company, account, announcement and audit changes persist", async () => {
+  test("system company, company admin, announcement and audit changes persist", async () => {
     await login("dev-system");
-    const company = await client.request<Company>("/system/companies", {
+    const company = await client.request<PlatformCompanyDetail>("/system/companies", {
       method: "POST",
-      data: { id: "", name: "第二公司", status: "ACTIVE" },
+      data: { name: "第二公司", creditCode: "91310115ma1k3yj12x" },
     });
-    const account = readDemoState().accounts.find(
-      (row) => row.id === "dev-company",
-    ) as Account;
-    await client.request("/system/accounts/dev-company", {
-      method: "PUT",
-      data: { ...account, scopeId: company.id },
+    expect(company).toMatchObject({ admins: [], creditCode: "91310115MA1K3YJ12X", status: "ACTIVE" });
+    await expect(
+      client.request("/system/companies", { method: "POST", data: { name: "第二公司" } }),
+    ).rejects.toMatchObject({ responseBody: { message: "COMPANY_NAME_EXISTS" } });
+    const candidates = await client.request<readonly CompanyAdminCandidate[]>(
+      `/system/companies/${company.id}/admin-candidates?search=陈工`,
+      { method: "GET" },
+    );
+    expect(candidates.map((row) => row.managerProfileId)).toEqual(["profile-project"]);
+    const appointed = await client.request<CompanyAdminAppointed>(`/system/companies/${company.id}/admins`, {
+      method: "POST",
+      data: { managerProfileId: "profile-project" },
     });
+    expect(appointed).toMatchObject({ invitation: null, member: { isBound: true, name: "陈工" } });
+    const invited = await client.request<CompanyAdminAppointed>(`/system/companies/${company.id}/admins`, {
+      method: "POST",
+      data: { name: "新经理", phone: "13900000077" },
+    });
+    expect(invited.invitation?.code).toMatch(/^HANBO-/);
+    const page = await client.request<PlatformCompanyPage>("/system/companies", { method: "GET" });
+    expect(page.items.find((row) => row.id === company.id)?.admins.map((row) => row.name)).toEqual(["陈工", "新经理"]);
+    // 演示里本来那家公司的管理员照旧（按账号生成的任命）。
+    expect(page.items.find((row) => row.id === "demo-company")?.admins.map((row) => row.name)).toEqual(["公司管理员"]);
+    const revoked = await client.request<{ remainingAdmins: number }>(
+      `/system/companies/${company.id}/admins/${invited.member.memberId}/revoke`,
+      { method: "POST" },
+    );
+    expect(revoked.remainingAdmins).toBe(1);
     await client.request("/system/settings", {
       method: "PUT",
       data: { supportPhone: "13800000000", announcement: "测试公告" },
     });
+    await login("dev-project");
+    expect(
+      (await client.request<MeResponse>("/auth/me", { method: "GET" })).roles.assignments,
+    ).toContainEqual({ roleCode: "COMPANY_ADMIN", scope: { scopeType: "COMPANY", scopeId: company.id } });
     await login("dev-company");
     expect(
       (await client.request<MeResponse>("/auth/me", { method: "GET" })).roles
         .assignments[0].scope.scopeId,
-    ).toBe(company.id);
+    ).toBe("demo-company");
     expect(
       (await client.request<SystemSettings>("/app/settings", { method: "GET" }))
         .announcement,

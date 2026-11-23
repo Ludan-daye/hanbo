@@ -31,7 +31,6 @@ import { chinaDaysAgo, chinaToday } from "../time";
 import type {
   Account,
   AuditEntry,
-  Company,
   SystemSettings,
 } from "../workflows";
 
@@ -70,7 +69,9 @@ export type DemoState = {
   readonly memberHistories?: readonly DemoMemberHistory[];
   readonly plans?: readonly DemoPlan[];
   readonly version: 2;
-  readonly companies: readonly Company[];
+  readonly companies: readonly import("./system-companies").DemoCompany[];
+  /** 公司管理员任命（五级第一期）；没有时按账号里的公司管理员生成。 */
+  readonly companyAdmins?: readonly import("./system-companies").DemoCompanyAdmin[];
   readonly projects: readonly ManagedProject[];
   readonly teams: readonly DemoTeam[];
   readonly people: readonly ManagedParticipant[];
@@ -351,7 +352,9 @@ export const initialDemoState = (): DemoState => {
   return {
     version: 2,
     companies: [
-      { id: "demo-company", name: "瀚渤建设（演示）", status: "ACTIVE" },
+      { id: "demo-company", name: "瀚渤建设（演示）", status: "ACTIVE", createdAt: "2026-01-01T00:00:00.000Z" },
+      // 刚建好、还没任命管理员的公司：平台“公司”标签里标红的那一行。
+      { id: "demo-company-new", name: "江宁市政工程（演示）", status: "ACTIVE", createdAt: "2026-11-20T02:00:00.000Z" },
     ],
     projects: projects.map(
       (project): ManagedProject => ({
@@ -515,10 +518,18 @@ export const demoMe = (state: DemoState, userId: string): MeResponse => {
     .flatMap((person) => memberRoleAssignments(person).map((role) => ({
       roleCode: role.roleCode, scope: { scopeType: role.roleCode === "TEAM_LEADER" ? "TEAM" : "PROJECT", scopeId: role.roleCode === "TEAM_LEADER" ? role.teamId! : person.projectId }
     })));
+  // 公司管理员一旦在平台里任免过（companyAdmins 有了），就按任命记录给公司级身份。
+  const companyAssignments: MeResponse["roles"]["assignments"] | null =
+    state.companyAdmins === undefined
+      ? null
+      : state.companyAdmins
+          .filter((row) => row.userId === userId)
+          .map((row) => ({ roleCode: "COMPANY_ADMIN", scope: { scopeType: "COMPANY", scopeId: row.companyId } }));
   const accountAssignments: MeResponse["roles"]["assignments"] = account !== undefined &&
-    (account.roleCode === "COMPANY_ADMIN" || account.roleCode === "SYSTEM_ADMIN" || profileId === null)
+    ((account.roleCode === "COMPANY_ADMIN" && companyAssignments === null) || account.roleCode === "SYSTEM_ADMIN" ||
+      (profileId === null && account.roleCode !== "COMPANY_ADMIN"))
     ? [{ roleCode: account.roleCode, scope: { scopeType: account.roleCode === "SYSTEM_ADMIN" ? "GLOBAL" : account.roleCode === "COMPANY_ADMIN" ? "COMPANY" : account.roleCode === "TEAM_LEADER" ? "TEAM" : "PROJECT", scopeId: account.scopeId } }] : [];
-  const assignments = [...accountAssignments, ...memberAssignments].sort((a, b) => ROLE_LEVEL[b.roleCode] - ROLE_LEVEL[a.roleCode]);
+  const assignments = [...accountAssignments, ...(companyAssignments ?? []), ...memberAssignments].sort((a, b) => ROLE_LEVEL[b.roleCode] - ROLE_LEVEL[a.roleCode]);
   return {
     user: {
       id: userId,
