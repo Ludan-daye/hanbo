@@ -5,19 +5,21 @@ import { authorizePermission } from "@construction/domain/roles.js";
 import type { RequestWithAuthenticatedUser } from "../auth/auth.types.js";
 
 import { AuthorizationContextService } from "./authorization-context.service.js";
+import { CompanyStatusService, isWriteMethod, targetCompanyId } from "./company-status.service.js";
 import {
   REQUIRED_PERMISSION_METADATA_KEY,
   type RequestWithAuthorizationParams,
   type RequiredPermissionMetadata
 } from "./authorization.types.js";
 
-type AuthorizationRequest = RequestWithAuthenticatedUser & RequestWithAuthorizationParams;
+type AuthorizationRequest = RequestWithAuthenticatedUser & RequestWithAuthorizationParams & { readonly method: string };
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
     @Inject(Reflector) private readonly reflector: Reflector,
-    @Inject(AuthorizationContextService) private readonly authorizationContext: AuthorizationContextService
+    @Inject(AuthorizationContextService) private readonly authorizationContext: AuthorizationContextService,
+    @Inject(CompanyStatusService) private readonly companies: CompanyStatusService
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -55,6 +57,13 @@ export class PermissionsGuard implements CanActivate {
         targetScope,
         userId: request.user.userId
       });
+    }
+
+    // A suspended company is read-only (system admin plan phase 3): checked after the
+    // permission, so someone without access still gets PERMISSION_DENIED.
+    const companyId = targetCompanyId(targetScope);
+    if (companyId !== null && isWriteMethod(request.method)) {
+      await this.companies.assertCompanyActive(companyId, request.user.userId, authorizationData.assignments);
     }
 
     return true;

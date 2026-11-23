@@ -408,6 +408,11 @@ class MakeupPrismaTestDouble {
       this.userRoles.filter((userRole: UserRoleRecord): boolean => userRole.userId === args.where.userId)
   };
 
+  // Every company here is active; suspension is covered in company-suspension.e2e.test.ts.
+  readonly company = {
+    findUnique: async (args: { where: { id: string } }): Promise<{ id: string; status: string }> => ({ id: args.where.id, status: "ACTIVE" })
+  };
+
   readonly project = {
     findUnique: async (args: ProjectFindUniqueArgs): Promise<ProjectRecord | null> => this.projects.get(args.where.id) ?? null
   };

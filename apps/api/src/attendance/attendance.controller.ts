@@ -28,7 +28,9 @@ import type {
   CompletedFaceSession,
 } from "../face/face.types.js";
 import type { UploadedMultipartFile } from "../uploads/uploads.types.js";
+import { ActiveCompanyGuard } from "../authorization/active-company.guard.js";
 import { PermissionsGuard } from "../authorization/permissions.guard.js";
+import { RequireActiveCompany } from "../authorization/require-active-company.decorator.js";
 import { RequirePermission } from "../authorization/require-permission.decorator.js";
 
 import {
@@ -45,6 +47,9 @@ import type {
   DefaultShiftResponse,
   SubmitAttendanceRecordResponse,
 } from "./attendance.types.js";
+
+/** Punching writes for a project of a suspended company are refused (system admin plan phase 3). */
+const projectCompany = { paramName: "projectId", source: "projectParam" } as const;
 
 @Controller("attendance")
 export class AttendanceController {
@@ -83,7 +88,8 @@ export class AttendanceController {
   }
 
   @Post("projects/:projectId/safety-confirmations")
-  @UseGuards(AccessTokenGuard)
+  @RequireActiveCompany(projectCompany)
+  @UseGuards(AccessTokenGuard, ActiveCompanyGuard)
   safetyConfirmation(
     @CurrentUser() user: AuthenticatedUser,
     @Param("projectId") projectId: string,
@@ -97,7 +103,8 @@ export class AttendanceController {
   }
 
   @Post("projects/:projectId/face-verifications/video")
-  @UseGuards(AccessTokenGuard)
+  @RequireActiveCompany(projectCompany)
+  @UseGuards(AccessTokenGuard, ActiveCompanyGuard)
   async createVideoSession(
     @CurrentUser() user: AuthenticatedUser,
     @Param("projectId") projectId: string,
@@ -111,7 +118,8 @@ export class AttendanceController {
   }
 
   @Post("projects/:projectId/face-verifications/:sessionId/video")
-  @UseGuards(AccessTokenGuard)
+  @RequireActiveCompany(projectCompany)
+  @UseGuards(AccessTokenGuard, ActiveCompanyGuard)
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024 } }),
   )
@@ -149,7 +157,8 @@ export class AttendanceController {
   }
 
   @Post("projects/:projectId/face-verifications")
-  @UseGuards(AccessTokenGuard)
+  @RequireActiveCompany(projectCompany)
+  @UseGuards(AccessTokenGuard, ActiveCompanyGuard)
   async createFaceSession(
     @CurrentUser() user: AuthenticatedUser,
     @Param("projectId") projectId: string,
@@ -163,7 +172,8 @@ export class AttendanceController {
   }
 
   @Post("projects/:projectId/face-verifications/:sessionId/complete")
-  @UseGuards(AccessTokenGuard)
+  @RequireActiveCompany(projectCompany)
+  @UseGuards(AccessTokenGuard, ActiveCompanyGuard)
   async completeFaceSession(
     @CurrentUser() user: AuthenticatedUser,
     @Param("projectId") projectId: string,
@@ -227,7 +237,8 @@ export class AttendanceController {
   }
 
   @Post("projects/:projectId/records")
-  @UseGuards(AccessTokenGuard)
+  @RequireActiveCompany(projectCompany)
+  @UseGuards(AccessTokenGuard, ActiveCompanyGuard)
   async submitAttendanceRecord(
     @CurrentUser() currentUser: AuthenticatedUser,
     @Param("projectId") projectId: string,

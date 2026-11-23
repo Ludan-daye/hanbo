@@ -15,7 +15,9 @@ import { defaultAttendancePoints } from "@construction/domain/attendance.js";
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { AuthenticatedUser } from "../auth/auth.types.js";
+import { ActiveCompanyGuard } from "../authorization/active-company.guard.js";
 import { AuthorizationContextService } from "../authorization/authorization-context.service.js";
+import { RequireActiveCompany } from "../authorization/require-active-company.decorator.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
@@ -287,7 +289,10 @@ export class AttendancePlansController {
     );
   }
 
+  // Plans of a suspended company stay readable but not editable (system admin plan phase 3).
   @Post(":projectId/:scopeType/:scopeId")
+  @RequireActiveCompany({ paramName: "projectId", source: "projectParam" })
+  @UseGuards(ActiveCompanyGuard)
   async save(
     @CurrentUser() actor: AuthenticatedUser,
     @Param("projectId") projectId: string,
@@ -357,6 +362,8 @@ export class AttendancePlansController {
   }
 
   @Post(":projectId/:scopeType/:scopeId/inherit")
+  @RequireActiveCompany({ paramName: "projectId", source: "projectParam" })
+  @UseGuards(ActiveCompanyGuard)
   async inherit(
     @CurrentUser() actor: AuthenticatedUser,
     @Param("projectId") projectId: string,

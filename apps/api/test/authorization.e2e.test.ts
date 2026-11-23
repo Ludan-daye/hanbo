@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, Put, UseGuards } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
@@ -8,8 +8,10 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { AccessTokenGuard } from "../src/auth/access-token.guard.js";
 import { AuthModule } from "../src/auth/auth.module.js";
+import { ActiveCompanyGuard } from "../src/authorization/active-company.guard.js";
 import { AuthorizationModule } from "../src/authorization/authorization.module.js";
 import { PermissionsGuard } from "../src/authorization/permissions.guard.js";
+import { RequireActiveCompany } from "../src/authorization/require-active-company.decorator.js";
 import { RequirePermission } from "../src/authorization/require-permission.decorator.js";
 import { PrismaService } from "../src/infrastructure/database/prisma.service.js";
 
@@ -84,6 +86,7 @@ class AuthorizationPrismaTestDouble {
   readonly users = new Map<string, UserRecord>();
   readonly sessions = new Map<string, SessionRecord>();
   readonly projects = new Map<string, ProjectRecord>();
+  readonly companies = new Map<string, { id: string; status: string }>();
   readonly roles = new Map<RoleCode, RoleRecord>();
   readonly userRoles: UserRoleRecord[] = [];
 
@@ -95,6 +98,11 @@ class AuthorizationPrismaTestDouble {
   readonly project = {
     findUnique: async (args: ProjectFindUniqueArgs): Promise<ProjectRecord | null> =>
       this.projects.get(args.where.id) ?? null
+  };
+
+  readonly company = {
+    findUnique: async (args: { where: { id: string } }): Promise<{ id: string; status: string } | null> =>
+      this.companies.get(args.where.id) ?? null
   };
 
   readonly role = {
@@ -158,6 +166,36 @@ class AuthorizationTestController {
     return {
       projectId,
       status: "ok"
+    };
+  }
+
+  @Put(":projectId")
+  @RequirePermission({
+    permissionCode: "project.manage",
+    target: {
+      paramName: "projectId",
+      source: "projectParam"
+    }
+  })
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  putProject(@Param("projectId") projectId: string): { readonly projectId: string; readonly status: "saved" } {
+    return {
+      projectId,
+      status: "saved"
+    };
+  }
+
+  // Permission checked in the service in the real routes; only the company is checked here.
+  @Put(":projectId/punch")
+  @RequireActiveCompany({
+    paramName: "projectId",
+    source: "projectParam"
+  })
+  @UseGuards(AccessTokenGuard, ActiveCompanyGuard)
+  punch(@Param("projectId") projectId: string): { readonly projectId: string; readonly status: "punched" } {
+    return {
+      projectId,
+      status: "punched"
     };
   }
 }
@@ -311,5 +349,71 @@ describe("PermissionsGuard", (): void => {
       .get("/authorization-test/projects/project-2")
       .set("Authorization", `Bearer ${accessToken}`)
       .expect(403);
+  });
+});
+
+describe("a suspended company is read-only (system admin plan phase 3)", (): void => {
+  let app: INestApplication | undefined;
+  let prisma: AuthorizationPrismaTestDouble;
+
+  const as = async (userId: string) => {
+    const token = await createAccessToken(app!, userId, `session-${userId}`);
+    return {
+      get: (path: string) => request(app!.getHttpServer()).get(path).set("Authorization", `Bearer ${token}`),
+      put: (path: string) => request(app!.getHttpServer()).put(path).set("Authorization", `Bearer ${token}`)
+    };
+  };
+
+  const grant = (userId: string, roleCode: RoleCode, scopeType: ScopeTypeValue, scopeId: string): void => {
+    prisma.seedActiveSession(userId, `session-${userId}`);
+    prisma.userRoles.push({ role: prisma.roles.get(roleCode) as RoleRecord, scopeId, scopeType, userId });
+  };
+
+  beforeEach(async (): Promise<void> => {
+    applyTestEnv();
+    prisma = new AuthorizationPrismaTestDouble();
+    seedDirectRolePermissions(prisma);
+    prisma.projects.set("project-1", { companyId: "company-1", id: "project-1" });
+    prisma.projects.set("project-2", { companyId: "company-2", id: "project-2" });
+    prisma.companies.set("company-1", { id: "company-1", status: "SUSPENDED" });
+    prisma.companies.set("company-2", { id: "company-2", status: "ACTIVE" });
+    grant("user-company", "COMPANY_ADMIN", "COMPANY", "company-1");
+    grant("user-company", "COMPANY_ADMIN", "COMPANY", "company-2");
+    grant("user-system", "SYSTEM_ADMIN", "GLOBAL", "GLOBAL");
+    grant("user-worker", "WORKER", "PROJECT", "project-1");
+    app = await createApp(prisma);
+  });
+
+  afterEach(async (): Promise<void> => {
+    await app?.close();
+    app = undefined;
+  });
+
+  test("its administrator can read but not write; another company is unaffected", async (): Promise<void> => {
+    const admin = await as("user-company");
+    await admin.get("/authorization-test/projects/project-1").expect(200);
+    const refused = await admin.put("/authorization-test/projects/project-1").expect(403);
+    expect(refused.body).toMatchObject({ companyId: "company-1", message: "COMPANY_SUSPENDED" });
+    await admin.put("/authorization-test/projects/project-2").expect(200);
+  });
+
+  test("a platform administrator is never held back", async (): Promise<void> => {
+    const system = await as("user-system");
+    await system.put("/authorization-test/projects/project-1").expect(200, { projectId: "project-1", status: "saved" });
+    await system.put("/authorization-test/projects/project-1/punch").expect(200);
+  });
+
+  test("someone without the permission still gets PERMISSION_DENIED, not the company state", async (): Promise<void> => {
+    const worker = await as("user-worker");
+    expect((await worker.put("/authorization-test/projects/project-1").expect(403)).body.message).toBe("PERMISSION_DENIED");
+  });
+
+  test("ActiveCompanyGuard holds back service-checked writes, and lets them through after resuming", async (): Promise<void> => {
+    const worker = await as("user-worker");
+    expect((await worker.put("/authorization-test/projects/project-1/punch").expect(403)).body.message).toBe("COMPANY_SUSPENDED");
+    await worker.put("/authorization-test/projects/project-2/punch").expect(200);
+    prisma.companies.set("company-1", { id: "company-1", status: "ACTIVE" });
+    await worker.put("/authorization-test/projects/project-1/punch").expect(200);
+    expect((await worker.put("/authorization-test/projects/missing/punch").expect(404)).body.message).toBe("AUTHORIZATION_PROJECT_NOT_FOUND");
   });
 });

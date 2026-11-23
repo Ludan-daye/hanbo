@@ -16,6 +16,8 @@ import type {
   SafetyViolationView,
 } from "@construction/domain";
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
+import { ActiveCompanyGuard } from "../authorization/active-company.guard.js";
+import { RequireActiveCompany } from "../authorization/require-active-company.decorator.js";
 import type { AuthenticatedUser } from "../auth/auth.types.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import { SafetyCreditService } from "./safety-credit.service.js";
@@ -66,7 +68,10 @@ export class SafetyCreditController {
   ): Promise<SafetyCreditBoard> {
     return this.safety.projectBoard(actor.userId, projectId);
   }
+  // Writes for a suspended company are refused (system admin plan phase 3); appeals check in the service.
   @Post("teams/:teamId/violations")
+  @RequireActiveCompany({ paramName: "teamId", source: "teamParam" })
+  @UseGuards(ActiveCompanyGuard)
   record(
     @CurrentUser() actor: AuthenticatedUser,
     @Param("teamId") teamId: string,
@@ -75,6 +80,8 @@ export class SafetyCreditController {
     return this.safety.record(actor.userId, teamId, parseSafetyViolation(body));
   }
   @Post("projects/:projectId/violations/:id/review")
+  @RequireActiveCompany({ paramName: "projectId", source: "projectParam" })
+  @UseGuards(ActiveCompanyGuard)
   review(
     @CurrentUser() actor: AuthenticatedUser,
     @Param("projectId") projectId: string,
@@ -99,6 +106,8 @@ export class SafetyCreditController {
     return this.safety.appeal(actor.userId, id, parseSafetyReason(body));
   }
   @Post("projects/:projectId/violations/:id/appeals/:appealId/review")
+  @RequireActiveCompany({ paramName: "projectId", source: "projectParam" })
+  @UseGuards(ActiveCompanyGuard)
   appealReview(
     @CurrentUser() actor: AuthenticatedUser,
     @Param("projectId") projectId: string,

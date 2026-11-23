@@ -12,7 +12,9 @@ import {
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { AuthenticatedUser } from "../auth/auth.types.js";
+import { ActiveCompanyGuard } from "../authorization/active-company.guard.js";
 import { PermissionsGuard } from "../authorization/permissions.guard.js";
+import { RequireActiveCompany } from "../authorization/require-active-company.decorator.js";
 import { RequirePermission } from "../authorization/require-permission.decorator.js";
 
 import {
@@ -59,7 +61,8 @@ export class MakeupController {
   }
 
   @Post("projects/:projectId/requests")
-  @UseGuards(AccessTokenGuard)
+  @RequireActiveCompany({ paramName: "projectId", source: "projectParam" })
+  @UseGuards(AccessTokenGuard, ActiveCompanyGuard)
   async createMakeupRequest(
     @CurrentUser() currentUser: AuthenticatedUser,
     @Param("projectId") projectId: string,

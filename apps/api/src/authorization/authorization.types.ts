@@ -41,3 +41,8 @@ export type RequestWithAuthorizationParams = {
 };
 
 export const REQUIRED_PERMISSION_METADATA_KEY = "construction.requiredPermission";
+
+/** A company-bearing target: where an ActiveCompanyGuard finds the company of a write. */
+export type ActiveCompanyTarget = CompanyParamPermissionTarget | ProjectParamPermissionTarget | TeamParamPermissionTarget;
+
+export const REQUIRED_ACTIVE_COMPANY_METADATA_KEY = "construction.requiredActiveCompany";

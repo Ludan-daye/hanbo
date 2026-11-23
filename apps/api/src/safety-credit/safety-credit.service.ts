@@ -30,6 +30,7 @@ import {
   type AuthorizationTargetScope,
 } from "@construction/domain/roles.js";
 import { AuthorizationContextService } from "../authorization/authorization-context.service.js";
+import { CompanyStatusService } from "../authorization/company-status.service.js";
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
@@ -127,6 +128,7 @@ export class SafetyCreditService {
     @Inject(UploadsService) private readonly uploads: UploadsService,
     @Inject(STORAGE_PORT) private readonly storage: ReadableStoragePort,
     @Inject(API_ENV) private readonly env: ApiEnv,
+    @Inject(CompanyStatusService) private readonly companies: CompanyStatusService,
   ) {}
 
   async policiesIn(
@@ -551,6 +553,7 @@ export class SafetyCreditService {
       });
       if (row === null)
         throw new NotFoundException({ message: "APPEAL_NOT_ALLOWED" });
+      await this.companies.assertProjectCompanyActive(row.projectId, userId);
       const pending = await database.safetyCreditAppeal.findFirst({
         where: { violationId, status: "PENDING" },
       });

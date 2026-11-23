@@ -23,6 +23,7 @@ import {
 } from "../auth/account-onboarding.js";
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
+import { CompanyStatusService } from "../authorization/company-status.service.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import {
   decryptPersonnelName,
@@ -37,6 +38,7 @@ export class TemporaryInvitationsService {
   constructor(
     @Inject(PrismaService) private readonly db: PrismaService,
     @Inject(API_ENV) private readonly env: ApiEnv,
+    @Inject(CompanyStatusService) private readonly companies: CompanyStatusService,
   ) {}
 
   private codeHash(code: string): string {
@@ -270,6 +272,7 @@ export class TemporaryInvitationsService {
           where: { id: initial.id },
           include: { task: { include: { team: true } } },
         });
+        await this.companies.assertTeamCompanyActive(invite.task.teamId, userId);
         assertIdentityMatches(
           {
             realName: decryptPersonnelName(

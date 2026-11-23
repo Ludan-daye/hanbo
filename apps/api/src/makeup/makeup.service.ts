@@ -46,6 +46,7 @@ import type {
 } from "../attendance/attendance.types.js";
 import { AuthorizationContextService } from "../authorization/authorization-context.service.js";
 import type { AuthorizationData } from "../authorization/authorization.types.js";
+import { CompanyStatusService } from "../authorization/company-status.service.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 
 import type {
@@ -256,6 +257,8 @@ export class MakeupService {
     @Inject(API_ENV) private readonly env: ApiEnv,
     @Inject(AttendanceService)
     private readonly attendanceService: AttendanceService,
+    @Inject(CompanyStatusService)
+    private readonly companies: CompanyStatusService,
   ) {}
 
   async createMakeupRequest(
@@ -359,6 +362,7 @@ export class MakeupService {
   ): Promise<ReviewMakeupResponse> {
     const request = await this.getPendingMakeupRequestOrThrow(requestId);
     await this.assertReviewerAuthorized(request, approverUserId);
+    await this.companies.assertProjectCompanyActive(request.projectId, approverUserId);
     return this.prisma.$transaction(
       async (tx): Promise<ReviewMakeupResponse> => {
         const overtimePoint = parseOvertimePoint(request.pointCode);
@@ -479,6 +483,7 @@ export class MakeupService {
   ): Promise<ReviewMakeupResponse> {
     const request = await this.getPendingMakeupRequestOrThrow(requestId);
     await this.assertReviewerAuthorized(request, approverUserId);
+    await this.companies.assertProjectCompanyActive(request.projectId, approverUserId);
     const updated = await this.prisma.$transaction(async (tx) => {
       const updateResult = await tx.makeupRequest.updateMany({
         data: {

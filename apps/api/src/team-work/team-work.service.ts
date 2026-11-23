@@ -32,6 +32,7 @@ import type {
 
 import { API_ENV } from "../config/env.module.js";
 import type { ApiEnv } from "../config/env.js";
+import { CompanyStatusService } from "../authorization/company-status.service.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
 import { decryptPersonnelName } from "../management/personnel-name.js";
 import { ReportsService } from "../reports/reports.service.js";
@@ -48,7 +49,9 @@ export const requireActiveTeam = async (
     where: {
       id: teamId,
       status: "ACTIVE",
-      project: { status: "ACTIVE", company: { status: "ACTIVE" } },
+      // A suspended company answers COMPANY_SUSPENDED before this (PermissionsGuard or
+      // CompanyStatusService), and a platform administrator may still work in it.
+      project: { status: "ACTIVE" },
     },
   });
   if (team === null)
@@ -75,6 +78,7 @@ export class TeamWorkService {
     @Inject(PrismaService) private readonly db: PrismaService,
     @Inject(API_ENV) private readonly env: ApiEnv,
     @Inject(ReportsService) private readonly reports: ReportsService,
+    @Inject(CompanyStatusService) private readonly companies: CompanyStatusService,
   ) {}
 
   private name(encrypted: string): string {
@@ -844,6 +848,7 @@ export class TeamWorkService {
       });
       if (briefing === null)
         throw new NotFoundException({ message: "安全交底不存在。" });
+      await this.companies.assertTeamCompanyActive(briefing.teamId, userId);
       await requireActiveTeam(tx, briefing.teamId);
       const member = await tx.projectWorkerMember.findFirst({
         where: {
