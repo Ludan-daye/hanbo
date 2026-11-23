@@ -18,6 +18,7 @@ import { ReportsModule } from "./reports/reports.module.js";
 import { UploadsModule } from "./uploads/uploads.module.js";
 import { WorktimeModule } from "./worktime/worktime.module.js";
 import { SafetyCreditModule } from "./safety-credit/safety-credit.module.js";
+import { SystemModule } from "./system/system.module.js";
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { SafetyCreditModule } from "./safety-credit/safety-credit.module.js";
     TeamWorkModule,
     WorktimeModule,
     SafetyCreditModule,
+    SystemModule,
     UploadsModule,
   ],
   controllers: [HealthController],

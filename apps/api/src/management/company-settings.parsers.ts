@@ -49,7 +49,8 @@ export const parseCompanyAttendanceDefaults = (body: unknown): CompanyAttendance
   return result.data;
 };
 
-const optionalText = (max: number) =>
+/** A trimmed optional text field: blank becomes null. Also used by the platform's company form. */
+export const optionalText = (max: number) =>
   z
     .string()
     .trim()
@@ -57,17 +58,20 @@ const optionalText = (max: number) =>
     .nullable()
     .transform((value) => (value === null || value.length === 0 ? null : value));
 
+/** A mobile or landline number, or blank (null). */
+export const contactPhoneSchema = z
+  .string()
+  .trim()
+  .regex(/^(?:1\d{10}|0\d{2,3}-?\d{7,8})$/)
+  .nullable()
+  .or(z.literal("").transform(() => null));
+
 export const parseCompanyProfile = (body: unknown): CompanyProfileWrite => {
   const result = z
     .object({
       address: optionalText(120),
       contactName: optionalText(30),
-      contactPhone: z
-        .string()
-        .trim()
-        .regex(/^(?:1\d{10}|0\d{2,3}-?\d{7,8})$/)
-        .nullable()
-        .or(z.literal("").transform(() => null)),
+      contactPhone: contactPhoneSchema,
       expectedUpdatedAt: z.string().datetime({ offset: true }),
     })
     .strict()

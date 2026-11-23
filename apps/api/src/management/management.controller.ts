@@ -1,5 +1,4 @@
 import { Body, Controller, GoneException, Get, Header, Inject, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
-import { GLOBAL_SCOPE_ID } from "@construction/domain/roles.js";
 
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
@@ -8,7 +7,6 @@ import { PermissionsGuard } from "../authorization/permissions.guard.js";
 import { RequirePermission } from "../authorization/require-permission.decorator.js";
 
 import {
-  parseCreateCompanyRequest,
   parseCreateProjectManagerRequest,
   parseCreateProjectRequest,
   parseProjectManagerSearch,
@@ -33,7 +31,6 @@ import type { ManagedParticipantResponse, ParticipantPageResponse } from "./part
 import type { BindingInvitationListItem } from "./management-invitation.types.js";
 import type {
   CompanyParticipantResponse,
-  CompanyResponse,
   ManagedProjectResponse,
   ProjectManagerMemberResponse,
   ProjectManagerCandidate,
@@ -207,22 +204,6 @@ export class ManagementController {
   @UseGuards(AccessTokenGuard, PermissionsGuard)
   async updateParticipant(@CurrentUser() actor: AuthenticatedUser, @Param("projectId") projectId: string, @Param("memberId") memberId: string, @Body() body: unknown): Promise<ManagedParticipantResponse> {
     return this.participants.update(projectId, memberId, actor.userId, parseParticipantWrite(body));
-  }
-
-  @Post("companies")
-  @RequirePermission({
-    permissionCode: "system.manage",
-    target: {
-      source: "static",
-      targetScope: {
-        scopeId: GLOBAL_SCOPE_ID,
-        scopeType: "GLOBAL"
-      }
-    }
-  })
-  @UseGuards(AccessTokenGuard, PermissionsGuard)
-  async createCompany(@Body() body: unknown): Promise<CompanyResponse> {
-    return this.managementService.createCompany(parseCreateCompanyRequest(body));
   }
 
   @Get("companies/:companyId/project-manager-candidates")

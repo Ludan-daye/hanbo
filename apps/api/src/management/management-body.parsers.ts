@@ -3,7 +3,6 @@ import { z } from "zod";
 import type { TeamWriteRequest } from "./teams.types.js";
 
 import type {
-  CreateCompanyRequest,
   CreateProjectManagerRequest,
   CreateProjectRequest,
   CreateProjectWorkerRequest,
@@ -44,11 +43,6 @@ const nonEmptyStringSchema = z.string().min(1);
 const dateOnlySchema = z.string().refine(isValidDateOnly);
 const dateTimeSchema = z.string().datetime({ offset: true });
 const nullableDateTimeSchema = z.union([dateTimeSchema, z.null()]);
-
-const createCompanyRequestSchema = z.object({
-  name: nonEmptyStringSchema,
-  status: nonEmptyStringSchema
-});
 
 const projectWriteFieldsSchema = z.object({
   address: nonEmptyStringSchema,
@@ -122,9 +116,6 @@ const parseBody = <T>(body: unknown, schema: z.ZodType<T>, message: string): T =
 
   return result.data;
 };
-
-export const parseCreateCompanyRequest = (body: unknown): CreateCompanyRequest =>
-  parseBody(body, createCompanyRequestSchema, "INVALID_CREATE_COMPANY_REQUEST");
 
 export const parseCreateProjectRequest = (body: unknown): CreateProjectRequest =>
   parseBody(body, createProjectRequestSchema, "INVALID_CREATE_PROJECT_REQUEST");

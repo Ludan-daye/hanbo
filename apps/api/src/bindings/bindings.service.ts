@@ -1,5 +1,3 @@
-import { randomBytes } from "node:crypto";
-
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type {
   BindingInvitation,
@@ -10,8 +8,9 @@ import type {
   WorkerProfile
 } from "@prisma/client";
 
-import { hashSensitiveToken } from "../auth/auth.service.js";
 import { PrismaService } from "../infrastructure/database/prisma.service.js";
+
+import { issueInvitationCode } from "./invitation-code.js";
 
 import type {
   BindingInvitationResponse,
@@ -32,12 +31,6 @@ type BindingTarget = {
   readonly targetType: "MANAGER" | "WORKER";
   readonly workerProfileId: string | null;
 };
-
-const invitationLifetimeMs = 7 * 24 * 60 * 60 * 1000;
-
-const createInvitationCode = (): string => randomBytes(24).toString("base64url");
-
-const getInvitationExpiration = (now: Date): Date => new Date(now.getTime() + invitationLifetimeMs);
 
 const createBindingInvitationResponse = (
   projectId: string,
@@ -87,15 +80,13 @@ export class BindingsService {
       request.targetType === "WORKER"
         ? await this.getWorkerBindingTarget(projectId, request.profileId)
         : await this.getManagerBindingTarget(projectId, request.profileId);
-    const code = createInvitationCode();
-    const now = new Date();
-    const expiresAt = getInvitationExpiration(now);
+    const { code, codeHash, expiresAt } = issueInvitationCode(new Date());
 
     const invitation = await this.prisma.$transaction(async (transaction): Promise<BindingInvitation> => {
       const created = await transaction.bindingInvitation.create({
         data: {
           acceptedByUserId: null,
-          codeHash: hashSensitiveToken(code),
+          codeHash,
           createdByUserId: actorUserId,
           expiresAt,
           managerProfileId: target.managerProfileId,

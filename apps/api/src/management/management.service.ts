@@ -3,7 +3,6 @@ import { Prisma } from "@prisma/client";
 import type { ProjectMemberRole } from "@prisma/client";
 import { additionalRoleView } from "./membership-roles.js";
 import type {
-  Company,
   ManagerProfile,
   Project,
   ProjectManagerMember,
@@ -22,8 +21,6 @@ import { CompanySettingsService } from "./company-settings.service.js";
 
 import type {
   CompanyParticipantResponse,
-  CompanyResponse,
-  CreateCompanyRequest,
   CreateProjectManagerRequest,
   CreateProjectRequest,
   CreateProjectWorkerRequest,
@@ -84,12 +81,6 @@ const toIsoStringOrNull = (value: Date | null): string | null => {
 
   return value.toISOString();
 };
-
-const createCompanyResponse = (company: Company): CompanyResponse => ({
-  id: company.id,
-  name: company.name,
-  status: company.status
-});
 
 const createProjectResponse = (project: Project): ProjectResponse => ({
   address: project.address,
@@ -308,17 +299,6 @@ export class ManagementService {
         ]
       }
     })) > 0;
-  }
-
-  async createCompany(request: CreateCompanyRequest): Promise<CompanyResponse> {
-    const company = await this.prisma.company.create({
-      data: {
-        name: request.name,
-        status: request.status
-      }
-    });
-
-    return createCompanyResponse(company);
   }
 
   async listProjectManagerCandidates(companyId: string, search: string): Promise<readonly ProjectManagerCandidate[]> {

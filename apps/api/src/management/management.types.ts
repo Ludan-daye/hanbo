@@ -13,17 +13,6 @@ export type WorkRoleScope = {
   readonly projectId: string | null;
 };
 
-export type CreateCompanyRequest = {
-  readonly name: string;
-  readonly status: string;
-};
-
-export type CompanyResponse = {
-  readonly id: string;
-  readonly name: string;
-  readonly status: string;
-};
-
 export type ProjectWriteFields = {
   readonly address: string;
   readonly centerLatitude: string;
