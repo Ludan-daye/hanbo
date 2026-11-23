@@ -1,6 +1,6 @@
 # 五级超级管理员（SYSTEM_ADMIN）：现状、缺口与规划
 
-日期：2026-11-22。依据：分支 `project-admin`（`c8fb484`，与 `origin/main` 相同）的代码、`README.md`、`docs/功能总览与实施计划.md`（下称“总览”）、设计稿 `docs/design/ui-redesign/src/s_admin.py`、`docs/design/02-auth-authorization.md`，以及三级规划 `2026-11-20-project-admin-plan.md`（下称“三级规划”）、四级规划 `2026-11-21-company-admin-plan.md`（下称“四级规划”）里用户的决定和实施记录。下文路径相对仓库根目录。根据代码推出、没有逐行验证的结论标“推断”。
+日期：2026-11-22。依据：分支 `project-admin`（`c8fb484`，与 `origin/main` 相同）的代码、`README.md`、`docs/功能总览与实施计划.md`（下称“总览”）、设计稿 `docs/design/ui-redesign/src/s_admin.py`、`docs/archive/design-2026-07/02-auth-authorization.md`，以及三级规划 `2026-11-20-project-admin-plan.md`（下称“三级规划”）、四级规划 `2026-11-21-company-admin-plan.md`（下称“四级规划”）里用户的决定和实施记录。下文路径相对仓库根目录。根据代码推出、没有逐行验证的结论标“推断”。
 
 前两级的决定在这里照样适用：管理员看用工资料原文、不写理由（三级决定 2、3）；查看用工资料留访问记录（四级 Q9）；安全信用规则全平台一份，公司管理员只读（四级 Q7）；公司管理员不能任命公司管理员，可改联系人、电话、地址，**名称和信用代码只能由超级管理员改**（四级 Q12）；项目状态只能由公司管理员或超级管理员改（四级 Q5）。
 

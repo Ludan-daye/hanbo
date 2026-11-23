@@ -45,7 +45,7 @@
 2. **工作台不给项目管理员显示待办数。** `workspace/index.tsx` 只在 TEAM_LEADER 的 TEAM 范围下读待审批数。
 3. **底照审核没有固定入口。** `FEATURES.projectAdmin` 里没有 `face-review`；没有待审时首页也不出现这一项，只能从项目人员页进入。
 4. **班组侧页面对项目管理员不开放，虽然接口允许。** `team-work` `team-safety` `team-log` `team-attendance` `safety-credit` 都用 `useManagedTeamId`，只接受 TEAM_LEADER 授权（`use-management-scope.ts:30-34`）。结果是项目管理员看不到各班组的安全交底确认、隐患整改、班组日报和任务，也不能直接登记违规（`POST /safety-credit/teams/:teamId/violations`）。
-5. **补卡收件箱不能按项目筛选。** `GET /makeups/pending` 只接受 `cursor`。`docs/design/05-reports-queries.md:213` 早已把“项目维度待审列表”列为规划中。
+5. **补卡收件箱不能按项目筛选。** `GET /makeups/pending` 只接受 `cursor`。`docs/archive/design-2026-07/05-reports-queries.md:213` 早已把“项目维度待审列表”列为规划中。
 6. **同级管理没有限制（推断）。** `participants.service.ts` 只拦截修改自己的授权（`CANNOT_CHANGE_OWN_MANAGEMENT_ASSIGNMENT`，约 807、986 行），`managerRole` 允许把成员设为 `PROJECT_ADMIN`，没有比较操作人职级。也就是说，项目管理员可以任命另一名项目管理员，也可以撤掉他。这和打卡安排、评分“不能设置／评价同级”的规则不一致。
 7. **审核动作缺审计。** `auditLog.create` 只出现在 account、attendance-plans、auth、bindings、management、participants、teams、report-exports、team-work 中。补卡审批、底照审核、工时规则保存、违规复核都不写 AuditLog（后两者有自己的版本表或决定表）。`AuditLog` 也没有 `projectId` 列（`schema.prisma:667-680`），无法按项目查询。
 8. **人员资料无法核实。** 敏感资料只有本人接口 `/account/worker-registration`。管理员读不到，也不能标记核实；`WorkerProfile.realNameStatus` 建档时写为 `PENDING` 后再也没有变化（`participants.service.ts:430`）。这是总览 F06／F24 的“部分完成”部分，也是 README 待完成表的第 1 项。
