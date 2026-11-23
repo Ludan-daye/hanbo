@@ -1316,6 +1316,47 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     await client.request("/system/accounts/dev-team/enable", { method: "POST" });
     expect((await login("dev-team")).roles.highestRoleCode).toBe("TEAM_LEADER");
   });
+  test("a suspended company is read-only for its people, never for the platform (phase 3)", async () => {
+    await login("dev-system");
+    const read = await client.request<PlatformCompanyDetail>("/system/companies/demo-company", { method: "GET" });
+    const suspended = await client.request<PlatformCompanyDetail>("/system/companies/demo-company/status", {
+      method: "POST",
+      data: { expectedUpdatedAt: read.updatedAt, status: "SUSPENDED" },
+    });
+    expect(suspended.status).toBe("SUSPENDED");
+    await expect(
+      client.request("/system/companies/demo-company/status", { method: "POST", data: { expectedUpdatedAt: read.updatedAt, status: "SUSPENDED" } }),
+    ).rejects.toMatchObject({ responseBody: { message: "COMPANY_CHANGED_RELOAD_BEFORE_SAVING" } });
+
+    await login("dev-company");
+    const profile = await client.request<{ updatedAt: string }>("/management/companies/demo-company/profile", { method: "GET" });
+    await client.request("/management/companies/demo-company/overview", { method: "GET" });
+    const edit = { address: "上海", contactName: "王经理", contactPhone: null, expectedUpdatedAt: profile.updatedAt };
+    await expect(client.request("/management/companies/demo-company/profile", { method: "PUT", data: edit })).rejects.toMatchObject({
+      message: "公司已暂停，只能查看和导出记录，不能打卡、补卡或修改。请联系平台恢复。",
+      responseBody: { message: "COMPANY_SUSPENDED" },
+      statusCode: 403,
+    });
+    expect((await client.request<MeResponse>("/auth/me", { method: "GET" })).companies).toEqual([
+      expect.objectContaining({ id: "demo-company", status: "SUSPENDED" }),
+    ]);
+
+    await login("dev-worker");
+    await expect(
+      client.request("/makeups/projects/demo-project/requests", {
+        method: "POST",
+        data: { attendanceDate: chinaToday(), pointCode: "SEGMENT_1_START", reason: "忘记打卡", requestedOccurredAt: new Date().toISOString() },
+      }),
+    ).rejects.toMatchObject({ responseBody: { message: "COMPANY_SUSPENDED" } });
+
+    await login("dev-system");
+    await client.request("/management/companies/demo-company/profile", { method: "PUT", data: edit });
+    const current = await client.request<PlatformCompanyDetail>("/system/companies/demo-company", { method: "GET" });
+    await client.request("/system/companies/demo-company/status", { method: "POST", data: { expectedUpdatedAt: current.updatedAt, status: "ACTIVE" } });
+    await login("dev-company");
+    const after = await client.request<{ updatedAt: string }>("/management/companies/demo-company/profile", { method: "GET" });
+    await client.request("/management/companies/demo-company/profile", { method: "PUT", data: { ...edit, expectedUpdatedAt: after.updatedAt } });
+  });
   test("system company, company admin, announcement and audit changes persist", async () => {
     await login("dev-system");
     const company = await client.request<PlatformCompanyDetail>("/system/companies", {

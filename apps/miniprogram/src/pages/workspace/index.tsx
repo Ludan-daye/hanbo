@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { CompanySuspendedNotice } from "../../components/company-suspended-notice";
 import { RolePanel, ScopeChooser } from "../../components/role-panels/index";
 import { scopeKey, scopeLine } from "../../components/role-panels/scope";
 import {
@@ -133,6 +134,7 @@ export default function Workspace(): JSX.Element {
 
   return (
     <Screen header={<AppHeader title="工作台" />}>
+      <CompanySuspendedNotice />
       {error ? (
         <StateView title="工作范围读取失败" sub={error} onRetry={refresh} />
       ) : scopes === null ? (

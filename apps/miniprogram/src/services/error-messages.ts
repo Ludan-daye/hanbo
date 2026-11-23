@@ -78,6 +78,9 @@ export const API_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   COMPANY_ADMIN_CANDIDATE_NOT_FOUND: "没找到这个管理账号，请重新搜索。",
   COMPANY_ADMIN_CANDIDATE_NOT_ACTIVE: "这个账号已停用，不能任命。",
   COMPANY_ADMIN_CHANGED_RELOAD: "邀请码刚有变化，请刷新后再试。",
+  // 公司暂停后只读（五级第三期，Q5）。
+  COMPANY_SUSPENDED: "公司已暂停，只能查看和导出记录，不能打卡、补卡或修改。请联系平台恢复。",
+  INVALID_SYSTEM_COMPANY_STATUS_REQUEST: "暂停或恢复的请求不完整，请刷新后再试。",
   INVALID_SYSTEM_ACCOUNT_QUERY: "账号列表的筛选条件不对，请返回重新打开。",
   ACCOUNT_NOT_FOUND: "没找到这个账号，可能还没有绑定。",
   CANNOT_DISABLE_SELF: "不能停用自己正在用的账号。",

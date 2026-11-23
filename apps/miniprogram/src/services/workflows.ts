@@ -292,6 +292,12 @@ export const updateCompany = (
   body: CompanyForm & { readonly expectedUpdatedAt: string },
 ): Promise<PlatformCompanyDetail> =>
   apiClient.request(`/system/companies/${encodeURIComponent(companyId)}`, { method: "PUT", data: body });
+/** 暂停（只读，Q5）或恢复一家公司；带上读到的 updatedAt，别人刚改过就是 409。 */
+export const setCompanyStatus = (
+  companyId: string,
+  body: { readonly status: "ACTIVE" | "SUSPENDED"; readonly expectedUpdatedAt: string },
+): Promise<PlatformCompanyDetail> =>
+  apiClient.request(`/system/companies/${encodeURIComponent(companyId)}/status`, { method: "POST", data: body });
 export const fetchCompanyAdminCandidates = (
   companyId: string,
   search: string,

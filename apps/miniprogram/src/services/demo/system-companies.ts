@@ -221,6 +221,29 @@ export const demoSystemCompanies = (
     const next = saveForm(state, company, form, now);
     return { state: next, data: detail(next, companyId) };
   }
+  if (section === "status") {
+    // 暂停（只读，Q5）或恢复：和服务器一样核对读到的版本和状态。
+    const wanted = body.status;
+    if ((wanted !== "ACTIVE" && wanted !== "SUSPENDED") || typeof body.expectedUpdatedAt !== "string")
+      return fail(400, "INVALID_SYSTEM_COMPANY_STATUS_REQUEST");
+    if (body.expectedUpdatedAt !== detail(state, companyId).updatedAt || company.status === wanted)
+      fail(409, "COMPANY_CHANGED_RELOAD_BEFORE_SAVING");
+    const profile = state.companyProfiles?.[companyId];
+    const next: DemoState = {
+      ...state,
+      companies: state.companies.map((row) => (row.id === companyId ? { ...row, status: wanted } : row)),
+      companyProfiles: {
+        ...state.companyProfiles,
+        [companyId]: {
+          address: profile?.address ?? null,
+          contactName: profile?.contactName ?? null,
+          contactPhone: profile?.contactPhone ?? null,
+          updatedAt: now,
+        },
+      },
+    };
+    return { state: next, data: detail(next, companyId) };
+  }
   if (section === "admin-candidates") return { state, data: candidates(state, companyId, (query.search ?? "").trim()) };
   if (section !== "admins") fail(404, "NOT_FOUND");
   const admins = demoCompanyAdmins(state);

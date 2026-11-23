@@ -3,6 +3,7 @@ import Taro, { usePullDownRefresh } from "@tarojs/taro";
 import { useEffect, useState } from "react";
 
 import { API_BASE_URL, FRONTEND_DEMO } from "../../config/env";
+import { CompanySuspendedNotice } from "../company-suspended-notice";
 import { useAccountProfile } from "../../hooks/use-account-profile";
 import { useCachedRead } from "../../hooks/use-cached-read";
 import { useMyProjectAttendance } from "../../hooks/use-my-project-attendance";
@@ -250,6 +251,7 @@ export const WorkerHome = ({
       }
     >
       <View data-project-id={projectId ?? ""}>
+        <CompanySuspendedNotice />
         {loading ? (
           <SkeletonSign tall />
         ) : !usable ? (

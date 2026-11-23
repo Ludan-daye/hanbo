@@ -31,6 +31,7 @@ import {
   fetchCompanyAdminCandidates,
   reissueCompanyAdminInvitation,
   revokeCompanyAdmin,
+  setCompanyStatus,
   updateCompany,
   type CompanyAdmin,
   type CompanyAdminAppointment,
@@ -98,6 +99,8 @@ export const CompanyScreen = ({
   const [draft, setDraft] = useState<CompanyDraft | null>(null);
   const [issued, setIssued] = useState<Issued | null>(null);
   const [lastRevoked, setLastRevoked] = useState<boolean>(false);
+  /** 暂停、恢复没成功的原因，放在那个按钮上方。 */
+  const [statusProblem, setStatusProblem] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,6 +232,35 @@ export const CompanyScreen = ({
     }, "邀请码没生成，请重试。");
   };
 
+  const suspended = company.status === "SUSPENDED";
+  // 暂停就是只读（Q5）：人还能登录、查看、导出，什么都不能写；平台不受限。
+  const toggleStatus = async (): Promise<void> => {
+    if (busy) return;
+    const confirmed = await Taro.showModal({
+      title: suspended ? "恢复公司" : "暂停公司",
+      content: suspended
+        ? `恢复后，${company.name}的人照常打卡、补卡、审批和管理项目。`
+        : `暂停后，${company.name}的人还能登录、查看和导出记录，但不能打卡、补卡、审批，也不能新建或修改任何东西。项目、人员和记录都不动，随时可以恢复。`,
+      confirmText: suspended ? "恢复" : "暂停",
+    });
+    if (!confirmed.confirm) return;
+    setBusy(true);
+    setStatusProblem(null);
+    try {
+      const next = await setCompanyStatus(company.id, {
+        expectedUpdatedAt: company.updatedAt,
+        status: suspended ? "ACTIVE" : "SUSPENDED",
+      });
+      setCompany(next);
+      onChanged();
+      await Taro.showToast({ title: suspended ? "已恢复" : "已暂停", icon: "success" });
+    } catch (cause: unknown) {
+      setStatusProblem(errorMessage(cause, suspended ? "没恢复成功，请重试。" : "没暂停成功，请重试。"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const facts: ReadonlyArray<readonly [string, string | null]> = [
     ["简称", company.shortName],
     ["信用代码", company.creditCode],
@@ -239,6 +271,12 @@ export const CompanyScreen = ({
 
   return (
     <>
+      {suspended ? (
+        <Notice tone="warning">
+          这家公司已暂停
+          <View className="ui-notice__sub">公司里的人只能查看和导出，不能打卡、补卡或修改。你在平台里照常能管，恢复在页面底部。</View>
+        </Notice>
+      ) : null}
       <SectionTitle>公司管理员</SectionTitle>
       {company.admins.length === 0 ? (
         <Sheet gap>
@@ -334,6 +372,15 @@ export const CompanyScreen = ({
       >
         修改资料
       </Button>
+      {statusProblem !== null ? <Notice tone="error">{statusProblem}</Notice> : null}
+      <Button variant={suspended ? "outline" : "danger"} wide loading={busy} disabled={busy} onClick={() => void toggleStatus()}>
+        {suspended ? "恢复公司" : "暂停公司"}
+      </Button>
+      <Notice>
+        {suspended
+          ? "恢复后，这家公司的人照常打卡、补卡和管理。"
+          : "合同到期、欠费时暂停。暂停后这家公司只读：能登录、查看和导出，不能打卡、补卡、新建或修改。"}
+      </Notice>
     </>
   );
 };

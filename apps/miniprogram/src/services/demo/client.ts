@@ -22,6 +22,7 @@ import { ROLE_LEVEL } from "@construction/domain/roles.js";
 import { participantPermissionRole } from "../../routing/permissionLevels";
 
 import { ApiError, type ApiClient, type RequestOptions } from "../apiClient";
+import { API_ERROR_MESSAGES } from "../error-messages";
 import { noteWrite } from "../read-cache";
 import type { AccountProfile } from "../account";
 import { emptyWorkerRegistration, normalizeWorkerRegistration, workerRegistrationError, type WorkerRegistration } from "@construction/domain";
@@ -209,13 +210,42 @@ const canManageDemoProject = (
       assignment.roleCode === "SYSTEM_ADMIN" ||
       (assignment.roleCode === "PROJECT_ADMIN" &&
         assignment.scope.scopeId === projectId) ||
+      // 暂停的公司照样能看（Q5），写操作由 assertDemoCompanyWritable 拦。
       (assignment.roleCode === "COMPANY_ADMIN" &&
-        assignment.scope.scopeId === project?.companyId &&
-        state.companies.some(
-          (company) =>
-            company.id === project.companyId && company.status === "ACTIVE",
-        )),
+        assignment.scope.scopeId === project?.companyId),
   );
+};
+/** 个人账号、登录、上传、导出和全平台的信用规则不属于哪家公司，暂停时照常（和服务器的清单一致）。 */
+const OPEN_WHILE_SUSPENDED: readonly ((parts: readonly string[]) => boolean)[] = [
+  (parts) => ["account", "app", "auth", "report-exports", "system", "uploads"].includes(parts[0]),
+  (parts) => parts[0] === "face-profiles" && parts[1] === "me",
+  (parts) => parts[0] === "safety-credit" && parts[1] === "policies",
+];
+/** 写操作落在哪家公司：按路径里的公司、项目、班组、补卡；“我的”写操作按他所在的公司。 */
+const demoWriteCompanies = (state: DemoState, userId: string, parts: readonly string[]): readonly string[] => {
+  const projectCompany = (projectId: string | undefined): string[] => {
+    const companyId = state.projects.find((project) => project.id === projectId)?.companyId;
+    return companyId === undefined ? [] : [companyId];
+  };
+  const teamCompany = (teamId: string | undefined): string[] =>
+    projectCompany(state.teams.find((team) => team.id === teamId)?.projectId);
+  if (parts[1] === "companies" && parts[2] !== undefined) return [parts[2]];
+  if (parts[1] === "projects") return projectCompany(parts[2]);
+  if (parts[0] === "attendance" && parts[1] === "planning") return projectCompany(parts[2]);
+  if (parts[1] === "teams") return teamCompany(parts[2]);
+  if (parts[0] === "makeups" && parts[1] === "requests")
+    return projectCompany(state.makeups.find((row) => row.id === parts[2])?.projectId);
+  return (demoMe(state, userId).companies ?? []).map((company) => company.id);
+};
+/** 公司暂停后只读（五级第三期，Q5）：写操作一律 COMPANY_SUSPENDED，超级管理员不受限。 */
+const assertDemoCompanyWritable = (state: DemoState, userId: string, parts: readonly string[], method: string): void => {
+  if (method === "GET" || OPEN_WHILE_SUSPENDED.some((open) => open(parts))) return;
+  if (demoMe(state, userId).roles.highestRoleCode === "SYSTEM_ADMIN") return;
+  const companies = demoWriteCompanies(state, userId, parts);
+  const suspended = companies.filter((id) => state.companies.find((company) => company.id === id)?.status === "SUSPENDED");
+  // “我的”写操作（申诉、确认交底、加入任务）只有所在公司全都暂停时才拦，和服务器按记录查到的结果一样。
+  if (suspended.length > 0 && suspended.length === companies.length)
+    throw new ApiError(403, API_ERROR_MESSAGES.COMPANY_SUSPENDED, { companyId: suspended[0], message: "COMPANY_SUSPENDED" });
 };
 /**
  * 只有公司级能批：项目里除了申请人和自己，没有职级更高的项目管理员，
@@ -463,7 +493,7 @@ const assertDemoScope = (
     parts[1] === "companies" &&
     role === "COMPANY_ADMIN" &&
     parts[2] === assignedScope &&
-    managedCompany?.status === "ACTIVE"
+    managedCompany !== undefined
   )
     return;
   if (parts[1] === "projects" && managesProject(parts[2])) return;
@@ -624,6 +654,7 @@ const routeDemo = (
   );
   const me = demoMe(state, userId);
   assertDemoScope(state, userId, path, method);
+  assertDemoCompanyWritable(state, userId, parts, method);
   if (parts[0] === "safety-credit") return demoSafetyCreditRequest(state, userId, parts, options);
   if (parts[0] === "worktime" && parts[1] === "projects" && parts[2]) return demoWorktimeRequest(state, userId, parts[2], options);
   if (parts[0] === "team-work") return demoTeamWorkRequest(state, userId, parts, query.date, query.cursor, query.search, options);

@@ -2,6 +2,7 @@ import { View } from "@tarojs/components";
 import Taro, { usePullDownRefresh } from "@tarojs/taro";
 import { useEffect, type PropsWithChildren } from "react";
 
+import { CompanySuspendedNotice } from "../../../components/company-suspended-notice";
 import { ScopeChooser } from "../../../components/role-panels/index";
 import { scopeShortName } from "../../../components/role-panels/scope";
 import {
@@ -81,6 +82,7 @@ export const HomeShell = ({
   readonly onRetry?: () => void;
 }>): JSX.Element => (
   <Screen header={<AppHeader title={title} onSwitch={onSwitch} />}>
+    <CompanySuspendedNotice />
     {children}
     {announcement ? <Notice>公告：{announcement}</Notice> : null}
     {notRemembered ? (

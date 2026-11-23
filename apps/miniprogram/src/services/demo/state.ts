@@ -530,7 +530,20 @@ export const demoMe = (state: DemoState, userId: string): MeResponse => {
       (profileId === null && account.roleCode !== "COMPANY_ADMIN"))
     ? [{ roleCode: account.roleCode, scope: { scopeType: account.roleCode === "SYSTEM_ADMIN" ? "GLOBAL" : account.roleCode === "COMPANY_ADMIN" ? "COMPANY" : account.roleCode === "TEAM_LEADER" ? "TEAM" : "PROJECT", scopeId: account.scopeId } }] : [];
   const assignments = [...accountAssignments, ...(companyAssignments ?? []), ...memberAssignments].sort((a, b) => ROLE_LEVEL[b.roleCode] - ROLE_LEVEL[a.roleCode]);
+  // 和服务器同口径：公司、项目、班组身份所在的公司，带上状态（五级第三期）。
+  const companyIds = new Set(
+    assignments.flatMap((assignment): string[] => {
+      const { scopeType, scopeId } = assignment.scope;
+      if (scopeType === "COMPANY") return [scopeId];
+      const projectId = scopeType === "TEAM" ? state.teams.find((team) => team.id === scopeId)?.projectId : scopeType === "PROJECT" ? scopeId : undefined;
+      const companyId = state.projects.find((project) => project.id === projectId)?.companyId;
+      return companyId === undefined ? [] : [companyId];
+    }),
+  );
   return {
+    companies: state.companies
+      .filter((company) => companyIds.has(company.id))
+      .map((company) => ({ id: company.id, name: company.name, status: company.status })),
     user: {
       id: userId,
       isBound: userId !== "dev-unbound" || profileId !== null,
