@@ -74,6 +74,12 @@ const CATEGORY_ACTIONS: Readonly<Record<AuditCategory, readonly string[]>> = {
     "PERSONNEL_OFFBOARDED",
     "COMPANY_DEFAULTS_SAVED",
     "COMPANY_PROFILE_UPDATED",
+    // Platform actions on one company (system admin plan, phase 1).
+    "COMPANY_CREATED",
+    "COMPANY_UPDATED",
+    "COMPANY_ADMIN_APPOINTED",
+    "COMPANY_ADMIN_REVOKED",
+    "COMPANY_ADMIN_INVITATION_ISSUED",
   ],
 };
 
@@ -141,6 +147,14 @@ export const auditTargetRef = (entry: {
       }));
     case "TEMPORARY_INVITATION_ACCEPTED":
       return task(meta.taskId);
+    case "COMPANY_ADMIN_APPOINTED":
+    case "COMPANY_ADMIN_REVOKED":
+    case "COMPANY_ADMIN_INVITATION_ISSUED":
+      return id(meta.managerProfileId, (found) => ({
+        kind: "profile",
+        participantType: "MANAGER",
+        id: found,
+      }));
     case "PERSONNEL_TRANSFER_APPROVED":
       return member(meta.createdMemberId);
     case "PERSONNEL_TRANSFER_REQUESTED":
@@ -186,6 +200,16 @@ export const auditTargetRef = (entry: {
     default:
       return null;
   }
+};
+
+/** Company fields named in a COMPANY_UPDATED entry's metadata.changed. */
+const COMPANY_FIELD_NAMES: Readonly<Record<string, string>> = {
+  address: "地址",
+  contactName: "联系人",
+  contactPhone: "联系电话",
+  creditCode: "信用代码",
+  name: "名称",
+  shortName: "简称",
 };
 
 /**
@@ -245,6 +269,24 @@ export const auditSentence = (
         return "保存了公司默认的打卡安排和工时规则";
       case "COMPANY_PROFILE_UPDATED":
         return "修改了公司资料";
+      case "COMPANY_CREATED": {
+        const name = text(meta.name);
+        return name === null ? "创建了公司" : `创建了公司“${name}”`;
+      }
+      case "COMPANY_UPDATED": {
+        const fields = (Array.isArray(meta.changed) ? meta.changed : [])
+          .map((key: unknown) => (typeof key === "string" ? COMPANY_FIELD_NAMES[key] : undefined))
+          .filter((name): name is string => name !== undefined);
+        return fields.length === 0 ? "修改了公司资料" : `修改了公司的${fields.join("、")}`;
+      }
+      case "COMPANY_ADMIN_APPOINTED":
+        return meta.invited === true
+          ? `任命 ${person} 为公司管理员，并生成了邀请码`
+          : `任命 ${person} 为公司管理员`;
+      case "COMPANY_ADMIN_REVOKED":
+        return `撤销了 ${person} 的公司管理员身份`;
+      case "COMPANY_ADMIN_INVITATION_ISSUED":
+        return `重新给 ${person} 生成了公司管理员邀请码`;
       case "FACE_PROFILE_REVIEWED":
         return meta.decision === "REJECTED"
           ? `退回了 ${person} 的人脸底照`

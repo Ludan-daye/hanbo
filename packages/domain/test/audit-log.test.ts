@@ -100,3 +100,32 @@ describe("company-level operation log", () => {
     expect(auditSentence({ action: "COMPANY_DEFAULTS_SAVED", metadata: {} }, "王经理", null)).toBe("王经理 保存了公司默认的打卡安排和工时规则");
   });
 });
+
+describe("platform actions on a company (system admin phase 1)", () => {
+  it("files company creation, edits and admin appointments under 公司", () => {
+    for (const action of ["COMPANY_CREATED", "COMPANY_UPDATED", "COMPANY_ADMIN_APPOINTED", "COMPANY_ADMIN_REVOKED", "COMPANY_ADMIN_INVITATION_ISSUED"])
+      expect(auditCategoryOf(action)).toBe("COMPANY");
+  });
+
+  it("points appointments at the manager profile", () => {
+    expect(
+      auditTargetRef({ action: "COMPANY_ADMIN_APPOINTED", entityType: "company_manager_member", entityId: "m1", metadata: { managerProfileId: "p1" } }),
+    ).toEqual({ kind: "profile", participantType: "MANAGER", id: "p1" });
+    expect(
+      auditTargetRef({ action: "COMPANY_ADMIN_REVOKED", entityType: "company_manager_member", entityId: "m1", metadata: {} }),
+    ).toBeNull();
+  });
+
+  it("says what was done", () => {
+    expect(auditSentence({ action: "COMPANY_CREATED", metadata: { name: "瀚渤建设" } }, "平台", null)).toBe("平台 创建了公司“瀚渤建设”");
+    expect(auditSentence({ action: "COMPANY_CREATED", metadata: {} }, "平台", null)).toBe("平台 创建了公司");
+    expect(auditSentence({ action: "COMPANY_UPDATED", metadata: { changed: ["name", "creditCode"] } }, "平台", null)).toBe("平台 修改了公司的名称、信用代码");
+    expect(auditSentence({ action: "COMPANY_UPDATED", metadata: { changed: [] } }, "平台", null)).toBe("平台 修改了公司资料");
+    expect(auditSentence({ action: "COMPANY_ADMIN_APPOINTED", metadata: {} }, "平台", "李四")).toBe("平台 任命 李四 为公司管理员");
+    expect(auditSentence({ action: "COMPANY_ADMIN_APPOINTED", metadata: { invited: true } }, "平台", "李四")).toBe(
+      "平台 任命 李四 为公司管理员，并生成了邀请码",
+    );
+    expect(auditSentence({ action: "COMPANY_ADMIN_REVOKED", metadata: {} }, "平台", "李四")).toBe("平台 撤销了 李四 的公司管理员身份");
+    expect(auditSentence({ action: "COMPANY_ADMIN_INVITATION_ISSUED", metadata: {} }, "平台", "李四")).toBe("平台 重新给 李四 生成了公司管理员邀请码");
+  });
+});
