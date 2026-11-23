@@ -150,12 +150,6 @@ export type SystemSettings = {
   readonly supportPhone: string;
   readonly announcement: string;
 };
-export type AuditEntry = {
-  readonly id: string;
-  readonly action: string;
-  readonly actor: string;
-  readonly createdAt: string;
-};
 
 export const createPerson = (
   projectId: string,
@@ -327,13 +321,15 @@ export const revokeCompanyAdmin = (
     `/system/companies/${encodeURIComponent(companyId)}/admins/${encodeURIComponent(memberId)}/revoke`,
     { method: "POST" },
   );
-/** 平台的账号，一页 30 个，新的在前；按姓名、手机号在服务器上查。 */
+/** 平台的账号，一页 30 个，新的在前；按姓名、手机号在服务器上查，也可以只要有某种身份的。 */
 export const fetchAccounts = (options: {
   readonly search: string;
   readonly status: PlatformAccountStatus | null;
   readonly cursor: string | null;
+  readonly role?: RoleCode;
 }): Promise<PlatformAccountPage> => {
   const query: string[] = [];
+  if (options.role !== undefined) query.push(`role=${options.role}`);
   if (options.search.trim()) query.push(`search=${encodeURIComponent(options.search.trim())}`);
   if (options.status !== null) query.push(`status=${options.status}`);
   if (options.cursor !== null) query.push(`cursor=${encodeURIComponent(options.cursor)}`);
@@ -349,15 +345,13 @@ export const disableAccount = (userId: string): Promise<PlatformAccountDetail> =
   apiClient.request(`/system/accounts/${encodeURIComponent(userId)}/disable`, { method: "POST" });
 export const enableAccount = (userId: string): Promise<PlatformAccountDetail> =>
   apiClient.request(`/system/accounts/${encodeURIComponent(userId)}/enable`, { method: "POST" });
-// 下面设置、日志两组接口服务器还没有（平台规划第四、五期），现在只有演示版。
+// 平台设置的接口服务器还没有（平台规划第五期），现在只有演示版。
 export const fetchSystemSettings = (): Promise<SystemSettings> =>
   apiClient.request("/system/settings", { method: "GET" });
 export const saveSystemSettings = (
   body: SystemSettings,
 ): Promise<SystemSettings> =>
   apiClient.request("/system/settings", { method: "PUT", data: body });
-export const fetchAuditEntries = (): Promise<readonly AuditEntry[]> =>
-  apiClient.request("/system/audit", { method: "GET" });
 export const fetchProject = (projectId: string): Promise<ManagedProject> =>
   apiClient.request(`/management/projects/${projectId}`, { method: "GET" });
 export const updateProject = (body: ManagedProject): Promise<ManagedProject> =>

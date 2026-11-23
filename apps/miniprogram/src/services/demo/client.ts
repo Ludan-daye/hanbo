@@ -49,7 +49,7 @@ import type { UploadResult } from "../uploads";
 import { chinaToday, chinaDaysAgo } from "../time";
 import { checkAttendanceGeofence } from "../geofence";
 import { managedDemoTeam } from "./teams";
-import { demoAuditLog } from "./audit-log";
+import { demoAuditDetail, demoAuditLog, isDemoRegistrationView, recentDemoView, type DemoAuditEntry } from "./audit-log";
 import { demoSystemAccounts } from "./system-accounts";
 import type { TransferRequestForm } from "../transfers";
 import { dayHeadcount } from "../day-headcount";
@@ -858,7 +858,16 @@ const routeDemo = (
             { ...state, settings: options.data as SystemSettings },
             options.data,
           );
-    if (parts[1] === "audit") return response(state, state.audit);
+    if (parts[1] === "audit-logs" && method === "GET")
+      return response(
+        state,
+        demoAuditLog(
+          state,
+          { kind: "PLATFORM", companyId: query.companyId ?? null, actorUserId: query.actorUserId ?? null },
+          (query.type as AuditCategory | undefined) ?? null,
+          query.cursor ?? null,
+        ),
+      );
   }
   if (parts[0] === "me" && parts[1] === "projects" && parts.length === 3 && method === "GET")
     return response(state, demoMyProject(state, userId, parts[2]));
@@ -999,24 +1008,16 @@ const routeDemo = (
     const scope = parts[1];
     const scopeId = parts[2];
     const resource = parts[3];
-    if (resource === "audit-logs" && method === "GET") {
-      const projectIds =
-        scope === "companies"
-          ? state.projects
-              .filter((row) => row.companyId === scopeId)
-              .map((row) => row.id)
-          : [scopeId];
+    if (resource === "audit-logs" && method === "GET")
       return response(
         state,
         demoAuditLog(
           state,
-          projectIds,
+          scope === "companies" ? { kind: "COMPANY", companyId: scopeId } : { kind: "PROJECT", projectId: scopeId },
           (query.type as AuditCategory | undefined) ?? null,
           query.cursor ?? null,
-          scope === "companies" ? scopeId : null,
         ),
       );
-    }
     if (scope === "companies") {
       if (resource === "attendance-defaults")
         return method === "GET"
@@ -2232,21 +2233,26 @@ export const createDemoClient = (): ApiClient => ({
     }
     const userId = currentUser();
     const result = routeDemo(state, userId, path, options ?? {});
-    const next: DemoState =
-      options?.method && options.method !== "GET"
-        ? {
-            ...result.state,
-            audit: [
-              {
-                id: demoId("audit"),
-                action: `${options.method} ${path}`,
-                actor: userId,
-                createdAt: new Date().toISOString(),
-              },
-              ...result.state.audit,
-            ].slice(0, 200),
-          }
-        : result.state;
+    const method = options?.method ?? "GET";
+    const action = `${method} ${path.split("?")[0]}`;
+    const now = Date.now();
+    // 写操作都记；读只记查看用工资料（和服务器一样，十分钟里同一人看同一份只记一次）。
+    const logged =
+      method !== "GET" ||
+      (isDemoRegistrationView(method, path) &&
+        (result.data as { readonly registration?: unknown } | null)?.registration != null &&
+        !recentDemoView(result.state.audit, userId, action, now));
+    const detail = method === "GET" ? undefined : demoAuditDetail(state, method, path, options?.data, result.data);
+    const entry: DemoAuditEntry = {
+      id: demoId("audit"),
+      action: method === "GET" ? action : `${method} ${path}`,
+      actor: userId,
+      createdAt: new Date(now).toISOString(),
+      ...(detail === undefined ? {} : { detail }),
+    };
+    const next: DemoState = logged
+      ? { ...result.state, audit: [entry, ...result.state.audit].slice(0, 200) }
+      : result.state;
     Taro.setStorageSync(STORAGE_KEY, next);
     // 和真实接口一致：写操作成功后读取缓存作废。
     if (options?.method && options.method !== "GET") noteWrite();

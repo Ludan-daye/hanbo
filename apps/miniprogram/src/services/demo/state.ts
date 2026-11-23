@@ -30,9 +30,9 @@ import type {
 import { chinaDaysAgo, chinaToday } from "../time";
 import type {
   Account,
-  AuditEntry,
   SystemSettings,
 } from "../workflows";
+import type { DemoAuditEntry } from "./audit-log";
 
 export type DemoFace = FaceProfile & { readonly photo: string };
 export type DemoInvitation = ProjectInvitation & { readonly code: string };
@@ -84,7 +84,7 @@ export type DemoState = {
   readonly makeups: readonly Makeup[];
   readonly faces: readonly DemoFace[];
   readonly settings: SystemSettings;
-  readonly audit: readonly AuditEntry[];
+  readonly audit: readonly DemoAuditEntry[];
   readonly boundProfileId: string | null;
   readonly accountProfiles?: Readonly<Record<string, AccountProfile>>;
   readonly workerRegistrations?: Readonly<Record<string, WorkerRegistration>>;

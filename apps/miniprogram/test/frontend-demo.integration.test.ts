@@ -1167,6 +1167,53 @@ describe("standalone frontend workflows using persistent demo storage", () => {
     await expect(client.request("/management/companies/demo-company/project-health", { method: "GET" })).rejects.toThrow();
   });
 
+  test("the platform log shows every company and the platform's own actions, filtered by company, type and actor", async () => {
+    type Page = { items: { action: string; actorUserId: string | null; category: string | null; companyId: string | null; companyName: string | null; sentence: string }[] };
+    await login("dev-worker");
+    await client.request("/account/worker-registration", { method: "PUT", data: {
+      idNumber: "320106199003071234", residentialAddress: "测试市测试路 8 号", emergencyContactName: "王测试",
+      emergencyContactPhone: "13900002001", hasLongTermMedication: false, medicationDetails: "",
+      hasPersonalInsurance: false, insuranceDetails: "", payrollBankCard: "6222020200112233445",
+    } });
+    await login("dev-company");
+    const profile = await client.request<{ updatedAt: string }>("/management/companies/demo-company/profile", { method: "GET" });
+    await client.request("/management/companies/demo-company/profile", {
+      method: "PUT", data: { address: null, contactName: "王经理", contactPhone: null, expectedUpdatedAt: profile.updatedAt } });
+    await login("dev-system");
+    const company = await client.request<PlatformCompanyDetail>("/system/companies", { method: "POST", data: { name: "平台日志公司" } });
+    await client.request(`/system/companies/${company.id}/status`, { method: "POST", data: { expectedUpdatedAt: company.updatedAt, status: "SUSPENDED" } });
+    await client.request(`/system/companies/${company.id}/admins`, { method: "POST", data: { name: "新经理", phone: "13900000078" } });
+    await client.request("/system/accounts/dev-team/disable", { method: "POST" });
+    const registration = "/management/projects/demo-project/participants/member-worker/registration";
+    await client.request(registration, { method: "GET" });
+    await client.request(registration, { method: "GET" });
+
+    const all = await client.request<Page>("/system/audit-logs", { method: "GET" });
+    expect(all.items.map((row) => row.sentence).slice(0, 5)).toEqual([
+      "平台管理员 查看了 张建国（演示） 的用工资料",
+      "平台管理员 停用了 王师傅 的账号",
+      "平台管理员 任命 新经理 为公司管理员，并生成了邀请码",
+      "平台管理员 暂停了公司“平台日志公司”",
+      "平台管理员 创建了公司“平台日志公司”",
+    ]);
+    expect(all.items.find((row) => row.action === "COMPANY_PROFILE_UPDATED")).toMatchObject({ category: "COMPANY", companyId: "demo-company" });
+    expect(all.items.find((row) => row.action === "COMPANY_CREATED")).toMatchObject({ category: "PLATFORM", companyName: "平台日志公司" });
+
+    const query = async (search: string): Promise<string[]> =>
+      (await client.request<Page>(`/system/audit-logs?${search}`, { method: "GET" })).items.map((row) => row.action);
+    expect(await query("type=PLATFORM")).toEqual(["ACCOUNT_DISABLED", "COMPANY_ADMIN_APPOINTED", "COMPANY_SUSPENDED", "COMPANY_CREATED"]);
+    expect(await query(`companyId=${company.id}`)).toEqual(["COMPANY_ADMIN_APPOINTED", "COMPANY_SUSPENDED", "COMPANY_CREATED"]);
+    expect(await query("companyId=demo-company")).toEqual(["WORKER_REGISTRATION_VIEWED", "COMPANY_PROFILE_UPDATED"]);
+    expect(await query("actorUserId=dev-system&type=PEOPLE")).toEqual(["WORKER_REGISTRATION_VIEWED"]);
+    expect(await query("actorUserId=dev-company")).toEqual(["COMPANY_PROFILE_UPDATED"]);
+
+    // The company's own log still files what the platform did to it under 公司.
+    const own = await client.request<Page>(`/management/companies/${company.id}/audit-logs?type=COMPANY`, { method: "GET" });
+    expect(own.items.map((row) => row.category)).toEqual(["COMPANY", "COMPANY", "COMPANY"]);
+    await login("dev-company");
+    await expect(client.request("/system/audit-logs", { method: "GET" })).rejects.toThrow();
+  });
+
   test("selected project managers receive access without losing their original project", async () => {
     await login("dev-company");
     const project = await client.request<CompanyProject>("/management/companies/demo-company/projects", {

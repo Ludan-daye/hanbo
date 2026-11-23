@@ -12,11 +12,8 @@ import { usePageRefresh } from "../../hooks/use-page-refresh";
 import { useSessionGuard } from "../../hooks/use-session-guard";
 import {
   createCompany,
-  fetchAccounts,
-  fetchAuditEntries,
   fetchSystemSettings,
   saveSystemSettings,
-  type AuditEntry,
   type SystemSettings,
 } from "../../services/workflows";
 import { useSession } from "../../store/session";
@@ -28,8 +25,8 @@ import {
   systemScreen,
   type CompanyDraft,
 } from "./system-view";
+import { AuditLogList } from "../audit-log/audit-list";
 import { AccountScreen, AccountsTab } from "./views/accounts";
-import { AuditTab } from "./views/audit";
 import { CompaniesTab, NewCompanyView } from "./views/companies";
 import { CompanyScreen, type CompanyMode } from "./views/company";
 import { SettingsTab } from "./views/settings";
@@ -66,13 +63,6 @@ const useTabData = <T,>(
   return { data, error };
 };
 
-/** 日志（现在只有演示版）里的账号编号换成姓名：读第一页账号就够了。 */
-const loadAuditNames = async (): Promise<readonly { readonly id: string; readonly name: string }[]> =>
-  (await fetchAccounts({ search: "", status: null, cursor: null })).items.map((row) => ({
-    id: row.userId,
-    name: row.displayName,
-  }));
-
 export default function SystemManagement(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
@@ -88,9 +78,7 @@ export default function SystemManagement(): JSX.Element {
   // 读取失败各标签自己显示；保存、校验失败只在按钮旁边说明，填的东西留着。
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
-  const auditNames = useTabData(allowed && tab === "AUDIT", revision, loadAuditNames);
   const settingsRead = useTabData(allowed && tab === "SETTINGS", revision, fetchSystemSettings);
-  const audit = useTabData<readonly AuditEntry[]>(allowed && tab === "AUDIT", revision, fetchAuditEntries);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   useEffect(() => setSettings(settingsRead.data), [settingsRead.data]);
 
@@ -258,9 +246,8 @@ export default function SystemManagement(): JSX.Element {
           />
         ) : null,
       );
-    return tabState(audit.data, audit.error, () => (
-      <AuditTab audit={audit.data ?? []} accounts={auditNames.data ?? []} />
-    ));
+    // 日志：全平台的操作记录，和公司、项目的操作记录同一个列表，多了公司和操作人两个筛选。
+    return <AuditLogList scope={{ kind: "PLATFORM" }} revision={revision} onRetry={refresh} />;
   };
 
   return (

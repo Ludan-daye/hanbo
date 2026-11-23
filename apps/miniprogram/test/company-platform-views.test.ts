@@ -14,7 +14,6 @@ import {
   accountRoleTarget,
   accountRowStatus,
   accountRowSub,
-  auditActor,
   auditTime,
   companyAdminSub,
   companyDraftOf,
@@ -23,7 +22,6 @@ import {
   companyFormProblem,
   companyRowStatus,
   companyRowSub,
-  describeAudit,
   EMPTY_COMPANY_DRAFT,
   systemScreen,
 } from "../src/pages/system-management/system-view";
@@ -199,31 +197,7 @@ describe("平台管理", () => {
     expect(systemScreen({ ...none, hasAccount: true })).toBe("account");
   });
 
-  it("日志把“请求方式 路径”换成一句话，屏上不出现英文", () => {
-    expect(describeAudit("POST /system/companies")).toBe("保存公司");
-    expect(describeAudit("POST /system/accounts/dev-admin/disable")).toBe("停用账号");
-    expect(describeAudit("POST /system/accounts/dev-admin/enable")).toBe("恢复账号");
-    expect(describeAudit("PUT /system/settings")).toBe("修改平台设置");
-    expect(describeAudit("POST /management/companies/c1/projects")).toBe(
-      "新建项目",
-    );
-    expect(describeAudit("PUT /management/projects/p1/teams/t1")).toBe(
-      "修改班组",
-    );
-    expect(
-      describeAudit("POST /team-work/teams/t1/tasks?date=2026-11-18"),
-    ).toBe("提交班组任务");
-    expect(describeAudit("DELETE /something/else")).toBe("删除数据");
-  });
-
-  it("服务器已经写成一句话的日志原样显示", () => {
-    expect(describeAudit("调整账号权限")).toBe("调整账号权限");
-  });
-
-  it("日志里的账号编号换成姓名，时间按中国时间写到分钟", () => {
-    const accounts = [{ id: "dev-admin", name: "陈工" }];
-    expect(auditActor("dev-admin", accounts)).toBe("陈工");
-    expect(auditActor("王师傅", accounts)).toBe("王师傅");
+  it("最近登录的时间按中国时间写到分钟", () => {
     expect(auditTime("2026-11-18T02:20:00.000Z")).toBe("11-18 10:20");
     expect(auditTime("2026-12-31T16:05:00.000Z")).toBe("01-01 00:05");
     expect(auditTime("不是时间")).toBe("");
