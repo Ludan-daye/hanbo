@@ -424,9 +424,10 @@ export const systemAdminSign = (
     ...(companies.suspended > 0 ? [`${companies.suspended} 家公司已暂停`] : []),
     ...(accounts.disabled > 0 ? [`${accounts.disabled} 个账号已停用`] : []),
   ];
+  // 360px 宽的标牌上大字只放得下公司数，项目和账号放在下面一行。
   return {
-    title: `${companies.active} 家公司，${projects.active} 个进行中项目`,
-    sub: [`${accounts.active} 个账号在用`, ...extra].join("，"),
+    title: `${companies.active} 家公司`,
+    sub: [`${projects.active} 个进行中项目`, `${accounts.active} 个账号在用`, ...extra].join("，"),
   };
 };
 
@@ -447,7 +448,7 @@ export const systemAdminTodos = (
           {
             key: "companies-without-admin",
             title: `没有管理员的公司 ${todos.companiesWithoutAdmin} 家`,
-            sub: "任命公司管理员，或录入新人发邀请码",
+            sub: "去任命公司管理员",
             url: `${PLATFORM_COMPANIES_URL}&admin=NONE`,
           },
         ]
@@ -457,7 +458,7 @@ export const systemAdminTodos = (
           {
             key: "admin-invitations",
             title: `公司管理员还没绑定 ${todos.pendingAdminInvitations} 人`,
-            sub: "等他用邀请码绑定微信；过期了可以重新生成",
+            sub: "等他用邀请码绑定微信",
             url: `${PLATFORM_COMPANIES_URL}&admin=NOT_BOUND`,
           },
         ]
@@ -467,7 +468,7 @@ export const systemAdminTodos = (
           {
             key: "makeups",
             title: `补卡申请 ${todos.makeupOnlyYou} 条只有你能批`,
-            sub: "申请人是公司管理员，或这家公司没有别人能批",
+            sub: "公司里没有别人能批",
             url: "/pages/team-makeups/index",
           },
         ]

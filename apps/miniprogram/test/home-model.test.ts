@@ -511,10 +511,10 @@ const systemOverview = {
 
 describe("systemAdminSign", () => {
   test("says how big the platform is; suspended companies and disabled accounts only when there are any", () => {
-    expect(systemAdminSign(systemOverview)).toEqual({ title: "3 家公司，7 个进行中项目", sub: "412 个账号在用" });
+    expect(systemAdminSign(systemOverview)).toEqual({ title: "3 家公司", sub: "7 个进行中项目，412 个账号在用" });
     expect(
       systemAdminSign({ ...systemOverview, accounts: { active: 40, disabled: 2 }, companies: { active: 3, suspended: 1 } }),
-    ).toEqual({ title: "3 家公司，7 个进行中项目", sub: "40 个账号在用，1 家公司已暂停，2 个账号已停用" });
+    ).toEqual({ title: "3 家公司", sub: "7 个进行中项目，40 个账号在用，1 家公司已暂停，2 个账号已停用" });
     expect(systemAdminSign({ ...systemOverview, companies: { active: 0, suspended: 0 }, projects: { active: 0 } })).toEqual({
       title: "还没有公司",
       sub: "在平台管理里新增第一家公司。",
