@@ -25,6 +25,12 @@ export type SystemCompanyUpdate = SystemCompanyWrite & {
   readonly expectedUpdatedAt: string;
 };
 
+/** Suspend (read-only, Q5) or resume a company, against the version read. */
+export type SystemCompanyStatusChange = {
+  readonly expectedUpdatedAt: string;
+  readonly status: SystemCompanyStatus;
+};
+
 /** Appoint an existing manager profile, or enter a new person who then binds with a code. */
 export type CompanyAdminAppointment =
   | { readonly managerProfileId: string }

@@ -7,6 +7,7 @@ import type {
   CompanyAdminAppointment,
   SystemAccountQuery,
   SystemCompanyQuery,
+  SystemCompanyStatusChange,
   SystemCompanyUpdate,
   SystemCompanyWrite,
 } from "./system.types.js";
@@ -64,6 +65,16 @@ export const parseSystemCompanyUpdate = (body: unknown): SystemCompanyUpdate => 
     .safeParse(body);
   if (!result.success) return fail("INVALID_SYSTEM_COMPANY_REQUEST", result.error.issues);
   return { ...result.data, creditCode: normalizedCreditCode(result.data.creditCode) };
+};
+
+/** Suspend or resume (phase 3): the target status and the updatedAt the page read. */
+export const parseSystemCompanyStatusChange = (body: unknown): SystemCompanyStatusChange => {
+  const result = z
+    .object({ expectedUpdatedAt: z.string().datetime({ offset: true }), status: z.enum(["ACTIVE", "SUSPENDED"]) })
+    .strict()
+    .safeParse(body);
+  if (!result.success) return fail("INVALID_SYSTEM_COMPANY_STATUS_REQUEST", result.error.issues);
+  return result.data;
 };
 
 export const parseSystemCompanyQuery = (query: unknown): SystemCompanyQuery => {

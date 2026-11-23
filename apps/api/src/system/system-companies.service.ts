@@ -18,6 +18,7 @@ import type {
   SystemCompanyPage,
   SystemCompanyQuery,
   SystemCompanyRow,
+  SystemCompanyStatusChange,
   SystemCompanyUpdate,
   SystemCompanyWrite,
 } from "./system.types.js";
@@ -188,6 +189,40 @@ export class SystemCompaniesService {
         });
       })
       .catch((error: unknown): never => this.rethrowCreditCode(error, body.creditCode));
+    return this.detail(companyId);
+  }
+
+  /**
+   * Suspend or resume (phase 3, Q5). Only the status changes: projects, people, records and
+   * administrators stay as they are, and resuming brings everything back. Optimistic on
+   * updatedAt and on the status the page showed, so a double tap does not flip it back.
+   */
+  async setStatus(actorUserId: string, companyId: string, body: SystemCompanyStatusChange): Promise<SystemCompanyDetail> {
+    const previous = await this.company(companyId);
+    await this.prisma.$transaction(async (transaction): Promise<void> => {
+      const result = await transaction.company.updateMany({
+        where: {
+          id: companyId,
+          status: body.status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED",
+          updatedAt: new Date(body.expectedUpdatedAt),
+        },
+        data: {
+          status: body.status,
+          updatedAt: new Date(Math.max(Date.now(), previous.updatedAt.getTime() + 1)),
+        },
+      });
+      assertOne(result.count, "conflict", "COMPANY_CHANGED_RELOAD_BEFORE_SAVING", { companyId });
+      await transaction.auditLog.create({
+        data: {
+          action: body.status === "SUSPENDED" ? "COMPANY_SUSPENDED" : "COMPANY_RESUMED",
+          actorUserId,
+          companyId,
+          entityId: companyId,
+          entityType: "company",
+          metadata: { companyId, name: previous.name },
+        },
+      });
+    });
     return this.detail(companyId);
   }
 

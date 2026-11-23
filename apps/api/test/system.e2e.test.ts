@@ -114,9 +114,12 @@ class SystemPrismaDouble {
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
     findUnique: async (args: { where: { id: string } }): Promise<CompanyRecord | null> =>
       this.companies.find((company) => company.id === args.where.id) ?? null,
-    updateMany: async (args: { data: Partial<CompanyRecord>; where: { id: string; updatedAt: Date } }) => {
+    updateMany: async (args: { data: Partial<CompanyRecord>; where: { id: string; status?: string; updatedAt: Date } }) => {
       const company = this.companies.find(
-        (row) => row.id === args.where.id && row.updatedAt.getTime() === args.where.updatedAt.getTime(),
+        (row) =>
+          row.id === args.where.id &&
+          row.updatedAt.getTime() === args.where.updatedAt.getTime() &&
+          (args.where.status === undefined || row.status === args.where.status),
       );
       if (company === undefined) return { count: 0 };
       Object.assign(company, args.data);
@@ -264,6 +267,7 @@ describe("platform companies (/system)", (): void => {
       await as(user).post("/system/companies/company-1/admins", { managerProfileId: "profile-1" }).expect(403);
       await as(user).post("/system/companies/company-1/admins/member-1/revoke").expect(403);
       await as(user).post("/system/companies/company-1/admins/member-1/invitation").expect(403);
+      await as(user).post("/system/companies/company-1/status", { status: "SUSPENDED" }).expect(403);
     }
     expect(prisma.companies).toHaveLength(1);
   });
@@ -350,6 +354,35 @@ describe("platform companies (/system)", (): void => {
       .put(`/system/companies/${text(other.body.id)}`, { ...body, creditCode: VALID_CODE, expectedUpdatedAt: other.body.updatedAt, name: "别的公司" })
       .expect(200);
     await as("system").get("/system/companies/missing").expect(404);
+  });
+
+  test("suspending and resuming: against the version and the status read, recorded both ways", async (): Promise<void> => {
+    await as("system").post("/system/companies", { name: "瀚渤建设" }).expect(201);
+    const read = await as("system").get("/system/companies/company-1").expect(200);
+    for (const body of [{ status: "SUSPENDED" }, { expectedUpdatedAt: read.body.updatedAt, status: "CLOSED" }, { expectedUpdatedAt: read.body.updatedAt, name: "x", status: "SUSPENDED" }])
+      expect((await as("system").post("/system/companies/company-1/status", body).expect(400)).body.message).toBe("INVALID_SYSTEM_COMPANY_STATUS_REQUEST");
+
+    const suspended = await as("system")
+      .post("/system/companies/company-1/status", { expectedUpdatedAt: read.body.updatedAt, status: "SUSPENDED" })
+      .expect(201);
+    expect(suspended.body).toMatchObject({ id: "company-1", status: "SUSPENDED" });
+    expect(suspended.body.updatedAt).not.toBe(read.body.updatedAt);
+    // A second tap with the old version, or asking for the state it is already in, changes nothing.
+    for (const body of [
+      { expectedUpdatedAt: read.body.updatedAt, status: "SUSPENDED" },
+      { expectedUpdatedAt: suspended.body.updatedAt, status: "SUSPENDED" },
+    ])
+      expect((await as("system").post("/system/companies/company-1/status", body).expect(409)).body.message).toBe("COMPANY_CHANGED_RELOAD_BEFORE_SAVING");
+
+    const resumed = await as("system")
+      .post("/system/companies/company-1/status", { expectedUpdatedAt: suspended.body.updatedAt, status: "ACTIVE" })
+      .expect(201);
+    expect(resumed.body.status).toBe("ACTIVE");
+    expect(prisma.auditLogs.slice(1)).toEqual([
+      { action: "COMPANY_SUSPENDED", companyId: "company-1", metadata: { companyId: "company-1", name: "瀚渤建设" } },
+      { action: "COMPANY_RESUMED", companyId: "company-1", metadata: { companyId: "company-1", name: "瀚渤建设" } },
+    ]);
+    await as("system").post("/system/companies/missing/status", { expectedUpdatedAt: read.body.updatedAt, status: "SUSPENDED" }).expect(404);
   });
 
   test("appointments must name a profile or a new person with a mobile number", async (): Promise<void> => {

@@ -13,6 +13,7 @@ import {
   parseSystemAccountQuery,
   parseSystemCompanyCreate,
   parseSystemCompanyQuery,
+  parseSystemCompanyStatusChange,
   parseSystemCompanyUpdate,
 } from "./system.parsers.js";
 import { SystemAccountsService } from "./system-accounts.service.js";
@@ -34,7 +35,7 @@ const platform = {
   target: { source: "static", targetScope: { scopeId: GLOBAL_SCOPE_ID, scopeType: "GLOBAL" } },
 } as const;
 
-/** Platform management (system admin plan): companies, company administrators and accounts. */
+/** Platform management (system admin plan): companies (suspending them too), company administrators and accounts. */
 @Controller("system")
 export class SystemController {
   constructor(
@@ -72,6 +73,17 @@ export class SystemController {
     @Body() body: unknown,
   ): Promise<SystemCompanyDetail> {
     return this.companies.update(actor.userId, companyId, parseSystemCompanyUpdate(body));
+  }
+
+  @Post("companies/:companyId/status")
+  @RequirePermission(platform)
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async setCompanyStatus(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param("companyId") companyId: string,
+    @Body() body: unknown,
+  ): Promise<SystemCompanyDetail> {
+    return this.companies.setStatus(actor.userId, companyId, parseSystemCompanyStatusChange(body));
   }
 
   @Get("companies/:companyId/admin-candidates")
