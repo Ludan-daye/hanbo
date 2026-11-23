@@ -2,7 +2,7 @@
 // is about, and the plain Chinese sentence shown for it. Shared by the API
 // and the mini program's demo backend so both say the same thing.
 
-export type AuditCategory = "PEOPLE" | "TEAM" | "ATTENDANCE" | "SAFETY" | "PROJECT" | "COMPANY";
+export type AuditCategory = "PEOPLE" | "TEAM" | "ATTENDANCE" | "SAFETY" | "PROJECT" | "COMPANY" | "PLATFORM";
 
 export const AUDIT_CATEGORIES: readonly {
   readonly value: AuditCategory;
@@ -15,6 +15,16 @@ export const AUDIT_CATEGORIES: readonly {
   { value: "PROJECT", label: "项目设置" },
   { value: "COMPANY", label: "公司" },
 ];
+
+/**
+ * Platform actions that belong to no company (accounts, super admins; system admin plan
+ * phase 2). Not in AUDIT_CATEGORIES: the project and company logs never show them, only the
+ * platform log (phase 4) offers this filter.
+ */
+export const PLATFORM_CATEGORY: { readonly value: AuditCategory; readonly label: string } = {
+  value: "PLATFORM",
+  label: "平台",
+};
 
 /** Only in the company log: company-level actions (建项目、导出、离岗、默认规则、公司资料). */
 export const COMPANY_ONLY_CATEGORIES: readonly AuditCategory[] = ["COMPANY"];
@@ -81,6 +91,7 @@ const CATEGORY_ACTIONS: Readonly<Record<AuditCategory, readonly string[]>> = {
     "COMPANY_ADMIN_REVOKED",
     "COMPANY_ADMIN_INVITATION_ISSUED",
   ],
+  PLATFORM: ["ACCOUNT_DISABLED", "ACCOUNT_ENABLED", "SYSTEM_ADMIN_GRANTED", "SYSTEM_ADMIN_REVOKED"],
 };
 
 /** The actions a category filter keeps. */
@@ -150,6 +161,20 @@ export const auditTargetRef = (entry: {
     case "COMPANY_ADMIN_APPOINTED":
     case "COMPANY_ADMIN_REVOKED":
     case "COMPANY_ADMIN_INVITATION_ISSUED":
+      return id(meta.managerProfileId, (found) => ({
+        kind: "profile",
+        participantType: "MANAGER",
+        id: found,
+      }));
+    case "ACCOUNT_DISABLED":
+    case "ACCOUNT_ENABLED":
+      return id(meta.profileId, (found) => ({
+        kind: "profile",
+        participantType: ownerType(meta.participantType),
+        id: found,
+      }));
+    case "SYSTEM_ADMIN_GRANTED":
+    case "SYSTEM_ADMIN_REVOKED":
       return id(meta.managerProfileId, (found) => ({
         kind: "profile",
         participantType: "MANAGER",
@@ -287,6 +312,14 @@ export const auditSentence = (
         return `撤销了 ${person} 的公司管理员身份`;
       case "COMPANY_ADMIN_INVITATION_ISSUED":
         return `重新给 ${person} 生成了公司管理员邀请码`;
+      case "ACCOUNT_DISABLED":
+        return `停用了 ${person} 的账号`;
+      case "ACCOUNT_ENABLED":
+        return `恢复了 ${person} 的账号`;
+      case "SYSTEM_ADMIN_GRANTED":
+        return `${meta.source === "cli" ? "在服务器上" : ""}把 ${person} 设为超级管理员`;
+      case "SYSTEM_ADMIN_REVOKED":
+        return `${meta.source === "cli" ? "在服务器上" : ""}撤销了 ${person} 的超级管理员身份`;
       case "FACE_PROFILE_REVIEWED":
         return meta.decision === "REJECTED"
           ? `退回了 ${person} 的人脸底照`

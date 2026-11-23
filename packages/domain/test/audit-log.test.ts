@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AUDIT_CATEGORIES,
+  PLATFORM_CATEGORY,
   auditActionsIn,
   auditCategoryOf,
   auditSentence,
@@ -127,5 +129,36 @@ describe("platform actions on a company (system admin phase 1)", () => {
     );
     expect(auditSentence({ action: "COMPANY_ADMIN_REVOKED", metadata: {} }, "平台", "李四")).toBe("平台 撤销了 李四 的公司管理员身份");
     expect(auditSentence({ action: "COMPANY_ADMIN_INVITATION_ISSUED", metadata: {} }, "平台", "李四")).toBe("平台 重新给 李四 生成了公司管理员邀请码");
+  });
+});
+
+describe("platform actions on accounts and super admins (system admin phase 2)", () => {
+  it("files them under 平台, which the project and company filters do not offer", () => {
+    for (const action of ["ACCOUNT_DISABLED", "ACCOUNT_ENABLED", "SYSTEM_ADMIN_GRANTED", "SYSTEM_ADMIN_REVOKED"])
+      expect(auditCategoryOf(action)).toBe("PLATFORM");
+    expect(auditActionsIn("PLATFORM")).toContain("ACCOUNT_DISABLED");
+    expect(PLATFORM_CATEGORY).toEqual({ value: "PLATFORM", label: "平台" });
+    expect(AUDIT_CATEGORIES.map((item) => item.value)).not.toContain("PLATFORM");
+  });
+
+  it("points at the account's profile", () => {
+    expect(
+      auditTargetRef({ action: "ACCOUNT_DISABLED", entityType: "user", entityId: "u1", metadata: { participantType: "WORKER", profileId: "w1" } }),
+    ).toEqual({ kind: "profile", participantType: "WORKER", id: "w1" });
+    expect(
+      auditTargetRef({ action: "SYSTEM_ADMIN_GRANTED", entityType: "user", entityId: "u1", metadata: { managerProfileId: "p1", source: "cli" } }),
+    ).toEqual({ kind: "profile", participantType: "MANAGER", id: "p1" });
+    expect(auditTargetRef({ action: "ACCOUNT_ENABLED", entityType: "user", entityId: "u1", metadata: {} })).toBeNull();
+  });
+
+  it("says what was done", () => {
+    expect(auditSentence({ action: "ACCOUNT_DISABLED", metadata: {} }, "平台", "张三")).toBe("平台 停用了 张三 的账号");
+    expect(auditSentence({ action: "ACCOUNT_ENABLED", metadata: {} }, "平台", "张三")).toBe("平台 恢复了 张三 的账号");
+    expect(auditSentence({ action: "SYSTEM_ADMIN_GRANTED", metadata: { source: "cli" } }, null, "张三")).toBe(
+      "系统 在服务器上把 张三 设为超级管理员",
+    );
+    expect(auditSentence({ action: "SYSTEM_ADMIN_REVOKED", metadata: { source: "cli" } }, null, "张三")).toBe(
+      "系统 在服务器上撤销了 张三 的超级管理员身份",
+    );
   });
 });
