@@ -23,7 +23,10 @@ import {
   companyRowStatus,
   companyRowSub,
   EMPTY_COMPANY_DRAFT,
+  companyFilterOf,
+  platformSettingsProblem,
   systemScreen,
+  systemTabOf,
 } from "../src/pages/system-management/system-view";
 import type { CompanyParticipant } from "../src/services/management.types";
 import type { PlatformAccount, PlatformAccountRole } from "../src/services/workflows";
@@ -214,6 +217,33 @@ describe("平台的公司一行", () => {
     expect(companyRowStatus({ admins: [], status: "ACTIVE" })).toEqual({ kind: "bad", text: "没有管理员" });
     expect(companyRowStatus({ admins: [admin("张三")], status: "ACTIVE" })).toBeUndefined();
     expect(companyRowStatus({ admins: [admin("张三")], status: "SUSPENDED" })).toEqual({ kind: "warn", text: "已暂停" });
+    // 第五期：管理员还没绑定微信的，和平台首页的待办一样提醒。
+    expect(companyRowStatus({ admins: [admin("张三"), { ...admin("李四"), isBound: false }], status: "ACTIVE" })).toEqual({
+      kind: "warn",
+      text: "等他绑定",
+    });
+    expect(companyRowStatus({ admins: [{ ...admin("李四"), isBound: false }], status: "SUSPENDED" })).toEqual({ kind: "warn", text: "已暂停" });
+  });
+
+  it("平台首页的待办点进来，公司列表按链接筛好", () => {
+    expect(companyFilterOf("NONE")).toBe("NONE");
+    expect(companyFilterOf("NOT_BOUND")).toBe("NOT_BOUND");
+    expect(companyFilterOf(undefined)).toBe("ALL");
+    expect(companyFilterOf("SOME")).toBe("ALL");
+    expect(systemTabOf("COMPANIES")).toBe("COMPANIES");
+    expect(systemTabOf("SETTINGS")).toBe("SETTINGS");
+    expect(systemTabOf("BOSS")).toBe("COMPANIES");
+    expect(systemTabOf(undefined)).toBe("COMPANIES");
+  });
+
+  it("平台设置：公告最多 160 字，联系电话可以空着，填了要像电话", () => {
+    const settings = { announcement: "进场请佩戴安全帽", supportPhone: "", updatedAt: "2026-11-23T01:00:00.000Z" };
+    expect(platformSettingsProblem(settings)).toBeNull();
+    expect(platformSettingsProblem({ ...settings, supportPhone: " 400-800-1234 " })).toBeNull();
+    expect(platformSettingsProblem({ ...settings, supportPhone: "13800000000" })).toBeNull();
+    expect(platformSettingsProblem({ ...settings, supportPhone: "021-12345678" })).toBeNull();
+    expect(platformSettingsProblem({ ...settings, supportPhone: "12345" })).toBe("联系电话填手机号、座机或 400 电话，也可以空着。");
+    expect(platformSettingsProblem({ ...settings, announcement: "字".repeat(161) })).toBe("公告最多 160 字，现在 161 字。");
   });
 
   it("管理员副行：绑定了没有，邀请码到哪天", () => {

@@ -21,9 +21,14 @@ import { errorMessage } from "../../services/error-messages";
 import {
   EMPTY_COMPANY_DRAFT,
   companyFormOf,
+  companyFilterOf,
   companyFormProblem,
+  platformSettingsProblem,
   systemScreen,
+  systemTabOf,
   type CompanyDraft,
+  type CompanyFilter,
+  type SystemTab,
 } from "./system-view";
 import { AuditLogList } from "../audit-log/audit-list";
 import { AccountScreen, AccountsTab } from "./views/accounts";
@@ -33,7 +38,7 @@ import { SettingsTab } from "./views/settings";
 
 import "./index.scss";
 
-type Tab = "COMPANIES" | "ACCOUNTS" | "SETTINGS" | "AUDIT";
+type Tab = SystemTab;
 
 /** 一个标签自己读自己的数据：读不到只影响这一个标签。 */
 const useTabData = <T,>(
@@ -67,7 +72,10 @@ export default function SystemManagement(): JSX.Element {
   useSessionGuard();
   const { state } = useSession();
   const { revision, refresh } = usePageRefresh();
-  const [tab, setTab] = useState<Tab>("COMPANIES");
+  // 首页的待办带着 tab、admin 进来：直接停在筛好的公司列表上。
+  const params = Taro.useRouter().params;
+  const [tab, setTab] = useState<Tab>(systemTabOf(params.tab));
+  const [companyFilter, setCompanyFilter] = useState<CompanyFilter>(companyFilterOf(params.admin));
   const allowed = state.me?.roles.highestRoleCode === "SYSTEM_ADMIN";
   // 同一个页面里的另外几屏：点开的公司（看、改资料、任命）、新增公司、点开的账号。
   const [openCompany, setOpenCompany] = useState<{ readonly id: string; readonly name: string } | null>(null);
@@ -209,6 +217,8 @@ export default function SystemManagement(): JSX.Element {
       return (
         <CompaniesTab
           revision={revision}
+          filter={companyFilter}
+          onFilter={setCompanyFilter}
           onRetry={refresh}
           onOpen={(company) => {
             setOpenCompany({ id: company.id, name: company.name });
@@ -241,6 +251,11 @@ export default function SystemManagement(): JSX.Element {
             problem={error}
             onChange={setSettings}
             onSave={() => {
+              const invalid = platformSettingsProblem(settings);
+              if (invalid !== null) {
+                setError(invalid);
+                return;
+              }
               void runAction(() => saveSystemSettings(settings));
             }}
           />

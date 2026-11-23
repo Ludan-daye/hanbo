@@ -3,12 +3,41 @@ import { FEATURES, displayProjectRole, type Feature } from "../../routing/featur
 import { formatChinaDate, formatChinaHm } from "../../services/time";
 import type {
   CompanyAdmin,
+  CompanyAdminFilter,
   CompanyForm,
   PlatformAccount,
   PlatformAccountRole,
   PlatformCompany,
   PlatformCompanyDetail,
+  SystemSettings,
 } from "../../services/workflows";
+
+/** 公司列表的筛选：全部，或平台首页那两类待办（只看正常的公司）。 */
+export type CompanyFilter = "ALL" | CompanyAdminFilter;
+
+/** 链接里的 admin=NONE|NOT_BOUND（平台首页的待办点进来），别的都当全部。 */
+export const companyFilterOf = (value: string | undefined): CompanyFilter =>
+  value === "NONE" || value === "NOT_BOUND" ? value : "ALL";
+
+/** 平台管理的四个标签。 */
+export type SystemTab = "COMPANIES" | "ACCOUNTS" | "SETTINGS" | "AUDIT";
+
+/** 链接里的 tab=…（首页待办点进来），认不出的当“公司”。 */
+export const systemTabOf = (value: string | undefined): SystemTab =>
+  value === "ACCOUNTS" || value === "SETTINGS" || value === "AUDIT" ? value : "COMPANIES";
+
+const SUPPORT_PHONE = /^(?:1\d{10}|0\d{2,3}-?\d{7,8}|[48]00-?\d{3}-?\d{4})$/;
+
+/** 平台设置保存前的检查，和服务器同样的规则；没问题是 null。 */
+export const platformSettingsProblem = (
+  settings: Pick<SystemSettings, "announcement" | "supportPhone">,
+): string | null => {
+  const length = settings.announcement.trim().length;
+  if (length > 160) return `公告最多 160 字，现在 ${length} 字。`;
+  const phone = settings.supportPhone.trim();
+  if (phone !== "" && !SUPPORT_PHONE.test(phone)) return "联系电话填手机号、座机或 400 电话，也可以空着。";
+  return null;
+};
 
 /** 平台管理现在显示哪一屏。四个标签在“列表”里，其余三屏各有自己的标题和返回。 */
 export type SystemScreen = "list" | "company" | "new-company" | "account";
@@ -43,17 +72,20 @@ export const companyRowSub = (
 };
 
 /**
- * 右侧状态：没有管理员的公司标红，排在暂停前面（没人管比暂停更要紧）。
- * 正常的公司不写，副行的管理员姓名才放得下。
+ * 右侧状态：没有管理员的公司标红，排在暂停前面（没人管比暂停更要紧）；正常的公司里
+ * 有管理员还没绑定微信的写“等他绑定”（第五期，和平台首页的待办同口径）。
+ * 别的正常公司不写，副行的管理员姓名才放得下。
  */
 export const companyRowStatus = (
   company: Pick<PlatformCompany, "admins" | "status">,
 ): { readonly kind: StatusKind; readonly text: string } | undefined =>
   company.admins.length === 0
     ? { kind: "bad", text: "没有管理员" }
-    : company.status === "ACTIVE"
-      ? undefined
-      : { kind: "warn", text: "已暂停" };
+    : company.status !== "ACTIVE"
+      ? { kind: "warn", text: "已暂停" }
+      : company.admins.some((admin) => !admin.isBound)
+        ? { kind: "warn", text: "等他绑定" }
+        : undefined;
 
 /** 管理员那一行的副行：手机号，绑定了没有，邀请码到哪天。 */
 export const companyAdminSub = (

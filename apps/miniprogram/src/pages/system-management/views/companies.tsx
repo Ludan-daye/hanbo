@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   BottomBar,
   Button,
+  Chips,
   FormInput,
   Notice,
   Row,
@@ -20,21 +21,36 @@ import {
   companyRowStatus,
   companyRowSub,
   type CompanyDraft,
+  type CompanyFilter,
 } from "../system-view";
+
+// 后两项和平台首页的“等你处理”同口径：只看正常的公司（暂停的公司不催）。
+const COMPANY_FILTERS: ReadonlyArray<{ readonly value: CompanyFilter; readonly label: string }> = [
+  { value: "ALL", label: "全部" },
+  { value: "NONE", label: "没有管理员" },
+  { value: "NOT_BOUND", label: "管理员没绑定" },
+];
 
 /** “公司”标签：一行一家，服务器上搜索、一次读 30 家。 */
 export const CompaniesTab = ({
   revision,
+  filter,
+  onFilter,
   onOpen,
   onAdd,
   onRetry,
 }: {
   /** 每次变了就从头再读（保存后、点重试）。 */
   readonly revision: number;
+  /** 筛选放在页面上，点开一家公司再返回时还在。 */
+  readonly filter: CompanyFilter;
+  readonly onFilter: (filter: CompanyFilter) => void;
   readonly onOpen: (company: PlatformCompany) => void;
   readonly onAdd: () => void;
   readonly onRetry: () => void;
 }): JSX.Element => {
+  const admin = filter === "ALL" ? null : filter;
+  const status = admin === null ? null : ("ACTIVE" as const);
   const [search, setSearch] = useState<string>("");
   const [query, setQuery] = useState<string>("");
   const [items, setItems] = useState<readonly PlatformCompany[] | null>(null);
@@ -54,7 +70,7 @@ export const CompaniesTab = ({
     setItems(null);
     setLoadError(null);
     setMoreError(null);
-    fetchCompanies({ search: query, status: null, cursor: null }).then(
+    fetchCompanies({ admin, search: query, status, cursor: null }).then(
       (page) => {
         if (cancelled) return;
         setItems(page.items);
@@ -67,14 +83,14 @@ export const CompaniesTab = ({
     return () => {
       cancelled = true;
     };
-  }, [query, revision]);
+  }, [query, admin, revision]);
 
   const loadMore = async (): Promise<void> => {
     if (cursor === null || loadingMore) return;
     setLoadingMore(true);
     setMoreError(null);
     try {
-      const page = await fetchCompanies({ search: query, status: null, cursor });
+      const page = await fetchCompanies({ admin, search: query, status, cursor });
       setItems((current) => [...(current ?? []), ...page.items]);
       setCursor(page.nextCursor);
     } catch (cause: unknown) {
@@ -91,6 +107,7 @@ export const CompaniesTab = ({
         placeholder="搜索公司名称、简称或信用代码"
         onInput={setSearch}
       />
+      <Chips<CompanyFilter> options={COMPANY_FILTERS} selected={[filter]} onToggle={onFilter} />
       {loadError !== null ? (
         <StateView
           kind="error"
@@ -101,7 +118,13 @@ export const CompaniesTab = ({
       ) : items === null ? (
         <SkeletonRows rows={4} gap />
       ) : items.length === 0 ? (
-        query === "" ? (
+        admin !== null && query === "" ? (
+          <StateView
+            kind="empty"
+            title={admin === "NONE" ? "每家公司都有管理员" : "公司管理员都绑定了微信"}
+            sub="这里只看状态正常的公司。"
+          />
+        ) : query === "" ? (
           <StateView
             kind="empty"
             title="还没有公司"
