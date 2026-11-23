@@ -159,6 +159,8 @@
 
 **风险**：漏掉某个写接口，暂停就“半生效”。所以先在计划里列全清单、在测试里逐个断言。
 
+（实施时列出的完整清单和每条的处理方式见文末“实施记录 → 第三期”。）
+
 ### 第四期：平台操作日志（G6）
 
 **用户得到什么**：平台管理的“日志”标签换成真实记录：全平台所有操作，新的在前，可按公司、类型（含新的“平台”类型：公司、任免公司管理员、停用账号、信用规则、平台设置）、操作人筛选（Q9）；句子和公司、项目操作记录一样。
@@ -339,3 +341,99 @@
 - `deploy:test` 之后在测试服务器上：用命令 `list` 看 `dev-system` 在不在；用 `dev-system` 停用、恢复 `dev-team`，确认手机上立刻退出（这一期没有部署）。
 - 被停用的人在小程序里先看到“登录已过期，请重新登录”，再登录时才看到“当前账号已停用，请联系管理员”；带上平台联系电话等第五期（Q12）。
 - 账号详情里的项目、班组身份链接到 `person-form`（项目管理员的编辑页），只在演示版里点过，没有在真机上走一遍改身份再返回。
+
+### 第三期（G5；Q5）
+
+提交：`85ede07`（domain 句子）、`8ba1fdb`（暂停、恢复接口）、`58e3b88`（`/auth/me` 带公司状态）、`6b1a9d7`（所有写接口按公司状态拦）、`0a1d83a`（小程序），以及本条记录。没有迁移：`Company.status` 本来就是字符串，解析器只认 ACTIVE、SUSPENDED。
+
+做了什么：
+- `POST /system/companies/:companyId/status`（`system.manage`，static GLOBAL）：`{ status: "ACTIVE"|"SUSPENDED", expectedUpdatedAt }`，`.strict()`，不对是 400 `INVALID_SYSTEM_COMPANY_STATUS_REQUEST`。条件 `updateMany` 同时核对 `updatedAt` 和“当前是另一个状态”，所以重复点、别人刚改过都是 409 `COMPANY_CHANGED_RELOAD_BEFORE_SAVING`；写 `COMPANY_SUSPENDED`／`COMPANY_RESUMED`（`companyId` 直接写，metadata 带公司名）。只改状态，项目、人员、记录、公司管理员都不动。返回公司详情。
+- 共享的判断：`authorization/company-status.service.ts` 的 `CompanyStatusService`。公司是 SUSPENDED、操作人又没有 GLOBAL 的 SYSTEM_ADMIN 时抛 403 `{ message: "COMPANY_SUSPENDED", companyId }`；公司、项目、班组不存在时不管（调用方自己会 404）。有三种用法：
+  - `PermissionsGuard`：权限通过之后，目标带公司（company、project、team 三种参数）而且方法是 POST、PUT、PATCH、DELETE 时检查。先判权限，所以没权限的人看到的仍是 `PERMISSION_DENIED`，不会知道公司暂停了。已经读出的授权直接拿来判断超级管理员，不多查一次。
+  - 新的 `ActiveCompanyGuard` + `@RequireActiveCompany({ source, paramName })`：给只用 `AccessTokenGuard`、权限在服务里查的写接口，按路由里的项目或班组参数找公司。守卫在解析请求体之前运行。
+  - 服务里直接调 `assertProjectCompanyActive`／`assertTeamCompanyActive`：路由里没有公司、项目、班组参数的写接口，读出记录后再查。
+- 班组工作的 `requireActiveTeam` 去掉了“公司是 ACTIVE”这个条件。原来暂停公司的班组连查看任务都报“班组或项目已停用”，超级管理员也一样；现在暂停由上面统一处理，查看照常。
+- `/auth/me` 多了 `companies: [{ id, name, status }]`：按公司、项目、班组身份找出的公司，按名称排序；只有平台身份或没有身份时是空数组。
+- domain `audit-log.ts`：`COMPANY_SUSPENDED`“暂停了公司“某某””、`COMPANY_RESUMED`“恢复了公司“某某””，都归“公司”类型。
+- 小程序：
+  - 公司详情底部，“修改资料”下面加了“暂停公司”（危险按钮）或“恢复公司”。二次确认写明：暂停后这家公司的人还能登录、查看和导出记录，不能打卡、补卡、审批，也不能新建或修改；项目、人员和记录都不动，随时可以恢复。失败用 `Notice tone="error"` 放在按钮上方。暂停的公司详情最上面有一条警示。
+  - 首页（班组长、项目管理员、公司管理员用的 `HomeShell`，工人首页）和工作台最上面加了 `CompanySuspendedNotice`：所在公司全部暂停时写“某某已暂停：现在只能查看和导出记录，不能打卡、补卡、审批或修改。请联系平台恢复。”；只停了其中几家时点名那几家、说别的照常；超级管理员不显示。判断在 `services/company-status.ts`。
+  - `COMPANY_SUSPENDED`、`INVALID_SYSTEM_COMPANY_STATUS_REQUEST` 有中文；`workflows.ts` 增加 `setCompanyStatus`。
+  - 演示：`/system/companies/:id/status` 分支；`demoMe` 带上 `companies`；写操作统一经过 `assertDemoCompanyWritable`，和服务器一样只拦写、不拦读，超级管理员不受限。原来演示里暂停公司的管理员连查看都 403，已改掉。
+
+写接口清单（共 75 个，从各控制器的 Nest 元数据读出，测试里的 `test/support/write-routes.ts` 维护归类）。“守卫”是 `PermissionsGuard`，“公司守卫”是 `ActiveCompanyGuard`，“服务”是在服务里查。
+
+| 接口 | 暂停时 | 怎么拦／为什么放行 |
+| --- | --- | --- |
+| `POST /attendance/projects/:projectId/safety-confirmations` | 拦 | 公司守卫（打卡前的安全确认） |
+| `POST /attendance/projects/:projectId/face-verifications`、`/face-verifications/video` | 拦 | 公司守卫（开始刷脸） |
+| `POST /attendance/projects/:projectId/face-verifications/:sessionId/video`、`/:sessionId/complete` | 拦 | 公司守卫（提交刷脸） |
+| `POST /attendance/projects/:projectId/records` | 拦 | 公司守卫（打卡） |
+| `PUT /attendance/projects/:projectId/default-shift`、`/default-schedule` | 拦 | 守卫（这两个本来就返回 410） |
+| `POST /attendance/planning/:projectId/:scopeType/:scopeId`、`.../inherit` | 拦 | 公司守卫（排班） |
+| `POST /makeups/projects/:projectId/requests` | 拦 | 公司守卫（申请补卡） |
+| `POST /makeups/requests/:requestId/approve`、`/reject` | 拦 | 服务：补卡记录 → 项目 → 公司，在审批权限之后查 |
+| `POST /safety-credit/teams/:teamId/violations` | 拦 | 公司守卫（登记违规） |
+| `POST /safety-credit/projects/:projectId/violations/:id/review` | 拦 | 公司守卫 |
+| `POST /safety-credit/projects/:projectId/violations/:id/appeals/:appealId/review` | 拦 | 公司守卫 |
+| `POST /safety-credit/me/violations/:id/appeals` | 拦 | 服务：违规记录 → 项目 → 公司 |
+| `POST /safety-credit/policies` | 放行 | 全平台一份，只有超级管理员能发布，不属于哪家公司 |
+| `POST /team-work/teams/:teamId/...`（任务的增改、加人、移人、退场、提醒开工、状态，临时工邀请和作废，交底，问题和整改，日报，共 13 个） | 拦 | 守卫（控制器上的 `team.work.manage`／`team.safety.manage`，班组参数） |
+| `POST /team-work/me/join` | 拦 | 服务：邀请码 → 任务 → 班组 → 公司 |
+| `POST /team-work/me/briefings/:id/acknowledge` | 拦 | 服务：交底 → 班组 → 公司 |
+| `PUT /worktime/projects/:projectId` | 拦 | 守卫 |
+| `POST /reports/projects/:projectId/members/:memberId/evaluation` | 拦 | 守卫 |
+| `POST /report-exports` | 放行 | Q5 明确允许导出历史 |
+| `POST /bindings/projects/:projectId/invitations` | 拦 | 守卫 |
+| `POST /face-profiles/projects/:projectId/:profileId/review` | 拦 | 守卫（审核底照） |
+| `POST /face-profiles/me`、`/me/liveness-tests`、`/me/liveness-tests/:sessionId/video` | 放行 | 本人的底照和试刷脸，人脸档案跨公司共用一份，不写考勤；审核底照会被拦 |
+| `POST /management/companies/:companyId/projects` | 拦 | 守卫（新建项目） |
+| `PUT /management/companies/:companyId/attendance-defaults`、`/profile` | 拦 | 守卫 |
+| `POST /management/companies/:companyId/people/:participantType/:profileId/offboard` | 拦 | 守卫（离岗） |
+| `POST /management/companies/:companyId/transfer-requests/:requestId/approve`、`/reject` | 拦 | 守卫 |
+| `PUT /management/projects/:projectId`、`/teams/:teamId`、`/participants/:memberId` | 拦 | 守卫 |
+| `POST /management/projects/:projectId/teams`、`/workers`、`/managers`、`/participants`、`/reused-participants`、`/transfer-requests` | 拦 | 守卫 |
+| `POST /management/projects/:projectId/participants/:memberId/registration/verification` | 拦 | 守卫（核实用工资料是写操作；查看不拦，查看仍留访问记录） |
+| `POST /management/projects/:projectId/invitations/:invitationId/revoke` | 拦 | 守卫 |
+| `POST /auth/wechat/login`、`/auth/refresh`、`/auth/test/login`、`/auth/logout` | 放行 | Q5：照常登录、退出 |
+| `POST /auth/bind` | 放行 | 用邀请码绑定账号等同登录；任职在绑定前已经存在，绑定不新建公司的数据 |
+| `PUT /account/profile`、`POST /account/avatar` | 放行 | 本人的昵称、手机号、头像，属于个人账号 |
+| `PUT /account/worker-registration` | 放行 | 本人的用工资料，跨公司共用一份；管理员核实会被拦 |
+| `POST /uploads` | 放行 | 只存文件；用到文件的打卡、补卡、违规登记都会被拦 |
+| `POST`、`PUT /system/...`（8 个，含新的 `/status`） | 不受影响 | static GLOBAL，只有超级管理员能调，他不受暂停限制 |
+
+测试：
+- domain 2 条（类型、句子）。
+- `company-suspension-routes.test.ts`（新，3 条，不用数据库）：从控制器元数据读出全部写接口，每个都必须恰好归到守卫、公司守卫、服务、平台、放行之一，否则失败；带 `@RequireActiveCompany` 却没挂 `ActiveCompanyGuard` 的也算没归类；服务和放行名单里不能有已经不存在的接口。以后新加写接口，不归类这条测试就过不了。
+- `authorization.e2e` 新增 4 条：暂停公司的管理员 GET 200、PUT 403 `COMPANY_SUSPENDED`，另一家公司不受影响；超级管理员 PUT 200；没权限的人仍是 `PERMISSION_DENIED`；`ActiveCompanyGuard` 恢复后放行，项目不存在 404。
+- `system.e2e` 新增 1 条：暂停、恢复的参数、版本和状态冲突、两条审计、公司和项目管理员 403。`me.e2e` 新增 1 条：`companies` 的来源和状态。`attendance`、`bindings`、`makeup` 的 e2e 替身补了 `company.findUnique`（都返回 ACTIVE）。
+- 数据库套件 `company-suspension.integration.test.ts`（新，6 条，已加进 `scripts/test-database.ts`）：
+  - 守卫拦的 36 个接口，用公司管理员逐个调，全部 403 `COMPANY_SUSPENDED`；公司守卫拦的 12 个，用工人逐个调，全部 403 `COMPANY_SUSPENDED`。
+  - 服务里查的 5 个，用真实记录和合法请求体调（待批补卡、已确认违规、交底、临时工邀请码），全部 403；真实的安全确认和补卡申请也被拒；数据库里什么都没写。
+  - 查看（公司首页、公司资料、班组、班组任务、本人安全信用）照常 200，导出 201；工人的 `/auth/me` 显示公司 SUSPENDED，超级管理员是空数组。
+  - 超级管理员调上面 48 个接口，没有一个返回 `COMPANY_SUSPENDED`，改公司资料 200。
+  - 恢复后：安全确认、确认交底、申诉、驳回补卡、临时工加入、公司管理员改资料都成功；审计里依次是 `COMPANY_SUSPENDED`、`COMPANY_RESUMED`，操作人是超级管理员。
+- 小程序：`company-status.test.ts`（新，3 条）；演示集成 1 条（暂停后公司管理员能看不能改、工人不能补卡、超级管理员能改，恢复后照常）。
+
+测试结果：
+- domain：58 条。
+- 小程序：538 条（63 个文件）。
+- API：单元和 e2e 共 124 条通过，另有 133 条数据库套件在这一步按设计跳过。
+- `test:database`：14 个文件、117 条，全部通过，其中 `company-suspension.integration` 6 条。迁移 drift 检查通过。
+- 两种构建都通过；`dist-weapp` 1.71 MB。
+- 演示版 360px 截图在主目录 `output/system-admin/phase3-shots/`（不入库），脚本 `output/system-admin/tools/suspend.py`：公司详情（正常、暂停确认、已暂停的顶部和底部、恢复确认、恢复后），公司管理员的首页、工作台和公司设置，项目管理员、班组长、工人的首页，超级管理员首页，恢复后工人首页。
+
+与计划不同：
+- 计划只说在 `PermissionsGuard` 里拦、只用 `AccessTokenGuard` 的写接口“逐个补”。实际多了一个 `ActiveCompanyGuard`：12 个有项目、班组参数的接口用装饰器声明，比在各服务里分别调用好核对，也在解析请求体之前就拦。只有 5 个路由里没有范围参数的在服务里查。
+- 计划建议在 `attendance.service.ts` 里把“项目是 ACTIVE”改成“项目和公司都是 ACTIVE”。没有这样改：打卡的写接口都由公司守卫拦，服务里的项目状态检查原样保留，提示仍是“项目未开工、已暂停或已结束”。
+- 计划推断绑定邀请码（`/auth/bind`）要拦。没有拦：绑定只是把微信账号接到已有的档案上，等同登录，Q5 允许登录。公司暂停期间发出去的公司管理员邀请码也能用（超级管理员不受限，邀请码只有他能发）。
+- 个人的写操作放行：改昵称、头像，本人的用工资料，本人人脸底照和试刷脸。它们属于人，不属于某家公司（一个人可以在几家公司），审核类操作都会被拦。
+- 计划写首页和工作台显示平台联系电话，要等第五期的平台设置（Q12），这一期只写“请联系平台恢复”。
+- 演示版不按记录找公司的几个“我的”写操作（申诉、确认交底、加入任务），按他所在的公司全部暂停才拦；服务器按记录查。
+
+留到以后：
+- `deploy:test` 之后在测试服务器上：用 `dev-system` 暂停 `dev-company` 的公司，用 `dev-company`、`dev-worker` 确认首页提示、能看不能改，再恢复（这一期没有部署）。部署前旧版小程序收不到 `companies`，不显示提示，按没有处理。
+- 工人首页在公司暂停时仍显示“打卡”按钮，点了才报“公司已暂停……”。公司管理员页面上的各种“保存”“新建”按钮也一样，点了才报错。要不要事先置灰，等用过再定。
+- 暂停公司的待批补卡、待审底照还会出现在首页“等你处理”里，但批不了。
+- 平台联系电话（第五期）。
+- 第四、五期。
