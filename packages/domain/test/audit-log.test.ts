@@ -229,6 +229,18 @@ describe("platform operation log (system admin phase 4)", () => {
     expect(auditSentence({ action: "SAFETY_POLICY_PUBLISHED", metadata: {} }, "平台", null)).toBe("平台 发布了新的安全信用规则");
   });
 
+  it("files a platform settings change under 平台 and names what changed", () => {
+    expect(auditCategoryOf("PLATFORM_SETTINGS_UPDATED")).toBe("PLATFORM");
+    expect(auditActionsIn("PLATFORM", "PLATFORM")).toContain("PLATFORM_SETTINGS_UPDATED");
+    expect(
+      auditSentence({ action: "PLATFORM_SETTINGS_UPDATED", metadata: { changed: ["announcement", "supportPhone"] } }, "平台", null),
+    ).toBe("平台 修改了首页公告、平台联系电话");
+    expect(auditSentence({ action: "PLATFORM_SETTINGS_UPDATED", metadata: { changed: ["supportPhone"] } }, "平台", null)).toBe(
+      "平台 修改了平台联系电话",
+    );
+    expect(auditSentence({ action: "PLATFORM_SETTINGS_UPDATED", metadata: {} }, "平台", null)).toBe("平台 保存了平台设置");
+  });
+
   it("says what the account-level actions without a company did", () => {
     expect(auditSentence({ action: "auth.bind.worker", metadata: {} }, "张三", null)).toBe("张三 用邀请码绑定了微信");
     expect(auditSentence({ action: "auth.bind.manager", metadata: {} }, "李四", null)).toBe("李四 用邀请码绑定了微信");

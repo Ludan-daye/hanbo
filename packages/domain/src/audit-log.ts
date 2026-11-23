@@ -130,6 +130,8 @@ const CATEGORY_ACTIONS: Readonly<Record<AuditCategory, readonly string[]>> = {
     "SYSTEM_ADMIN_REVOKED",
     // Phase 4: the one platform-wide policy (level-4 Q7).
     "SAFETY_POLICY_PUBLISHED",
+    // Phase 5: the home announcement and the platform support phone (Q12).
+    "PLATFORM_SETTINGS_UPDATED",
   ],
 };
 
@@ -289,6 +291,11 @@ const COMPANY_FIELD_NAMES: Readonly<Record<string, string>> = {
   shortName: "简称",
 };
 
+const PLATFORM_SETTING_NAMES: Readonly<Record<string, string>> = {
+  announcement: "首页公告",
+  supportPhone: "平台联系电话",
+};
+
 /**
  * One entry as a sentence: “王经理 批准了 张建国 的补卡申请”.
  * actor and target are display names (null when unknown); the time is shown
@@ -386,6 +393,12 @@ export const auditSentence = (
           : `发布了第 ${version} 版安全信用规则${
               day === null ? "" : `，${day[1]}年${Number(day[2])}月${Number(day[3])}日起执行`
             }`;
+      }
+      case "PLATFORM_SETTINGS_UPDATED": {
+        const fields = (Array.isArray(meta.changed) ? meta.changed : [])
+          .map((key: unknown) => (typeof key === "string" ? PLATFORM_SETTING_NAMES[key] : undefined))
+          .filter((name): name is string => name !== undefined);
+        return fields.length === 0 ? "保存了平台设置" : `修改了${fields.join("、")}`;
       }
       case "auth.bind.worker":
       case "auth.bind.manager":
