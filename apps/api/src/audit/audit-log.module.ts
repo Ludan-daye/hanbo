@@ -11,5 +11,7 @@ import { AuditLogService } from "./audit-log.service.js";
   imports: [AuthModule, AuthorizationModule, PrismaModule],
   controllers: [AuditLogController],
   providers: [AuditLogService],
+  // The platform log (/system/audit-logs) pages the same way.
+  exports: [AuditLogService],
 })
 export class AuditLogModule {}

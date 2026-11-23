@@ -720,6 +720,8 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([projectId, createdAt])
   @@index([companyId, createdAt])
+  /// The platform log (2026-11-23) reads newest first across every company.
+  @@index([createdAt, id])
   @@map("audit_logs")
 }
 

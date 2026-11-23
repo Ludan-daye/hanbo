@@ -30,6 +30,19 @@ type CompanyRecord = {
 
 type Where = Record<string, unknown>;
 
+/** A stored operation-log row, as the platform log reads it (phase 4). */
+type AuditRow = {
+  action: string;
+  actorUserId: string | null;
+  companyId: string | null;
+  createdAt: Date;
+  entityId: string;
+  entityType: string;
+  id: string;
+  metadata: unknown;
+  projectId: string | null;
+};
+
 const PERMISSIONS: Readonly<Record<RoleCode, readonly string[]>> = {
   COMPANY_ADMIN: ["company.manage", "project.create"],
   PROJECT_ADMIN: ["project.manage"],
@@ -42,6 +55,8 @@ const text = (value: unknown): string => (typeof value === "string" ? value : ""
 
 /** Matches the handful of company filters the service uses. */
 const companyMatches = (company: CompanyRecord, where: Where): boolean => {
+  const ids = (where.id as { in?: string[] } | undefined)?.in;
+  if (ids !== undefined && !ids.includes(company.id)) return false;
   const not = (where.id as { not?: string } | undefined)?.not;
   if (not !== undefined && company.id === not) return false;
   const name = where.name as { equals?: string } | undefined;
@@ -54,6 +69,8 @@ const companyMatches = (company: CompanyRecord, where: Where): boolean => {
 class SystemPrismaDouble {
   readonly companies: CompanyRecord[] = [];
   readonly auditLogs: { action: string; companyId: string | null; metadata: unknown }[] = [];
+  /** Rows the platform log reads; written by the tests, not by auditLog.create. */
+  readonly auditRows: AuditRow[] = [];
   readonly sessions = new Map<string, { userId: string }>();
   readonly assignments: { roleCode: RoleCode; scopeId: string; scopeType: ScopeType; userId: string }[] = [];
   private sequence = 0;
@@ -128,6 +145,8 @@ class SystemPrismaDouble {
   };
 
   readonly project = {
+    findMany: async (args: { where: { id: { in: string[] } } }) =>
+      args.where.id.in.map((id) => ({ id, name: `项目 ${id}` })),
     groupBy: async (args: { where: { companyId: { in: string[] } } }) =>
       args.where.companyId.in.includes("company-1")
         ? [
@@ -155,8 +174,10 @@ class SystemPrismaDouble {
         : [],
   };
 
-  /** Accounts: only enough for the refusals that come before any change. */
+  /** Accounts: only enough for the refusals that come before any change, and actor names. */
   readonly user = {
+    findMany: async (args: { where: { id: { in: string[] } } }) =>
+      args.where.id.in.map((id) => ({ encryptedRealName: null, id, nickname: `昵称 ${id}` })),
     findUnique: async (args: { where: { id: string } }) => {
       const roles = this.assignments.filter((row) => row.userId === args.where.id);
       if (roles.length === 0) return null;
@@ -177,11 +198,30 @@ class SystemPrismaDouble {
   };
 
   readonly auditLog = {
+    findMany: async (args: { take: number; where: { action?: { in: string[] }; actorUserId?: string; companyId?: string } }) =>
+      this.auditRows
+        .filter(
+          (row) =>
+            (args.where.action === undefined || args.where.action.in.includes(row.action)) &&
+            (args.where.actorUserId === undefined || row.actorUserId === args.where.actorUserId) &&
+            (args.where.companyId === undefined || row.companyId === args.where.companyId),
+        )
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .slice(0, args.take),
     create: async (args: { data: { action: string; companyId?: string | null; metadata: unknown } }) => {
       this.auditLogs.push({ action: args.data.action, companyId: args.data.companyId ?? null, metadata: args.data.metadata });
       return args.data;
     },
   };
+
+  // Nothing the platform-log rows below point at needs a name besides companies, projects and users.
+  readonly safetyViolation = { findMany: async () => [] };
+  readonly projectWorkerMember = { findMany: async () => [] };
+  readonly projectManagerMember = { findMany: async () => [] };
+  readonly workerProfile = { findMany: async () => [] };
+  readonly managerProfile = { findMany: async () => [] };
+  readonly team = { findMany: async () => [] };
+  readonly teamWorkTask = { findMany: async () => [] };
 
   async $transaction<T>(callback: (transaction: SystemPrismaDouble) => Promise<T>): Promise<T> {
     return callback(this);
@@ -410,5 +450,59 @@ describe("platform companies (/system)", (): void => {
     }
     expect((await as("system").post("/system/accounts/nobody/disable").expect(404)).body.message).toBe("ACCOUNT_NOT_FOUND");
     expect(prisma.auditLogs).toEqual([]);
+  });
+
+  test("platform log: only SYSTEM_ADMIN; every company and none, by company, type and actor", async (): Promise<void> => {
+    await as("system").post("/system/companies", { name: "瀚渤建设" }).expect(201);
+    const row = (id: string, minute: number, action: string, fields: Partial<AuditRow> = {}): AuditRow => ({
+      action,
+      actorUserId: "user-system",
+      companyId: null,
+      createdAt: new Date(Date.UTC(2026, 10, 23, 1, minute)),
+      entityId: id,
+      entityType: "test",
+      id,
+      metadata: {},
+      projectId: null,
+      ...fields,
+    });
+    prisma.auditRows.push(
+      row("a1", 1, "COMPANY_CREATED", { companyId: "company-1", metadata: { name: "瀚渤建设" } }),
+      row("a2", 2, "project.create", { actorUserId: "user-company", companyId: "company-1" }),
+      row("a3", 3, "MAKEUP_APPROVED", { actorUserId: "user-company", companyId: "company-2", projectId: "project-2" }),
+      row("a4", 4, "ACCOUNT_DISABLED"),
+      row("a5", 5, "SAFETY_POLICY_PUBLISHED", { metadata: { startsOn: "2026-12-01", version: 2 } }),
+    );
+
+    for (const user of ["company", "project"]) await as(user).get("/system/audit-logs").expect(403);
+    for (const query of ["type=BOSS", "cursor=not-a-cursor", `companyId=${"c".repeat(65)}`, "actorUserId="])
+      expect((await as("system").get(`/system/audit-logs?${query}`).expect(400)).body.message).toBe("INVALID_AUDIT_LOG_QUERY");
+
+    const all = await as("system").get("/system/audit-logs").expect(200);
+    expect(all.headers["cache-control"]).toBe("no-store");
+    expect(all.body.nextCursor).toBeNull();
+    expect(all.body.items.map((item: { id: string }) => item.id)).toEqual(["a5", "a4", "a3", "a2", "a1"]);
+    expect(all.body.items[0]).toMatchObject({
+      action: "SAFETY_POLICY_PUBLISHED",
+      actorName: "昵称 user-system",
+      actorUserId: "user-system",
+      category: "PLATFORM",
+      companyId: null,
+      companyName: null,
+      sentence: "昵称 user-system 发布了第 2 版安全信用规则，2026年12月1日起执行",
+    });
+    expect(all.body.items[2]).toMatchObject({ category: "ATTENDANCE", companyId: "company-2", projectName: "项目 project-2" });
+    // What the platform did to a company is 平台 here; the company's own actions stay 公司.
+    expect(all.body.items[3]).toMatchObject({ category: "COMPANY", companyName: "瀚渤建设" });
+    expect(all.body.items[4]).toMatchObject({ category: "PLATFORM", companyName: "瀚渤建设", sentence: "昵称 user-system 创建了公司“瀚渤建设”" });
+
+    const ids = async (query: string): Promise<string[]> =>
+      (await as("system").get(`/system/audit-logs?${query}`).expect(200)).body.items.map((item: { id: string }) => item.id);
+    expect(await ids("type=PLATFORM")).toEqual(["a5", "a4", "a1"]);
+    expect(await ids("type=COMPANY")).toEqual(["a2"]);
+    expect(await ids("companyId=company-1")).toEqual(["a2", "a1"]);
+    expect(await ids("actorUserId=user-company")).toEqual(["a3", "a2"]);
+    expect(await ids("actorUserId=user-company&companyId=company-2&type=ATTENDANCE")).toEqual(["a3"]);
+    expect(await ids("companyId=missing")).toEqual([]);
   });
 });

@@ -1,6 +1,9 @@
-import { Body, Controller, Get, Inject, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, Inject, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { GLOBAL_SCOPE_ID } from "@construction/domain/roles.js";
 
+import { parsePlatformAuditLogQuery } from "../audit/audit-log.parsers.js";
+import { AuditLogService } from "../audit/audit-log.service.js";
+import type { AuditLogPageResponse } from "../audit/audit-log.types.js";
 import { AccessTokenGuard } from "../auth/access-token.guard.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { AuthenticatedUser } from "../auth/auth.types.js";
@@ -35,12 +38,16 @@ const platform = {
   target: { source: "static", targetScope: { scopeId: GLOBAL_SCOPE_ID, scopeType: "GLOBAL" } },
 } as const;
 
-/** Platform management (system admin plan): companies (suspending them too), company administrators and accounts. */
+/**
+ * Platform management (system admin plan): companies (suspending them too), company
+ * administrators, accounts and the platform operation log.
+ */
 @Controller("system")
 export class SystemController {
   constructor(
     @Inject(SystemCompaniesService) private readonly companies: SystemCompaniesService,
     @Inject(SystemAccountsService) private readonly accounts: SystemAccountsService,
+    @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
 
   @Get("companies")
@@ -152,5 +159,14 @@ export class SystemController {
   @UseGuards(AccessTokenGuard, PermissionsGuard)
   async enableAccount(@CurrentUser() actor: AuthenticatedUser, @Param("userId") userId: string): Promise<SystemAccountDetail> {
     return this.accounts.enable(actor.userId, userId);
+  }
+
+  /** Phase 4: every operation on the platform, narrowed by company, type or actor (Q8, Q9). */
+  @Get("audit-logs")
+  @Header("Cache-Control", "no-store")
+  @RequirePermission(platform)
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  async auditLog(@Query() query: unknown): Promise<AuditLogPageResponse> {
+    return this.audit.platformLog(parsePlatformAuditLogQuery(query));
   }
 }

@@ -658,6 +658,16 @@ export class SafetyCreditService {
           createdByUserId: userId,
         },
       });
+      // Platform log (system admin plan phase 4): one policy for all companies, so no companyId.
+      await database.auditLog.create({
+        data: {
+          action: "SAFETY_POLICY_PUBLISHED",
+          actorUserId: userId,
+          entityId: row.id,
+          entityType: "safety_credit_policy",
+          metadata: { ...input, version: row.version },
+        },
+      });
       return policyView(row);
     });
   }

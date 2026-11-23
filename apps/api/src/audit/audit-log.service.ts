@@ -4,6 +4,7 @@ import {
   auditCategoryOf,
   auditSentence,
   auditTargetRef,
+  type AuditLogKind,
   type AuditTargetRef,
 } from "@construction/domain";
 import type { Prisma } from "@prisma/client";
@@ -17,6 +18,7 @@ import { encodeAuditCursor } from "./audit-log.parsers.js";
 import type {
   AuditLogPageResponse,
   AuditLogQuery,
+  PlatformAuditLogQuery,
 } from "./audit-log.types.js";
 
 const PAGE_SIZE = 30;
@@ -25,7 +27,10 @@ const refKey = (ref: AuditTargetRef): string =>
     ? `profile:${ref.participantType}:${ref.id}`
     : `${ref.kind}:${ref.id}`;
 
-/** Read-only operation log over AuditLog.projectId (project) or companyId (company), newest first. */
+/**
+ * Read-only operation log, newest first: one project (AuditLog.projectId), one company
+ * (AuditLog.companyId), or the whole platform (system admin plan phase 4).
+ */
 @Injectable()
 export class AuditLogService {
   constructor(
@@ -42,7 +47,7 @@ export class AuditLogService {
         message: "AUDIT_PROJECT_OUT_OF_SCOPE",
         projectId: query.projectId,
       });
-    return this.page({ projectId }, [projectId], query);
+    return this.page({ projectId }, query, "PROJECT");
   }
 
   async companyLog(
@@ -66,8 +71,25 @@ export class AuditLogService {
       query.projectId === null
         ? { companyId }
         : { companyId, projectId: query.projectId },
-      projects,
       query,
+      "COMPANY",
+    );
+  }
+
+  /**
+   * Everything on the platform (Q9): every company's rows and the ones that belong to no
+   * company (accounts, super admins, the safety credit policy). Narrowed by company, type
+   * (平台 here takes in what the platform did to a company) and actor, which answers whose
+   * registrations a super admin has read (Q8). An unknown company or actor just finds nothing.
+   */
+  async platformLog(query: PlatformAuditLogQuery): Promise<AuditLogPageResponse> {
+    return this.page(
+      {
+        ...(query.actorUserId === null ? {} : { actorUserId: query.actorUserId }),
+        ...(query.companyId === null ? {} : { companyId: query.companyId }),
+      },
+      query,
+      "PLATFORM",
     );
   }
 
@@ -79,14 +101,14 @@ export class AuditLogService {
 
   private async page(
     scope: Prisma.AuditLogWhereInput,
-    projectIds: readonly string[],
-    query: AuditLogQuery,
+    query: Pick<AuditLogQuery, "cursor" | "type">,
+    kind: AuditLogKind,
   ): Promise<AuditLogPageResponse> {
     const where: Prisma.AuditLogWhereInput = {
       ...scope,
       ...(query.type === null
         ? {}
-        : { action: { in: [...auditActionsIn(query.type)] } }),
+        : { action: { in: [...auditActionsIn(query.type, kind)] } }),
       ...(query.cursor === null
         ? {}
         : {
@@ -125,9 +147,13 @@ export class AuditLogService {
       where: { id: { in: ids("violation") } },
       select: { id: true, workerId: true },
     });
+    const present = (values: readonly (string | null)[]): string[] => [
+      ...new Set(values.filter((value): value is string => value !== null)),
+    ];
     const [
       users,
       projects,
+      companies,
       workerMembers,
       managerMembers,
       workers,
@@ -136,21 +162,15 @@ export class AuditLogService {
       tasks,
     ] = await Promise.all([
       this.prisma.user.findMany({
-        where: {
-          id: {
-            in: [
-              ...new Set(
-                visible
-                  .map((row) => row.actorUserId)
-                  .filter((id): id is string => id !== null),
-              ),
-            ],
-          },
-        },
+        where: { id: { in: present(visible.map((row) => row.actorUserId)) } },
         select: { id: true, encryptedRealName: true, nickname: true },
       }),
       this.prisma.project.findMany({
-        where: { id: { in: [...projectIds] } },
+        where: { id: { in: present(visible.map((row) => row.projectId)) } },
+        select: { id: true, name: true },
+      }),
+      this.prisma.company.findMany({
+        where: { id: { in: present(visible.map((row) => row.companyId)) } },
         select: { id: true, name: true },
       }),
       this.prisma.projectWorkerMember.findMany({
@@ -219,9 +239,13 @@ export class AuditLogService {
         id: row.id,
         createdAt: row.createdAt.toISOString(),
         action: row.action,
-        category: auditCategoryOf(row.action),
+        category: auditCategoryOf(row.action, kind),
         actorName,
+        actorUserId: row.actorUserId,
         sentence: auditSentence(row, actorName, targetName(targets.get(row.id) ?? null)),
+        companyId: row.companyId,
+        companyName:
+          companies.find((company) => company.id === row.companyId)?.name ?? null,
         projectId: row.projectId,
         projectName:
           projects.find((project) => project.id === row.projectId)?.name ?? null,
